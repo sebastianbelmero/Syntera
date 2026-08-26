@@ -149,28 +149,31 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
       )}
     >
       {/* Logo header — full wordmark when sidebar is open, scaled
-          icon-only square when collapsed. The logo JPG has a white
-          background so we wrap it in a rounded white chip that
-          looks intentional in both light and dark modes. */}
+          icon-only square when collapsed. The logo JPG is a
+          rectangular brand lockup (logo + tagline) — using
+          `object-contain` on a square chip with white padding shows
+          the full brand mark without cropping the S or the final A.
+          The white chip background looks intentional in both light
+          and dark modes. */}
       <a
         href="/dashboard"
         className={cn(
           "flex shrink-0 items-center border-b border-border py-3 no-underline",
-          isOpen ? "justify-start gap-2 px-4" : "justify-center px-1.5"
+          isOpen ? "justify-start gap-2.5 px-3" : "justify-center px-1.5"
         )}
         aria-label="Syntera — ke Dashboard"
       >
         <span
           className={cn(
             "shrink-0 overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-black/5",
-            isOpen ? "size-9" : "size-9"
+            isOpen ? "size-10" : "size-9"
           )}
         >
           <img
             src={logoUrl}
             alt=""
             aria-hidden
-            className="size-full object-cover"
+            className="size-full object-contain p-0.5"
             draggable={false}
           />
         </span>

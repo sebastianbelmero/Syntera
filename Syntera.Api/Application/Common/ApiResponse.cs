@@ -50,7 +50,7 @@ public sealed record FieldError(string Field, string Message);
 /// <summary>
 /// Generic paged result — used by all list endpoints that accept
 /// <c>page</c>/<c>pageSize</c> query string params. The shape
-/// matches the kalventis-ui AppGrid contract so the front-end can
+/// matches the Syntera.React AppGrid contract so the front-end can
 /// bind directly without reshaping.
 /// </summary>
 public sealed class PagedResult<T>

@@ -4,8 +4,8 @@ import { cn } from "../../lib/cn";
 
 /**
  * Avatar — Radix UI wrapper with Syntera brand styling.
- * Ported in-house so Syntera.React no longer depends on the external
- * kalventis-ui package for layout primitives.
+ * Ported in-house so Syntera.React keeps its visual identity
+ * self-contained without depending on any third-party UI kit.
  */
 export const Avatar = React.forwardRef<
   React.ElementRef<typeof AvatarPrimitive.Root>,

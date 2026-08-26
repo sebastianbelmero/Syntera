@@ -101,7 +101,7 @@ export default function LoginPage() {
             <img
               src={logoUrl}
               alt="Syntera"
-              className="h-12 w-12 object-cover sm:h-14 sm:w-14"
+              className="h-12 w-12 object-contain sm:h-14 sm:w-14"
               draggable={false}
             />
           </div>
@@ -124,7 +124,7 @@ export default function LoginPage() {
           </h1>
           <p className="max-w-md text-sm leading-relaxed opacity-85 xl:text-base">
             Platform Manajemen & Kepatuhan Kalibrasi Terintegrasi yang
-            menyatukan seluruh proses engineering lifecycle di enitas
+            menyatukan seluruh proses engineering lifecycle di entitas
             Kalbe — terintegrasi Oracle EAM, patuh 21 CFR Part 11 & GxP.
           </p>
         </div>
@@ -195,7 +195,7 @@ export default function LoginPage() {
               <img
                 src={logoUrl}
                 alt="Syntera"
-                className="h-14 w-14 object-cover"
+                className="h-14 w-14 object-contain"
                 draggable={false}
               />
             </div>
@@ -215,7 +215,7 @@ export default function LoginPage() {
                 autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-[var(--input)] bg-white px-3 py-2 text-sm shadow-sm outline-none transition focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--ring)]"
+                className="mt-1 w-full rounded-lg border border-[var(--input)] bg-card px-3 py-2 text-sm text-foreground shadow-sm outline-none transition focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--ring)]"
                 placeholder="anda@apotek.co.id"
                 required
               />
@@ -228,7 +228,7 @@ export default function LoginPage() {
                 autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-[var(--input)] bg-white px-3 py-2 text-sm shadow-sm outline-none transition focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--ring)]"
+                className="mt-1 w-full rounded-lg border border-[var(--input)] bg-card px-3 py-2 text-sm text-foreground shadow-sm outline-none transition focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--ring)]"
                 placeholder="••••••••"
                 required
               />

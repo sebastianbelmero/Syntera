@@ -3,9 +3,10 @@
 > **Vital Science, Vital Commerce.**
 >
 > A full-stack pharmaceutical inventory + point-of-sale platform built on
-> **.NET 10 + React 19 + SQL Server 2022**, themed around the Kalbe /
-> Dankos / Hexpharm / Fima / GOF / Kalventis brand family — emerald
-> green primary (`#007A4D`) with a mint accent (`#7EDECF`).
+> **.NET 10 + React 19 + SQL Server 2022**, themed around the Syntera /
+> Kalbe / Dankos / Hexpharm / Fima / GOF brand family. The default
+> Syntera palette (navy `#0B3D6F` + teal `#00A7B5`) mirrors the
+> official Syntera logo; five additional brand palettes ship alongside.
 
 The repository is a **single monorepo with two projects**:
 
@@ -569,25 +570,26 @@ controllers and mirrored in the React router (`RequireRole`).
 
 ## Brand identity
 
-Derived from a visual study of six Indonesian pharmaceutical
-logos: **Kalventis**, **Kalbe Farma**, **Dankos Farma**, **Hexpharm
-Jaya**, **Fima Internasional**, and **Global Onkolab Farma (GOF)**.
-The dominant colour across the family is **deep emerald green**, with
-**mint / seafoam** as the universal accent.
+Built around six brand palettes: **Syntera** (canonical navy + teal,
+derived from the official Syntera logo), **Kalbe Farma** (crimson),
+**Dankos Farma** (royal blue), **Hexpharm Jaya** (teal), **Fima
+Internasional** (violet), and **Global Onkolab Farma / GOF** (amber).
+Each palette ships both light and dark variants; users switch live
+from the header dropdown or the Settings page. The default Syntera
+palette is the only one tied to the actual product logo.
 
 | Token | Hex | Usage |
 | --- | --- | --- |
-| `--primary` | `#007A4D` | Buttons, links, brand accents |
-| `--primary-hover` | `#00563B` | Pressed/hover state |
-| `--accent` | `#7EDECF` | Highlights, KPI tiles |
-| `--accent-foreground` | `#0F3D24` | Text on accent background |
-| `--background` | `#FFFFFF` (light) / `#0B1F15` (dark) | Page background |
-| `--surface` | `#F4FBF7` (light) / `#122B1E` (dark) | Cards, sub-surfaces |
-| `--border` | `#D6E8DC` (light) / `#1F4530` (dark) | Lines, dividers |
+| `--primary` | `#0B3D6F` | Buttons, links, brand accents (Syntera navy) |
+| `--primary-hover` | `#082A52` | Pressed/hover state |
+| `--accent` | `#00A7B5` | Highlights, KPI tiles (Syntera teal) |
+| `--accent-foreground` | `#042A30` | Text on accent background |
+| `--background` | `#F5F8FB` (light) / `#0A1428` (dark) | Page background |
+| `--surface` | `#EAF1F8` (light) / `#11243F` (dark) | Cards, sub-surfaces |
+| `--border` | `#D0DDE9` (light) / `#1F3A5C` (dark) | Lines, dividers |
 
-The "Vital Science" theme pairs the green palette with the modern
-humanist sans-serif (Inter / system-ui) and a geometric leaf/wing
-motif lifted from the Kalventis logo. Every component references
+The "Vital Science" theme pairs the navy + teal palette with the modern
+humanist sans-serif (Inter / system-ui). Every component references
 these tokens, so a future rebrand touches one file.
 
 ---

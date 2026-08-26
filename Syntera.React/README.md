@@ -57,7 +57,7 @@ Axios client use the relative `/api` prefix that Vite proxies to
   primitive (Dialog, Tabs, Select, etc.), add it under
   `src/components/ui/` following the Avatar/DropdownMenu pattern
   (forwardRef + `cn(...)` + Syntera brand classes). Do NOT pull in
-  an external shadcn/ui or kalventis-ui package — Syntera.React
+  an external shadcn/ui or third-party UI package — Syntera.React
   keeps its visual identity self-contained.
 - **Form state.** Use uncontrolled forms (`FormData` +
   `defaultValue`) for create/edit modals. State libraries like React

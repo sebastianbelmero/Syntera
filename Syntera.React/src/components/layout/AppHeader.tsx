@@ -1,4 +1,5 @@
 import * as React from "react";
+import { useNavigate } from "react-router-dom";
 import {
   MenuIcon,
   MoonIcon,
@@ -27,7 +28,6 @@ import {
   DropdownMenuTrigger,
 } from "../ui";
 import { cn } from "../../lib/cn";
-import logoUrl from "../../assets/syntera-logo.jpg";
 
 export interface AppHeaderProps {
   title?: string;
@@ -39,6 +39,9 @@ export interface AppHeaderProps {
     avatarUrl?: string;
   };
   onLogout?: () => void;
+  /** Logo is owned by <AppSidebar /> — header shows only the title
+   *  text + page title to avoid a duplicated brand mark adjacent to
+   *  the sidebar's logo header. */
   logo?: React.ReactNode;
 }
 
@@ -58,10 +61,11 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   logo,
 }) => {
   const { brand, isDark, setBrand, toggleMode } = useThemeStore();
+  const navigate = useNavigate();
 
   return (
     <header className="z-20 flex h-[60px] items-center justify-between border-b border-border bg-card px-3 sm:px-4">
-      <div className="flex min-w-0 items-center gap-3 sm:gap-5">
+      <div className="flex min-w-0 items-center gap-3 sm:gap-4">
         <button
           type="button"
           onClick={toggleSidebar}
@@ -71,24 +75,19 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
           <MenuIcon className="size-5" />
         </button>
 
-        {/* Brand block: logo chip + title. Title hides on small
-            screens to keep the header uncluttered; logo stays. */}
-        <div className="flex min-w-0 items-center gap-2.5">
-          {logo ?? (
-            <span className="flex size-8 shrink-0 overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-black/5">
-              <img
-                src={logoUrl}
-                alt=""
-                aria-hidden
-                className="size-full object-cover"
-                draggable={false}
-              />
-            </span>
-          )}
-          <span className="truncate text-[1.05rem] font-semibold tracking-tight text-foreground sm:text-[1.2rem]">
+        {/* Brand block — header shows ONLY the title text. The
+            sidebar already owns the brand logo + wordmark, so
+            duplicating the logo chip here would visually double-up
+            the brand mark on every page. Keep header clean and
+            text-only; if a caller passes an explicit `logo` prop
+            we honor it (escape hatch). */}
+        {logo ? (
+          <div className="flex min-w-0 items-center gap-2.5">{logo}</div>
+        ) : (
+          <span className="truncate text-[1.05rem] font-semibold tracking-tight text-foreground sm:text-[1.15rem]">
             {title}
           </span>
-        </div>
+        )}
       </div>
 
       <div className="flex items-center gap-2 sm:gap-3">
@@ -204,7 +203,11 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
             </DropdownMenuLabel>
             <DropdownMenuItem
               onClick={() => {
-                /* no-op profile placeholder */
+                /* SPA navigation to the Settings page, which hosts
+                   the full profile card (name, email, user id,
+                   roles). Settings is wrapped by RequireAuth, so
+                   the menu item only renders when authed anyway. */
+                navigate("/settings");
               }}
             >
               <UserIcon className="size-4 text-muted-foreground" />
