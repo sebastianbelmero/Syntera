@@ -73,6 +73,21 @@ public static class ServiceCollectionExtensions
         .AddEntityFrameworkStores<AppDbContext>()
         .AddDefaultTokenProviders();
 
+        // In .NET 8+, AddIdentity<TUser, TRole>() does NOT auto-register
+        // AuthorizationOptions / IAuthorizationService / DefaultPolicy.
+        // We need AddAuthorization() or app.UseAuthorization() throws
+        // "Unable to find the required services" at startup.
+        // Default policy = require authenticated user; role checks
+        // are applied per-controller via [Authorize(Roles = "...")].
+        services.AddAuthorization(options =>
+        {
+            // Default policy: any authenticated user.
+            options.DefaultPolicy = new Microsoft.AspNetCore.Authorization
+                .AuthorizationPolicyBuilder()
+                .RequireAuthenticatedUser()
+                .Build();
+        });
+
         var jwtKey = cfg["Jwt:SigningKey"]
             ?? throw new InvalidOperationException(
                 "Jwt:SigningKey missing. Configure via User Secrets (dev) or env var (prod).");
