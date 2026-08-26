@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Syntera.Api.Controllers;
 using Syntera.Application.Common;
 using Syntera.Application.DTOs.Sales;
@@ -8,6 +9,7 @@ using Syntera.Application.Services;
 using Syntera.Application.Validators;
 using Syntera.Infrastructure.Data;
 using DevExtreme.AspNet.Data;
+using Syntera.Api.ModelBinding;
 
 namespace Syntera.Api.Controllers.Sales;
 
@@ -40,7 +42,7 @@ public sealed class SalesController : ApiControllerBase
     /// </summary>
     [HttpGet("grid")]
     public async Task<IActionResult> Grid(
-        [DataSourceRequest] DataSourceLoadOptions loadOptions,
+        DataSourceLoadOptions loadOptions,
         CancellationToken ct)
     {
         var query = _db.Sales

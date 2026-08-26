@@ -6,10 +6,12 @@ import { useAuthStore } from "../store/authStore";
 export interface UseDevExtremeDataOptions {
   endpoint: string;
   /**
-   * HTTP method for load requests. Default: "POST".
-   * "POST" sends load options as JSON body (recommended for ASP.NET Core).
-   * "GET" sends load options as query string (default DevExtreme behavior,
-   *   but requires custom model binder in ASP.NET Core).
+   * HTTP method for load requests. Default: "GET".
+   * "GET" sends load options as query string — matches Syntera.Api's
+   *   `[HttpGet("grid")]` actions and the official DevExtreme sample binder
+   *   (query values are read via the request ValueProvider).
+   * "POST" sends load options as a form-encoded body — the same binder also
+   *   handles this because form values join the ValueProvider chain.
    */
   loadMethod?: "GET" | "POST";
   /**
@@ -27,11 +29,12 @@ export interface UseDevExtremeDataOptions {
  * (Zustand-persisted access token).
  *
  * The store calls the Syntera backend's `/api/{entity}/grid` endpoints,
- * which accept `[DataSourceRequest] DataSourceLoadOptions` and return
- * the raw DevExtreme response shape `{ data, totalCount, ... }`.
+ * which bind `DataSourceLoadOptions` (project-local model + binder in
+ * Api/ModelBinding) and return the raw DevExtreme response shape
+ * `{ data, totalCount, ... }`.
  */
 export const useDevExtremeData = <T = any>(options: UseDevExtremeDataOptions) => {
-  const { endpoint, loadMethod = "POST", getAccessToken } = options;
+  const { endpoint, loadMethod = "GET", getAccessToken } = options;
 
   const [data, setData] = useState<T[]>([]);
   const [totalRecords, setTotalRecords] = useState(0);

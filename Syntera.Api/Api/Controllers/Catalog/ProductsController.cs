@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Syntera.Api.Controllers;
 using Syntera.Application.Common;
 using Syntera.Application.DTOs.Inventory;
@@ -9,6 +10,7 @@ using Syntera.Application.Services;
 using Syntera.Application.Validators;
 using Syntera.Infrastructure.Data;
 using DevExtreme.AspNet.Data;
+using Syntera.Api.ModelBinding;
 
 namespace Syntera.Api.Controllers.Catalog;
 
@@ -48,7 +50,7 @@ public sealed class ProductsController : ApiControllerBase
     /// </summary>
     [HttpGet("grid")]
     public async Task<IActionResult> Grid(
-        [DataSourceRequest] DataSourceLoadOptions loadOptions,
+        DataSourceLoadOptions loadOptions,
         CancellationToken ct)
     {
         var query = _db.Products
@@ -151,7 +153,7 @@ public sealed class InventoryController : ApiControllerBase
     /// </summary>
     [HttpGet("grid")]
     public async Task<IActionResult> Grid(
-        [DataSourceRequest] DataSourceLoadOptions loadOptions,
+        DataSourceLoadOptions loadOptions,
         CancellationToken ct)
     {
         var query = _db.InventoryMovements
