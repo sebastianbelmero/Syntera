@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.Hosting;
 using Serilog;
 using Syntera.Api.Extensions;
 using Syntera.Api.Middleware;
@@ -87,7 +88,7 @@ try
 
     app.Run();
 }
-catch (Exception ex)
+catch (Exception ex) when (ex is not HostAbortedException)
 {
     Log.Fatal(ex, "Syntera.Api terminated with an unhandled exception");
     throw;
