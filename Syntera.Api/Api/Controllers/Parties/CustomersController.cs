@@ -5,6 +5,9 @@ using Syntera.Application.Common;
 using Syntera.Application.DTOs.Customers;
 using Syntera.Application.Services;
 using Syntera.Application.Validators;
+using Syntera.Infrastructure.Data;
+using DevExtreme.AspNet.Data;
+using DevExtreme.AspNet.Mvc;
 
 namespace Syntera.Api.Controllers.Parties;
 
@@ -14,11 +17,30 @@ public sealed class CustomersController : ApiControllerBase
 {
     private readonly ICustomerService _svc;
     private readonly CustomerUpsertValidator _validator;
+    private readonly AppDbContext _db;
 
-    public CustomersController(ICustomerService svc, CustomerUpsertValidator validator)
+    public CustomersController(
+        ICustomerService svc,
+        CustomerUpsertValidator validator,
+        AppDbContext db)
     {
         _svc = svc;
         _validator = validator;
+        _db = db;
+    }
+
+    /// <summary>
+    /// DevExtreme-aware grid endpoint — raw <c>{ data, totalCount }</c>
+    /// shape for AppGrid client-side binding.
+    /// </summary>
+    [HttpGet("grid")]
+    public async Task<IActionResult> Grid(
+        [DataSourceRequest] DataSourceLoadOptions loadOptions,
+        CancellationToken ct)
+    {
+        var query = _db.Customers.AsNoTracking().AsQueryable();
+        var loadResult = await DataSourceLoader.LoadAsync(query, loadOptions, ct);
+        return OkRaw(loadResult);
     }
 
     [HttpGet]

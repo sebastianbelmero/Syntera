@@ -7,6 +7,9 @@ using Syntera.Application.DTOs.Products;
 using Syntera.Application.Interfaces.Services;
 using Syntera.Application.Services;
 using Syntera.Application.Validators;
+using Syntera.Infrastructure.Data;
+using DevExtreme.AspNet.Data;
+using DevExtreme.AspNet.Mvc;
 
 namespace Syntera.Api.Controllers.Catalog;
 
@@ -18,17 +21,44 @@ public sealed class ProductsController : ApiControllerBase
     private readonly IInventoryService _inv;
     private readonly ProductUpsertValidator _validator;
     private readonly ICurrentUserService _current;
+    private readonly AppDbContext _db;
 
     public ProductsController(
         IProductService svc,
         IInventoryService inv,
         ProductUpsertValidator validator,
-        ICurrentUserService current)
+        ICurrentUserService current,
+        AppDbContext db)
     {
         _svc = svc;
         _inv = inv;
         _validator = validator;
         _current = current;
+        _db = db;
+    }
+
+    /// <summary>
+    /// DevExtreme-aware grid endpoint. Accepts DataSourceLoadOptions
+    /// (filter/sort/paging/grouping) and returns the raw DevExtreme
+    /// response shape <c>{ data, totalCount }</c> — no ApiResponse
+    /// envelope, since the devextreme-aspnet-data-nojquery client
+    /// cannot unwrap our custom envelope. The grid uses this
+    /// endpoint for server-side filtering/sorting/paging, plus the
+    /// Excel-style "distinct values" group query for header filter
+    /// dropdowns.
+    /// </summary>
+    [HttpGet("grid")]
+    public async Task<IActionResult> Grid(
+        [DataSourceRequest] DataSourceLoadOptions loadOptions,
+        CancellationToken ct)
+    {
+        var query = _db.Products
+            .AsNoTracking()
+            .Include(p => p.Category)
+            .Include(p => p.Supplier)
+            .AsQueryable();
+        var loadResult = await DataSourceLoader.LoadAsync(query, loadOptions, ct);
+        return OkRaw(loadResult);
     }
 
     [HttpGet]
@@ -103,11 +133,34 @@ public sealed class InventoryController : ApiControllerBase
 {
     private readonly IInventoryService _svc;
     private readonly ICurrentUserService _current;
+    private readonly AppDbContext _db;
 
-    public InventoryController(IInventoryService svc, ICurrentUserService current)
+    public InventoryController(
+        IInventoryService svc,
+        ICurrentUserService current,
+        AppDbContext db)
     {
         _svc = svc;
         _current = current;
+        _db = db;
+    }
+
+    /// <summary>
+    /// DevExtreme-aware grid endpoint. Loads InventoryMovements with
+    /// the parent Product navigation included so the grid can show
+    /// the product name next to each movement row.
+    /// </summary>
+    [HttpGet("grid")]
+    public async Task<IActionResult> Grid(
+        [DataSourceRequest] DataSourceLoadOptions loadOptions,
+        CancellationToken ct)
+    {
+        var query = _db.InventoryMovements
+            .AsNoTracking()
+            .Include(m => m.Product)
+            .AsQueryable();
+        var loadResult = await DataSourceLoader.LoadAsync(query, loadOptions, ct);
+        return OkRaw(loadResult);
     }
 
     [HttpGet]

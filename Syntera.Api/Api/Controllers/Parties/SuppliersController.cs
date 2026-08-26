@@ -5,6 +5,9 @@ using Syntera.Application.Common;
 using Syntera.Application.DTOs.Suppliers;
 using Syntera.Application.Services;
 using Syntera.Application.Validators;
+using Syntera.Infrastructure.Data;
+using DevExtreme.AspNet.Data;
+using DevExtreme.AspNet.Mvc;
 
 namespace Syntera.Api.Controllers.Parties;
 
@@ -14,11 +17,30 @@ public sealed class SuppliersController : ApiControllerBase
 {
     private readonly ISupplierService _svc;
     private readonly SupplierUpsertValidator _validator;
+    private readonly AppDbContext _db;
 
-    public SuppliersController(ISupplierService svc, SupplierUpsertValidator validator)
+    public SuppliersController(
+        ISupplierService svc,
+        SupplierUpsertValidator validator,
+        AppDbContext db)
     {
         _svc = svc;
         _validator = validator;
+        _db = db;
+    }
+
+    /// <summary>
+    /// DevExtreme-aware grid endpoint — raw <c>{ data, totalCount }</c>
+    /// shape for AppGrid client-side binding.
+    /// </summary>
+    [HttpGet("grid")]
+    public async Task<IActionResult> Grid(
+        [DataSourceRequest] DataSourceLoadOptions loadOptions,
+        CancellationToken ct)
+    {
+        var query = _db.Suppliers.AsNoTracking().AsQueryable();
+        var loadResult = await DataSourceLoader.LoadAsync(query, loadOptions, ct);
+        return OkRaw(loadResult);
     }
 
     [HttpGet]

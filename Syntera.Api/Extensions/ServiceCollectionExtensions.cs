@@ -12,6 +12,7 @@ using Syntera.Infrastructure.Data;
 using Syntera.Infrastructure.Identity;
 using Syntera.Infrastructure.Repositories;
 using System.Text;
+using System.Text.Json.Serialization;
 
 namespace Syntera.Api.Extensions;
 
@@ -41,6 +42,22 @@ public static class ServiceCollectionExtensions
                 // pipeline still validates model state; we just take over the
                 // formatting in ApiControllerBase.Invalid(...).
                 options.SuppressModelStateInvalidFilter = false;
+            })
+            .AddJsonOptions(options =>
+            {
+                // DevExtreme grid endpoints return EF entities with navigation
+                // properties (Product.Category, Sale.Items, etc.). Without
+                // IgnoreCycles, System.Text.Json would infinite-loop on
+                // bidirectional refs (Customer.Sales[0].Customer.Sales[0]...).
+                // IgnoreCycles silently drops the back-reference — exactly what
+                // grids need (forward refs only).
+                options.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
+                options.JsonSerializerOptions.WriteIndented = false;
+                // Camel-case to match the JS client expectations
+                // (devextreme-aspnet-data-nojquery expects "data" + "totalCount"
+                // and existing React code uses camelCase keys already).
+                options.JsonSerializerOptions.PropertyNamingPolicy =
+                    System.Text.Json.JsonNamingPolicy.CamelCase;
             });
         return services;
     }

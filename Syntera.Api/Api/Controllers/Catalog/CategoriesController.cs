@@ -5,6 +5,9 @@ using Syntera.Application.Common;
 using Syntera.Application.DTOs.Categories;
 using Syntera.Application.Services;
 using Syntera.Application.Validators;
+using Syntera.Infrastructure.Data;
+using DevExtreme.AspNet.Data;
+using DevExtreme.AspNet.Mvc;
 
 namespace Syntera.Api.Controllers.Catalog;
 
@@ -14,11 +17,33 @@ public sealed class CategoriesController : ApiControllerBase
 {
     private readonly ICategoryService _svc;
     private readonly CategoryUpsertValidator _validator;
+    private readonly AppDbContext _db;
 
-    public CategoriesController(ICategoryService svc, CategoryUpsertValidator validator)
+    public CategoriesController(
+        ICategoryService svc,
+        CategoryUpsertValidator validator,
+        AppDbContext db)
     {
         _svc = svc;
         _validator = validator;
+        _db = db;
+    }
+
+    /// <summary>
+    /// DevExtreme-aware grid endpoint for category listing. Returns the
+    /// raw <c>{ data, totalCount }</c> shape so the AppGrid client can
+    /// bind directly. The Category entity exposes ParentId (nullable
+    /// self-FK) which the AppGrid uses to render the parent/child
+    /// hierarchy as a nested master-detail grid.
+    /// </summary>
+    [HttpGet("grid")]
+    public async Task<IActionResult> Grid(
+        [DataSourceRequest] DataSourceLoadOptions loadOptions,
+        CancellationToken ct)
+    {
+        var query = _db.Categories.AsNoTracking().AsQueryable();
+        var loadResult = await DataSourceLoader.LoadAsync(query, loadOptions, ct);
+        return OkRaw(loadResult);
     }
 
     [HttpGet]

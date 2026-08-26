@@ -6,6 +6,9 @@ using Syntera.Application.DTOs.Sales;
 using Syntera.Application.Interfaces.Services;
 using Syntera.Application.Services;
 using Syntera.Application.Validators;
+using Syntera.Infrastructure.Data;
+using DevExtreme.AspNet.Data;
+using DevExtreme.AspNet.Mvc;
 
 namespace Syntera.Api.Controllers.Sales;
 
@@ -16,15 +19,38 @@ public sealed class SalesController : ApiControllerBase
     private readonly ISaleService _svc;
     private readonly SaleCreateValidator _validator;
     private readonly ICurrentUserService _current;
+    private readonly AppDbContext _db;
 
     public SalesController(
         ISaleService svc,
         SaleCreateValidator validator,
-        ICurrentUserService current)
+        ICurrentUserService current,
+        AppDbContext db)
     {
         _svc = svc;
         _validator = validator;
         _current = current;
+        _db = db;
+    }
+
+    /// <summary>
+    /// DevExtreme-aware grid endpoint. Loads Sales with Customer + Items
+    /// navigation included. The AppGrid uses this to render a master-detail
+    /// layout: each Sale row expands to reveal its line-items (SaleItems)
+    /// as a nested sub-table.
+    /// </summary>
+    [HttpGet("grid")]
+    public async Task<IActionResult> Grid(
+        [DataSourceRequest] DataSourceLoadOptions loadOptions,
+        CancellationToken ct)
+    {
+        var query = _db.Sales
+            .AsNoTracking()
+            .Include(s => s.Customer)
+            .Include(s => s.Items)
+            .AsQueryable();
+        var loadResult = await DataSourceLoader.LoadAsync(query, loadOptions, ct);
+        return OkRaw(loadResult);
     }
 
     [HttpGet]
