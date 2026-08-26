@@ -1,111 +1,75 @@
+/* ──────────────────────────────────────────────────────────────────
+ * Syntera.React — Tailwind v4 + Kalventis UI tokens
+ *
+ * Imports the Kalventis UI stylesheet which exposes the brand CSS
+ * variables (--primary, --accent, --background, etc.). The :root
+ * overrides below pin the palette to the Kalventis "Vital Science"
+ * identity (Emerald #007A4D + Mint #7EDECF) — the canonical brand
+ * palette derived from the Kalbe / Dankos / Hexpharm / Fima / GOF
+ * / Kalventis logo study.
+ * ────────────────────────────────────────────────────────────────── */
+
+@import "@sebastianbelmero/kalventis-ui/styles.css";
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* Brand-locked overrides. These match what kalventis-ui ships by
+ * default — keeping the override here makes the brand the single
+ * source of truth and lets us change it in one place if the brand
+ * guidelines ever move. */
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+  --primary: #007a4d;
+  --primary-foreground: #ffffff;
+  --primary-hover: #00563b;
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+  --accent: #7edecf;
+  --accent-foreground: #0f3d24;
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  --success: #16a34a;
+  --warning: #f59e0b;
+  --danger: #c8443b;
+  --info: #2e7cb8;
 
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
+  --background: #ffffff;
+  --foreground: #0f172a;
+  --surface: #f4fbf7;
+  --card: #ffffff;
+  --muted: #eaf5ee;
+  --muted-foreground: #4a5560;
+
+  --border: #d6e8dc;
+  --input: #cbd5e1;
+  --ring: #007a4d;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
-
-  #social .button-icon {
-    filter: invert(1) brightness(2);
-  }
+.dark {
+  --background: #0b1f15;
+  --foreground: #e2e8f0;
+  --surface: #122b1e;
+  --card: #122b1e;
+  --muted: #1a3a28;
+  --muted-foreground: #94a3b8;
+  --border: #1f4530;
+  --primary: #21b673;
+  --accent: #7edecf;
 }
 
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
+html, body, #root {
+  height: 100%;
 }
 
 body {
   margin: 0;
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto,
+               "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  background: var(--background);
+  color: var(--foreground);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
-}
-
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
-}
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
-}
-p {
-  margin: 0;
-}
-
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
-}
-
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
-}
+/* Smaller scrollbar to match modern app aesthetics */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--input); }

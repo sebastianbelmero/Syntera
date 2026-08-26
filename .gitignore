@@ -1,0 +1,30 @@
+# .NET
+**/bin/
+**/obj/
+*.user
+*.suo
+.vs/
+.idea/
+*.DotSettings.user
+
+# User secrets (production / personal)
+*.secrets.json
+appsettings.Production.json
+
+# Node / Bun
+**/node_modules/
+**/dist/
+**/.cache/
+.env
+.env.local
+.env.*.local
+
+# Logs / temp
+logs/
+*.log
+*.tmp
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
