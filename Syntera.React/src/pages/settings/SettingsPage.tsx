@@ -103,7 +103,7 @@ export default function SettingsPage() {
                 />
                 <span className="text-xs font-medium">{THEME_LABELS[b]}</span>
                 {active && (
-                  <span className="absolute right-1.5 top-1.5 flex size-5 items-center justify-center rounded-full bg-[var(--primary)] text-white">
+                  <span className="absolute right-1.5 top-1.5 flex size-5 items-center justify-center rounded-full bg-[var(--primary)] text-[var(--primary-foreground)]">
                     <Check size={12} />
                   </span>
                 )}
@@ -145,7 +145,7 @@ export default function SettingsPage() {
             logout();
             window.location.href = "/login";
           }}
-          className="rounded-lg bg-[var(--danger)] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[var(--danger-hover)]"
+          className="rounded-lg bg-[var(--danger)] px-4 py-2 text-sm font-semibold text-[var(--danger-foreground)] transition hover:bg-[var(--danger-hover)]"
         >
           Keluar
         </button>

@@ -87,9 +87,10 @@ export function DataTable<T>({
           <input
             type="search"
             placeholder="Cari…"
+            aria-label="Cari data"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-lg border border-[var(--input)] bg-white py-2 pl-9 pr-3 text-sm outline-none transition focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--ring)] sm:w-72"
+            className="w-full rounded-lg border border-[var(--input)] bg-card py-2 pl-9 pr-3 text-sm text-foreground outline-none transition focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--ring)] sm:w-72"
           />
         </form>
         <div className="ml-auto flex items-center gap-2">{toolbar}</div>

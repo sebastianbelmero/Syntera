@@ -91,8 +91,14 @@ export default function LoginPage() {
       <div
         className="relative hidden flex-col justify-between overflow-hidden p-8 text-white lg:flex xl:p-12"
         style={{
+          // Gradient derives from the active palette's --primary and
+          // --accent tokens, blended through color-mix so the brand
+          // panel re-themes correctly when the user switches palettes
+          // (e.g. Kalbe crimson, Fima violet). Previously hardcoded
+          // to Syntera navy/teal hex, which broke the brand panel
+          // for the other 5 palettes.
           background:
-            "linear-gradient(135deg, var(--primary) 0%, #082a52 55%, #042a30 100%)",
+            "linear-gradient(135deg, var(--primary) 0%, color-mix(in srgb, var(--primary) 60%, #000 40%) 55%, color-mix(in srgb, var(--accent) 70%, #000 30%) 100%)",
         }}
       >
         {/* Top: logo chip + wordmark */}
@@ -238,7 +244,7 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-lg bg-[var(--primary)] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-full rounded-lg bg-[var(--primary)] px-4 py-2.5 text-sm font-semibold text-[var(--primary-foreground)] shadow-sm transition hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {loading ? "Memverifikasi…" : "Masuk"}
           </button>

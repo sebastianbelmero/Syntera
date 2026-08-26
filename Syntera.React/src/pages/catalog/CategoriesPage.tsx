@@ -245,7 +245,7 @@ function ConfirmDeleteModal({
               setBusy(false);
               onClose();
             }}
-            className="rounded-lg bg-[var(--danger)] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[var(--danger-hover)] disabled:opacity-60"
+            className="rounded-lg bg-[var(--danger)] px-4 py-2 text-sm font-semibold text-[var(--danger-foreground)] transition hover:bg-[var(--danger-hover)] disabled:opacity-60"
           >
             {busy ? "Menghapus…" : "Hapus"}
           </button>
