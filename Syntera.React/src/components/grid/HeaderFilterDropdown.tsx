@@ -7,7 +7,7 @@ import {
   PopoverTrigger,
   Checkbox,
   Button,
-} from "../primitives";
+} from "../ui";
 
 export interface HeaderFilterDropdownProps {
   column: any;

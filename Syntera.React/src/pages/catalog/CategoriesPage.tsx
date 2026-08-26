@@ -6,12 +6,12 @@ import type { CategoryDto } from "../../types";
 import { formatDate } from "../../lib/format";
 import {
   AppGrid,
+  Badge,
   type ColumnProps,
-} from "../../kalventis/ui";
-import { Badge } from "../../kalventis/ui";
+} from "../../components";
 
 /**
- * CategoriesPage — migrated to kalventis AppGrid + AppDynamicForm pattern.
+ * CategoriesPage — migrated to the in-house AppGrid + AppDynamicForm pattern.
  *
  * Master-detail pattern: each Category row expands to reveal an inner
  * AppGrid showing child categories (filtered client-side by parentId).
@@ -31,7 +31,10 @@ export default function CategoriesPage() {
     queryFn: () => categoryApi.page({ pageSize: 200 }),
   });
 
-  const allCategories = parentsQuery.data?.items ?? [];
+  const allCategories = useMemo(
+    () => parentsQuery.data?.items ?? [],
+    [parentsQuery.data]
+  );
 
   // Schema drives both grid display AND AppDynamicForm generation.
   // parentId uses an inline lookup array (filtered to exclude self

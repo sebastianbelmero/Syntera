@@ -1,6 +1,6 @@
 import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
-import { cn } from "../lib/utils";
+import { cn } from "../../lib/cn";
 
 const badgeVariants = cva(
   "inline-flex items-center justify-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors [&>svg]:size-3 gap-1 [&>svg]:pointer-events-none",
@@ -48,7 +48,5 @@ export const Badge = React.forwardRef<HTMLSpanElement, BadgeProps>(
 );
 Badge.displayName = "Badge";
 
-export { badgeVariants };
-
-// Legacy type alias for backward-compatibility type imports.
+// Type-only re-export (erased at runtime — safe for fast refresh).
 export type BadgeVariant = NonNullable<BadgeProps["variant"]>;

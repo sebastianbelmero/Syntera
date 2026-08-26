@@ -1,7 +1,7 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
 import { XIcon } from "lucide-react";
-import { cn } from "../lib/utils";
+import { cn } from "../lib/cn";
 
 export interface DrawerProps {
   isOpen: boolean;
@@ -21,7 +21,7 @@ export interface DrawerProps {
 /**
  * Slide-out panel from the right side.
  *
- * Phase-4 enhancements over the kalventis-ui v2.2.3 baseline:
+ * Syntera enhancements on top of the original design:
  *   1. **Focus trap** — Tab cycles only through focusable elements
  *      inside the drawer. Shift+Tab cycles backwards.
  *   2. **Restore focus on close** — when the drawer unmounts, focus
@@ -30,9 +30,6 @@ export interface DrawerProps {
  *   3. **Initial focus** — when the drawer opens, focus jumps to the
  *      first focusable element inside (or the close button if no
  *      focusable content).
- *
- * For more advanced needs, prefer the Radix-based `Sheet` component
- * from primitives (supports left/right/top/bottom sides).
  */
 export const Drawer: React.FC<DrawerProps> = ({
   isOpen,
@@ -50,8 +47,12 @@ export const Drawer: React.FC<DrawerProps> = ({
   const panelRef = React.useRef<HTMLDivElement>(null);
   const triggerRef = React.useRef<HTMLElement | null>(null);
 
+  // Mount / unmount with animation delay. The enter/exit animation
+  // lifecycle is a genuine state machine (keep-mounted during the 300ms
+  // exit transition) that cannot be derived during render.
   React.useEffect(() => {
     if (isOpen) {
+      // oxlint-disable-next-line react/set-state-in-effect -- mount the portal when isOpen flips on; the 300ms exit transition below still needs the node rendered.
       setShouldRender(true);
       const timer = setTimeout(() => setIsAnimating(true), 10);
       return () => clearTimeout(timer);

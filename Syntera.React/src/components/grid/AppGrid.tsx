@@ -29,16 +29,16 @@ import {
   PackageOpen,
 } from 'lucide-react';
 import { Column, type ColumnProps } from './Column';
-import { useDevExtremeData } from '../hooks/useDevExtremeData';
+import { useDevExtremeData } from '../../hooks/useDevExtremeData';
 import { api as apiClient } from '../../api/client';
-import { FilterOperatorDropdown } from './grid/FilterOperatorDropdown';
-import { ColumnChooserDropdown } from './grid/ColumnChooserDropdown';
-import { HeaderFilterDropdown } from './grid/HeaderFilterDropdown';
-import { HighlightText } from './grid/HighlightText';
+import { FilterOperatorDropdown } from './FilterOperatorDropdown';
+import { ColumnChooserDropdown } from './ColumnChooserDropdown';
+import { HeaderFilterDropdown } from './HeaderFilterDropdown';
+import { HighlightText } from './HighlightText';
 import { AppDynamicForm } from './AppDynamicForm';
-import { Modal } from './Modal';
-import { Drawer } from './Drawer';
-import { Skeleton } from './primitives/Skeleton';
+import { Modal } from '../Modal';
+import { Drawer } from '../Drawer';
+import { Skeleton } from '../ui';
 
 export interface AppGridProps {
   columns?: ColumnProps[];
@@ -161,7 +161,7 @@ export const AppGrid: React.FC<AppGridProps> = ({
   const resolvedMasterDetail = renderMasterDetail || DetailTemplate;
   void resolvedMasterDetail;
 
-  // Derive CRUD endpoint from grid endpoint. The kalventis AppGrid
+  // Derive CRUD endpoint from grid endpoint. The AppGrid
   // uses `apiEndpoint` for BOTH data load (the DevExtreme /grid route)
   // AND CRUD (POST/PUT/DELETE to the entity root). To keep both
   // working in Syntera — where grid data lives at `/api/{entity}/grid`
@@ -177,9 +177,13 @@ export const AppGrid: React.FC<AppGridProps> = ({
   const canDelete = enableCrud || allowDelete;
   const effectiveRowSelection = selectionMode !== 'none' ? true : enableRowSelection;
 
+  // Stabilize the array identity (keyed on contents) so the data-loading
+  // effect below does not refire on every render when callers pass an
+  // inline array literal. Rebuilt only when the field list actually changes.
+  const globalFilterFieldsKey = JSON.stringify(globalFilterFields);
   const stableGlobalFilterFields = useMemo(
-    () => globalFilterFields,
-    [JSON.stringify(globalFilterFields)]
+    () => JSON.parse(globalFilterFieldsKey) as string[],
+    [globalFilterFieldsKey]
   );
 
   // State
@@ -403,9 +407,10 @@ export const AppGrid: React.FC<AppGridProps> = ({
     }
 
     return defs;
-  }, [resolvedColumns, enableSorting, enableFiltering, effectiveRowSelection, enableMasterDetail, canEdit, canDelete, resolvedCustomActions, globalFilter, activeHighlight, renderMasterDetail]);
+  }, [resolvedColumns, enableSorting, enableFiltering, enableMasterDetail, canEdit, canDelete, resolvedCustomActions, globalFilter, renderMasterDetail]);
 
   // Table instance
+  // oxlint-disable-next-line react/incompatible-library -- TanStack Table's useReactTable() intentionally returns unstable function references; memoizing them would freeze the grid UI. The React Compiler already skips this component.
   const table = useReactTable({
     data,
     columns: columnDefs,

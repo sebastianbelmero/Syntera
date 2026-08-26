@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { createStore } from "devextreme-aspnet-data-nojquery";
-import { buildDevExtremeQuery, type DevExtremeLazyState } from "../core/DevExtremeAdapter";
-import { useAuthStore } from "../../store/authStore";
+import { buildDevExtremeQuery, type DevExtremeLazyState } from "../lib/devextreme";
+import { useAuthStore } from "../store/authStore";
 
 export interface UseDevExtremeDataOptions {
   endpoint: string;
@@ -23,9 +23,8 @@ export interface UseDevExtremeDataOptions {
 /**
  * Custom hook for fetching data with DevExtreme ASP.NET Data protocol.
  *
- * Ported from kalventis-ui. Token resolution now wires directly into
- * Syntera's authStore (Zustand-persisted access token), removing the
- * decoupled TokenProvider indirection that kalventis-ui used.
+ * Token resolution wires directly into Syntera's authStore
+ * (Zustand-persisted access token).
  *
  * The store calls the Syntera backend's `/api/{entity}/grid` endpoints,
  * which accept `[DataSourceRequest] DataSourceLoadOptions` and return
@@ -57,6 +56,7 @@ export const useDevExtremeData = <T = any>(options: UseDevExtremeDataOptions) =>
   }, []);
 
   const store = useMemo(() => {
+    // oxlint-disable-next-line react/refs -- extraParamsRef is only read inside the onBeforeSend callback, which DevExtreme invokes while performing the ajax request (never during render).
     return createStore({
       key: "id",
       loadUrl: endpoint,

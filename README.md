@@ -16,9 +16,10 @@ The repository is a **single monorepo with two projects**:
 | `Syntera.React` | `Syntera.React/` | React 19 + Vite 8 + Tailwind v4 | SPA front-end with a self-contained UI layer |
 
 Syntera.React owns its **entire UI stack** in-house — all Radix-based
-primitives (`Avatar`, `DropdownMenu`, …), the admin shell
+primitives (`Button`, `Badge`, `Select`, `Avatar`, …), the in-house
+AppGrid data grid system, the admin shell
 (`AdminLayout`, `AppSidebar`, `AppHeader`, `AppBreadcrumb`), the theme
-store, the token provider, and the brand design tokens live under
+store, and the brand design tokens live under
 `Syntera.React/src/`. No external component library is required at
 runtime, so the project is free to evolve its visual identity without
 being constrained by an upstream shared library.
@@ -367,11 +368,14 @@ Syntera/
 ├── Syntera.React/                      # React 19 + Vite SPA
 │   ├── src/
 │   │   ├── api/                       # Axios client + per-aggregate endpoints
-│   │   ├── components/                # App-level composites (DataTable, Modal)
-│   │   │   ├── ui/                    # In-house Radix primitives (Avatar, DropdownMenu, …)
-│   │   │   └── layout/                # Admin shell (AdminLayout, AppSidebar, AppHeader, AppBreadcrumb)
-│   │   ├── hooks/                     # (placeholder for future domain hooks)
-│   │   ├── lib/                       # cn(), formatters
+│   │   ├── components/
+│   │   │   ├── grid/                  # AppGrid system (AppGrid, Column, AppDynamicForm, filter dropdowns)
+│   │   │   ├── ui/                    # In-house Radix primitives (Button, Badge, Select, ...)
+│   │   │   ├── layout/                # Admin shell (AdminLayout, AppSidebar, AppHeader, AppBreadcrumb)
+│   │   │   ├── Modal.tsx              # Animated + focus-trapped dialog
+│   │   │   └── Drawer.tsx             # Animated + focus-trapped slide-out panel
+│   │   ├── hooks/                     # useDevExtremeData (DevExtreme grid data protocol)
+│   │   ├── lib/                       # cn(), formatters, devextreme.ts (query builder)
 │   │   ├── pages/
 │   │   │   ├── auth/                  # LoginPage (brand split-panel)
 │   │   │   ├── dashboard/             # KPI cards + 14-day sales trend chart
@@ -380,13 +384,12 @@ Syntera/
 │   │   │   ├── inventory/             # InventoryPage (ledger)
 │   │   │   ├── sales/                 # SalesPage (POS-like checkout)
 │   │   │   └── settings/              # Profile + theme toggle + logout
-│   │   ├── providers/                 # TokenProvider (decouples axios from auth store)
 │   │   ├── routes/                    # RequireAuth, RequireRole guards
-│   │   ├── store/                     # authStore (in-memory) + themeStore (dark/light)
+│   │   ├── store/                     # authStore (persisted) + themeStore (7 brands x light/dark)
 │   │   ├── types/                     # API DTO mirror (single file)
 │   │   ├── App.tsx                    # Router + AdminLayout shell
-│   │   ├── main.tsx                   # Providers (Query, Token, Router, Toaster)
-│   │   └── index.css                  # Brand palette + Tailwind v4 entry
+│   │   ├── main.tsx                   # Providers (Query, Router, Toaster)
+│   │   └── index.css                  # 7 brand palettes + AppGrid styles + Tailwind v4 entry
 │   ├── vite.config.ts                 # Vite + React Compiler + Tailwind v4
 │   └── tsconfig.app.json              # Strict, verbatim, noUnusedLocals
 │
@@ -487,14 +490,37 @@ category/supplier dropdowns, etc.). Mutations invalidate the relevant
 query keys (`products`, `inventory`, `dashboard-summary` …) so the UI
 stays in sync without manual refetch.
 
-### Reusable primitives
+### Reusable components
 
-- `DataTable<T>` — generic paged table with search, pagination, and
-  per-row action buttons. Used by every list page.
-- `Modal` — accessible dialog with Escape-to-close, backdrop, and a
-  consistent footer slot.
-- `Field` + `inputClass` + `btnPrimary` / `btnGhost` — design tokens
-  for form inputs and buttons; DRY across all forms.
+All shared UI lives under `src/components/` — imported from pages via a
+single barrel (`import { AppGrid, Column, Modal, Badge } from "../../components"`):
+
+- `grid/` — **the AppGrid system**, Syntera's in-house data grid built on
+  `@tanstack/react-table` v8:
+  - `<AppGrid>` — declarative grid with toolbar search, sorting, column
+    filters, column chooser, pagination, master-detail expansion, mobile
+    card view, and built-in CRUD (add/edit/delete) with auto-rendered
+    forms. Grid state (sorting / visibility / pagination) persists to
+    localStorage per `gridId`.
+  - `<Column>` — declarative column schema (renders null, like
+    DevExtreme's Column). One `ColumnProps[]` schema drives BOTH the
+    table cells AND the auto-generated form editors.
+  - `AppDynamicForm` — renders form fields (text, number, date,
+    textarea, switch, combobox/tagbox lookups, nested arrays,
+    `formRender` escape hatch) straight from the same column schema.
+  - Server paging/sorting/filtering speaks the DevExtreme ASP.NET Data
+    protocol: `useDevExtremeData` (src/hooks) +
+    `buildDevExtremeQuery` (src/lib/devextreme.ts) →
+    `/api/{entity}/grid` endpoints backed by the `DevExtreme.AspNet.Data`
+    NuGet package.
+  - `Modal` / `Drawer` — portal-based, animated (300 ms opacity +
+    scale/translate), focus-trapped overlays with restore-focus-on-close,
+    Escape to close, and body scroll lock.
+- `ui/` — Radix-based primitives owned in-house (`Button`, `Badge`,
+  `Select`, `Popover`, `Tooltip`, `Checkbox`, `Skeleton`, `Avatar`,
+  `DropdownMenu`). Only primitives that are actually consumed live here.
+- `layout/` — the admin shell (`AdminLayout`, `AppSidebar`, `AppHeader`,
+  `AppBreadcrumb`).
 
 ### Brand styling
 

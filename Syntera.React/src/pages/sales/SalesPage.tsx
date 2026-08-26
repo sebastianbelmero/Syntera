@@ -10,10 +10,10 @@ import type {
 import { formatIDR, formatNumber, formatDateTime } from "../../lib/format";
 import {
   AppGrid,
+  Modal,
+  Badge,
   type ColumnProps,
-} from "../../kalventis/ui";
-import { Modal } from "../../kalventis/ui";
-import { Badge } from "../../kalventis/ui";
+} from "../../components";
 import { ApiError } from "../../api/client";
 
 const STATUS_LABEL: Record<SaleStatus, string> = {
@@ -42,7 +42,7 @@ interface CartLine {
 }
 
 /**
- * SalesPage — migrated to kalventis AppGrid pattern for display +
+ * SalesPage — migrated to the AppGrid pattern for display +
  * master-detail (sale items shown as a sub-table inside expanded rows).
  *
  * NewSaleModal stays as a custom Modal (not AppDynamicForm) because:
@@ -52,9 +52,9 @@ interface CartLine {
  *   - Submit goes to /api/sales with a complex payload (cart + taxRate +
  *     discount + customer + note) — different from a flat entity upsert.
  *
- * The Modal itself uses the kalventis Modal (focus-trapped + animated
+ * The Modal itself is the shared in-house Modal (focus-trapped + animated
  * + responsive width). Form fields use the .app-grid-filter-input /
- * .app-grid-btn CSS classes that kalventis styles.css exports.
+ * .app-grid-btn CSS classes defined in the AppGrid styles (index.css).
  */
 export default function SalesPage() {
   const queryClient = useQueryClient();
@@ -285,6 +285,7 @@ function NewSaleModal({
   // NewSaleModal after a previous sale would show stale cart lines.
   useEffect(() => {
     if (isOpen) {
+      // oxlint-disable-next-line react/set-state-in-effect -- intentional reset-on-open: the modal stays mounted across sales, so the previous sale's cart state must be cleared when isOpen flips true.
       setCustomerId("");
       setTaxRate(11);
       setDiscount(0);

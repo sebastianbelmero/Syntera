@@ -11,7 +11,7 @@ import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
-} from "../primitives";
+} from "../ui";
 
 export interface ColumnChooserDropdownProps {
   table: any;

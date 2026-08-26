@@ -8,10 +8,10 @@ import type { InventoryMovementType } from "../../types";
 import { formatDateTime } from "../../lib/format";
 import {
   AppGrid,
+  Modal,
+  Badge,
   type ColumnProps,
-} from "../../kalventis/ui";
-import { Modal } from "../../kalventis/ui";
-import { Badge } from "../../kalventis/ui";
+} from "../../components";
 import { ApiError } from "../../api/client";
 
 const TYPE_LABEL: Record<InventoryMovementType, string> = {
@@ -31,7 +31,7 @@ const TYPE_VARIANT: Record<InventoryMovementType, "success" | "info" | "warning"
 };
 
 /**
- * InventoryPage — migrated to kalventis AppGrid pattern for display.
+ * InventoryPage — migrated to the AppGrid pattern for display.
  * The record-movement form stays as a separate Modal (not AppDynamicForm)
  * because:
  *   1. The submit goes to /api/inventory (a movement record, not an
@@ -187,7 +187,7 @@ export default function InventoryPage() {
 }
 
 // ── Record movement form modal ─────────────────────────────
-// Uses kalventis Modal (focus-trapped + animated) with an inline form.
+// Uses the shared in-house Modal (focus-trapped + animated) with an inline form.
 // Not migrated to AppDynamicForm because the submit semantics differ
 // from a standard CRUD upsert (signed quantity + endpoint is
 // /api/inventory, not /api/inventory/{id}).

@@ -7,9 +7,9 @@ import {
   SelectLabel,
   SelectTrigger,
   SelectValue,
-} from "../primitives";
+} from "../ui";
 
-export const FILTER_OPERATORS = [
+const FILTER_OPERATORS = [
   { value: "contains", label: "Contains", hint: "Aa" },
   { value: "equals", label: "Equals", hint: "=" },
   { value: "startsWith", label: "Starts with", hint: "A.." },

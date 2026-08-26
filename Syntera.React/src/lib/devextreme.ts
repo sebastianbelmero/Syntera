@@ -1,4 +1,13 @@
 /**
+ * DevExtreme data protocol adapter.
+ *
+ * Translates TanStack Table state (pagination, sorting, column filters,
+ * global search) into the DevExtreme ASP.NET Data query format understood
+ * by the Syntera.Api grid endpoints (`/api/{entity}/grid`), which use the
+ * `DevExtreme.AspNet.Data` NuGet package with `DataSourceLoadOptions`.
+ */
+
+/**
  * Table state compatible with DevExtreme protocol
  */
 export interface DevExtremeLazyState {

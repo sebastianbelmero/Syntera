@@ -1,5 +1,5 @@
 import type { SortingState, PaginationState, ColumnFiltersState } from '@tanstack/react-table';
-import type { DevExtremeLazyState } from '../../core/DevExtremeAdapter';
+import type { DevExtremeLazyState } from '../../lib/devextreme';
 
 /**
  * Converts TanStack Table state into the DevExtreme query payload

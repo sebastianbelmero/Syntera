@@ -1,12 +1,12 @@
 import {
   AppGrid,
   Column,
+  Badge,
   type ColumnProps,
-} from "../../kalventis/ui";
-import { Badge } from "../../kalventis/ui";
+} from "../../components";
 
 /**
- * SuppliersPage — migrated to kalventis-ui AppGrid + AppDynamicForm
+ * SuppliersPage — migrated to the in-house AppGrid + AppDynamicForm
  * pattern. A single ColumnProps[] schema drives BOTH grid display
  * AND form editing (AppDynamicForm auto-generates form fields from
  * the same Column definitions).

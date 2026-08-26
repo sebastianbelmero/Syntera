@@ -8,10 +8,10 @@ import type { ProductDto, DrugClass } from "../../types";
 import { formatIDR, formatNumber, formatDate, daysUntil } from "../../lib/format";
 import {
   AppGrid,
+  Modal,
+  Badge,
   type ColumnProps,
-} from "../../kalventis/ui";
-import { Modal } from "../../kalventis/ui";
-import { Badge } from "../../kalventis/ui";
+} from "../../components";
 import { ApiError } from "../../api/client";
 
 const DRUG_CLASS_LABELS: Record<DrugClass, string> = {
@@ -23,7 +23,7 @@ const DRUG_CLASS_LABELS: Record<DrugClass, string> = {
 };
 
 /**
- * ProductsPage — migrated to kalventis AppGrid + AppDynamicForm pattern.
+ * ProductsPage — migrated to the in-house AppGrid + AppDynamicForm pattern.
  *
  * - enableCrud auto-wires Add/Edit/Delete buttons + a Drawer holding an
  *   AppDynamicForm auto-generated from the ColumnProps[] schema below.
@@ -33,7 +33,7 @@ const DRUG_CLASS_LABELS: Record<DrugClass, string> = {
  *   and the categories/suppliers already in the page's query cache are
  *   reused).
  * - Stock-adjustment flow (POST /api/products/{id}/stock) stays as a
- *   separate kalventis Modal because it's a stock-movement record, not
+ *   separate Modal because it's a stock-movement record, not
  *   a product upsert — it doesn't fit the AppDynamicForm pattern.
  *   Triggered via customActions(row) button in the grid.
  */
@@ -345,7 +345,7 @@ export default function ProductsPage() {
 }
 
 // ── Stock adjustment modal ──────────────────────────────────
-// Uses the kalventis Modal (focus-trapped + animated) with an inline
+// Uses the shared in-house Modal (focus-trapped + animated) with an inline
 // form. Not migrated to AppDynamicForm because the submit goes to
 // /api/products/{id}/stock (a movement record), not /api/products/{id}
 // (a product upsert) — different DTO shape, different validation,

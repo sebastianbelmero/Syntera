@@ -15,9 +15,7 @@
  *   - hexpharm   (Hexpharm Jaya — teal)
  *   - fima       (Fima — violet)
  *   - gof        (GOF — amber)
- *   - kalventis  (Kalventis — emerald green, the original placeholder
- *                 palette before the Syntera brand identity was
- *                 finalized; kept as a selectable option)
+ *   - kalventis  (Kalventis — emerald green)
  *
  * Each palette has:
  *   1. A `:root[data-theme="<name>"]` block for the light variant.
@@ -476,9 +474,7 @@
 }
 
 /* ============================================
-   KALVENTIS — Emerald green (legacy placeholder
-   palette from before the Syntera brand identity
-   was finalized; kept as a selectable option)
+   KALVENTIS — Emerald green (brand palette)
    ============================================ */
 :root[data-theme="kalventis"] {
   --background: #f4fbf7;
@@ -684,20 +680,18 @@ body {
 }
 
 /* ============================================
-   KALVENTIS-UI GRID STYLES (in-tree port)
-   Source: src/kalventis/styles.css
-   Copied verbatim (only the .app-grid-* +
-   .app-grid-mobile-* class definitions).
-   The :root/.dark/@theme inline blocks from
-   the original kalventis-ui styles.css are
-   NOT copied — Syntera's index.css already
-   defines its own palette tokens + Tailwind v4
-   @theme inline mapping. The kalventis-ui
-   .app-grid-* classes consume the same CSS
-   variable names (--primary, --background,
-   --card, --border, --muted, --ring, etc.)
-   so they automatically pick up the active
-   Syntera brand palette.
+   APP GRID STYLES (in-tree, Syntera-owned)
+   Originally adapted from the kalventis-ui v2.2.3
+   styles.css — only the .app-grid-* +
+   .app-grid-mobile-* class definitions were kept.
+   The :root/.dark/@theme inline blocks from the
+   original were NOT copied: Syntera's index.css
+   already defines its own palette tokens + Tailwind
+   v4 @theme inline mapping. These classes consume
+   the same CSS variable names (--primary,
+   --background, --card, --border, --muted, --ring,
+   etc.) so they automatically pick up the active
+   Syntera brand palette across all 7 themes.
    ============================================ */
 /* ============================================
    APP GRID — STYLES (v2.1.2 — compact density)

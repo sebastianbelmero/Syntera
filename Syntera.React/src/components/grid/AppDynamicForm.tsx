@@ -128,7 +128,7 @@ const DynamicField: React.FC<DynamicFieldProps> = ({
             if ('showPicker' in target) {
               try {
                 target.showPicker();
-              } catch (err) {}
+              } catch {}
             }
           }}
         />
@@ -197,26 +197,42 @@ const LookupSelect: React.FC<LookupSelectProps> = ({
   inputClass,
   apiClient,
 }) => {
-  const [options, setOptions] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+  // Options resolve synchronously when `dataSource` is a plain array;
+  // they are fetched asynchronously (via state) when it is an API URL.
+  // The loading flag is DERIVED (url-backed + not yet settled), so the
+  // effect never needs a synchronous setState at its start.
+  const [remoteOptions, setRemoteOptions] = useState<any[] | null>(null);
+  const [fetchFailed, setFetchFailed] = useState(false);
 
   useEffect(() => {
-    if (Array.isArray(lookup.dataSource)) {
-      setOptions(lookup.dataSource);
-    } else if (typeof lookup.dataSource === 'string' && apiClient) {
-      setLoading(true);
+    if (typeof lookup.dataSource === 'string' && apiClient) {
+      let cancelled = false;
       apiClient
         .get(lookup.dataSource)
         .then((res) => {
-          setOptions(res.data?.data || res.data);
-          setLoading(false);
+          if (!cancelled) setRemoteOptions(res.data?.data || res.data);
         })
         .catch((err) => {
           console.error('Failed fetching lookup:', err);
-          setLoading(false);
+          if (!cancelled) setFetchFailed(true);
         });
+      return () => {
+        cancelled = true;
+      };
     }
   }, [lookup.dataSource, apiClient]);
+
+  const options = Array.isArray(lookup.dataSource)
+    ? lookup.dataSource
+    : (remoteOptions ?? []);
+
+  // Derived loading state — a URL-backed lookup is loading until the
+  // first fetch settles (successfully or not).
+  const loading =
+    !Array.isArray(lookup.dataSource) &&
+    !!apiClient &&
+    remoteOptions === null &&
+    !fetchFailed;
 
   const getDisplayValue = (item: any) => {
     if (typeof lookup.displayExpr === 'function') {
@@ -263,28 +279,32 @@ const TagBoxSelect: React.FC<TagBoxSelectProps> = ({
   inputClass,
   apiClient,
 }) => {
-  const [options, setOptions] = useState<any[]>([]);
-  const [, setLoading] = useState(false);
+  // Options resolve synchronously when `dataSource` is a plain array;
+  // they are fetched asynchronously (via state) when it is an API URL.
+  const [remoteOptions, setRemoteOptions] = useState<any[] | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
-    if (Array.isArray(lookup.dataSource)) {
-      setOptions(lookup.dataSource);
-    } else if (typeof lookup.dataSource === 'string' && apiClient) {
-      setLoading(true);
+    if (typeof lookup.dataSource === 'string' && apiClient) {
+      let cancelled = false;
       apiClient
         .get(lookup.dataSource)
         .then((res) => {
-          setOptions(res.data?.data || res.data);
-          setLoading(false);
+          if (!cancelled) setRemoteOptions(res.data?.data || res.data);
         })
         .catch((err) => {
           console.error('Failed fetching tagbox:', err);
-          setLoading(false);
         });
+      return () => {
+        cancelled = true;
+      };
     }
   }, [lookup.dataSource, apiClient]);
+
+  const options = Array.isArray(lookup.dataSource)
+    ? lookup.dataSource
+    : (remoteOptions ?? []);
 
   const getDisplayValue = (item: any) => {
     if (typeof lookup.displayExpr === 'function') {

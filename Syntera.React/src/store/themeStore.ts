@@ -61,7 +61,7 @@ export const THEME_LABELS: Record<ThemeBrand, string> = {
  * Hex used for the swatch chip in the picker.
  * The `syntera` swatch matches the navy blue of the upper half of
  * the Syntera "S" icon per the official logo description.
- * The `kalventis` swatch is the original emerald placeholder.
+ * The `kalventis` swatch is the emerald green of the Kalventis brand.
  */
 export const THEME_SWATCH: Record<ThemeBrand, string> = {
   syntera: "#0B3D6F",
