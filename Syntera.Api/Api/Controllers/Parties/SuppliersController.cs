@@ -7,7 +7,6 @@ using Syntera.Application.Services;
 using Syntera.Application.Validators;
 using Syntera.Infrastructure.Data;
 using DevExtreme.AspNet.Data;
-using DevExtreme.AspNet.Mvc;
 
 namespace Syntera.Api.Controllers.Parties;
 

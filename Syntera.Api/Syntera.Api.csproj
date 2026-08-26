@@ -39,8 +39,10 @@
     <PackageReference Include="Swashbuckle.AspNetCore" Version="8.1.2" />
     <PackageReference Include="AspNetCore.HealthChecks.SqlServer" Version="9.0.0" />
     <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.0.11" />
-    <!-- DevExtreme ASP.NET Data — server-side DataSourceLoadOptions binder + DataSourceLoader for AppGrid -->
-    <PackageReference Include="DevExtreme.AspNet.Data" Version="2.10.2" />
+    <!-- DevExtreme ASP.NET Data — server-side DataSourceLoadOptions binder + DataSourceLoader for AppGrid.
+         v3.0.0 consolidated the MVC namespace (DevExtreme.AspNet.Mvc) into DevExtreme.AspNet.Data,
+         so [DataSourceRequest] + DataSourceLoadOptions both live in the single using line below. -->
+    <PackageReference Include="DevExtreme.AspNet.Data" Version="3.0.0" />
   </ItemGroup>
 
   <ItemGroup>

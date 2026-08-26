@@ -1,13 +1,17 @@
-import { Plus } from "lucide-react";
-import { useEffect, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { Plus } from "lucide-react";
 import { inventoryApi } from "../../api/operations";
 import { productApi } from "../../api/catalog";
-import type { InventoryMovementDto, InventoryMovementType } from "../../types";
+import type { InventoryMovementType } from "../../types";
 import { formatDateTime } from "../../lib/format";
-import { AppGrid, type AppGridColumn } from "../../components/AppGrid";
-import { Modal, Field, inputClass, btnPrimary, btnGhost } from "../../components/Modal";
+import {
+  AppGrid,
+  type ColumnProps,
+} from "../../kalventis/ui";
+import { Modal } from "../../kalventis/ui";
+import { Badge } from "../../kalventis/ui";
 import { ApiError } from "../../api/client";
 
 const TYPE_LABEL: Record<InventoryMovementType, string> = {
@@ -18,92 +22,124 @@ const TYPE_LABEL: Record<InventoryMovementType, string> = {
   Damage: "Kerusakan",
 };
 
-const TYPE_COLOR: Record<InventoryMovementType, string> = {
-  Inbound: "bg-[var(--success)]/15 text-[var(--success)]",
-  Outbound: "bg-[var(--info)]/15 text-[var(--info)]",
-  Adjustment: "bg-[var(--warning)]/15 text-[var(--warning)]",
-  Return: "bg-[var(--accent)]/30 text-[var(--accent-foreground)]",
-  Damage: "bg-[var(--danger)]/15 text-[var(--danger)]",
+const TYPE_VARIANT: Record<InventoryMovementType, "success" | "info" | "warning" | "secondary" | "destructive"> = {
+  Inbound: "success",
+  Outbound: "info",
+  Adjustment: "warning",
+  Return: "secondary",
+  Damage: "destructive",
 };
 
+/**
+ * InventoryPage — migrated to kalventis AppGrid pattern for display.
+ * The record-movement form stays as a separate Modal (not AppDynamicForm)
+ * because:
+ *   1. The submit goes to /api/inventory (a movement record, not an
+ *      inventory upsert — different DTO).
+ *   2. Quantity auto-signing logic (Inbound/Adjustment = +, others = -)
+ *      needs custom transform between UI and API.
+ *   3. The product picker fetches a fresh product list lazily on modal
+ *      open (was previously a render-body fetch — moved to useEffect
+ *      to avoid StrictMode double-fire + render flood).
+ *
+ * The grid itself uses the new pattern: enableFiltering + enableColumnChooser
+ * + globalFilterFields + DevExtreme server-side protocol via
+ * /api/inventory/grid. enableCrud is OFF because movements are append-only
+ * (no edit/delete) — the API doesn't support either.
+ */
 export default function InventoryPage() {
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
 
-  const columns: AppGridColumn<InventoryMovementDto>[] = [
+  // Fetch product list for the record-movement form's product picker.
+  // Loaded eagerly so the modal opens instantly with options populated
+  // (was lazy-loaded in the modal's useEffect in the previous version).
+  const productsQuery = useQuery({
+    queryKey: ["products-list-for-picker"],
+    queryFn: () => productApi.search({ pageSize: 200 }),
+  });
+
+  const columns: ColumnProps[] = useMemo(() => [
     {
-      key: "createdAt",
-      header: "Waktu",
-      sortable: true,
-      sortAccessor: (m) => m.createdAt,
+      dataField: "createdAt",
+      caption: "Waktu",
+      dataType: "date",
       hideOnMobile: true,
-      render: (m) => <span className="text-xs">{formatDateTime(m.createdAt)}</span>,
+      cellRender: ({ row }: any) => (
+        <span className="text-xs">{formatDateTime(row.createdAt)}</span>
+      ),
     },
     {
-      key: "product",
-      header: "Produk",
-      render: (m) => (
+      dataField: "productName",
+      caption: "Produk",
+      allowEditing: false,
+      visibleInForm: false,
+      cellRender: ({ row }: any) => (
         <div>
-          <p className="font-medium">{m.productName}</p>
-          <p className="text-xs text-[var(--muted-foreground)]">{m.productSku}</p>
+          <p className="font-medium text-[var(--card-foreground)]">{row.productName}</p>
+          <p className="text-xs text-[var(--muted-foreground)]">{row.productSku}</p>
         </div>
       ),
     },
     {
-      key: "type",
-      header: "Jenis",
-      sortable: true,
-      sortAccessor: (m) => m.type,
-      render: (m) => (
-        <span className={`rounded-full px-2 py-1 text-xs ${TYPE_COLOR[m.type]}`}>
-          {TYPE_LABEL[m.type]}
+      dataField: "type",
+      caption: "Jenis",
+      cellRender: ({ row }: any) => (
+        <Badge variant={TYPE_VARIANT[row.type as InventoryMovementType]}>
+          {TYPE_LABEL[row.type as InventoryMovementType]}
+        </Badge>
+      ),
+    },
+    {
+      dataField: "quantity",
+      caption: "Quantity",
+      dataType: "number",
+      alignment: "right",
+      cellRender: ({ row }: any) => (
+        <span className={`font-semibold ${row.quantity > 0 ? "text-[var(--success)]" : "text-[var(--danger)]"}`}>
+          {row.quantity > 0 ? "+" : ""}{row.quantity}
         </span>
       ),
     },
     {
-      key: "qty",
-      header: "Quantity",
-      align: "right",
-      sortable: true,
-      sortAccessor: (m) => m.quantity,
-      render: (m) => (
-        <span className={`font-semibold ${m.quantity > 0 ? "text-[var(--success)]" : "text-[var(--danger)]"}`}>
-          {m.quantity > 0 ? "+" : ""}{m.quantity}
-        </span>
+      dataField: "balanceAfter",
+      caption: "Saldo",
+      dataType: "number",
+      alignment: "right",
+      hideOnMobile: true,
+      cellRender: ({ row }: any) => (
+        <span className="font-medium">{row.balanceAfter}</span>
       ),
     },
     {
-      key: "balance",
-      header: "Saldo",
-      align: "right",
+      dataField: "reference",
+      caption: "Referensi",
       hideOnMobile: true,
-      render: (m) => <span className="font-medium">{m.balanceAfter}</span>,
-    },
-    {
-      key: "ref",
-      header: "Referensi",
-      hideOnMobile: true,
-      render: (m) => (
+      cellRender: ({ row }: any) => (
         <span className="text-xs text-[var(--muted-foreground)]">
-          {m.reference ?? "—"}
+          {row.reference ?? "—"}
         </span>
       ),
     },
     {
-      key: "note",
-      header: "Catatan",
+      dataField: "note",
+      caption: "Catatan",
       hideOnMobile: true,
-      render: (m) => (
-        <span className="text-xs text-[var(--muted-foreground)]">{m.note ?? "—"}</span>
+      cellRender: ({ row }: any) => (
+        <span className="text-xs text-[var(--muted-foreground)]">
+          {row.note ?? "—"}
+        </span>
       ),
     },
-  ];
+  ], []);
 
   return (
     <div className="flex flex-col gap-4">
       <header className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">Persediaan</h2>
+          <h2 className="text-2xl font-bold tracking-tight text-[var(--card-foreground)]">
+            Persediaan
+          </h2>
           <p className="text-sm text-[var(--muted-foreground)]">
             Ledger pergerakan stok — single source of truth untuk
             on-hand quantity.
@@ -112,28 +148,36 @@ export default function InventoryPage() {
         <button
           type="button"
           onClick={() => setCreateOpen(true)}
-          className={`${btnPrimary} flex items-center gap-2`}
+          className="app-grid-btn app-grid-btn-primary"
         >
-          <Plus size={16} /> Catat Pergerakan
+          <Plus size={14} className="mr-1.5" /> Catat Pergerakan
         </button>
       </header>
 
-      <AppGrid<InventoryMovementDto>
-        columns={columns}
-        rowKey={(m) => m.id}
-        load={async ({ page, pageSize, search }) => {
-          const res = await inventoryApi.page({ page, pageSize, search });
-          return { items: res.items, total: res.total, totalPages: res.totalPages };
-        }}
+      <AppGrid
+        apiEndpoint="/api/inventory/grid"
+        enableFiltering
+        enableSorting
+        enableColumnChooser
+        enablePagination
+        enableStatePersistence
+        persistenceKey="inventory-grid"
+        globalFilterFields={["productName", "productSku", "reference", "note"]}
+        title="Riwayat Pergerakan Stok"
+        pageSize={10}
+        dynamicColumns={columns}
       />
 
       {createOpen && (
         <InventoryFormModal
-          open
+          isOpen
+          products={productsQuery.data?.items ?? []}
+          productsLoading={productsQuery.isLoading}
           onClose={() => setCreateOpen(false)}
           onSaved={() => {
             void queryClient.invalidateQueries({ queryKey: ["inventory"] });
             void queryClient.invalidateQueries({ queryKey: ["products"] });
+            void queryClient.invalidateQueries({ queryKey: ["dashboard-summary"] });
             setCreateOpen(false);
           }}
         />
@@ -142,42 +186,25 @@ export default function InventoryPage() {
   );
 }
 
+// ── Record movement form modal ─────────────────────────────
+// Uses kalventis Modal (focus-trapped + animated) with an inline form.
+// Not migrated to AppDynamicForm because the submit semantics differ
+// from a standard CRUD upsert (signed quantity + endpoint is
+// /api/inventory, not /api/inventory/{id}).
 function InventoryFormModal({
-  open,
+  isOpen,
+  products,
+  productsLoading,
   onClose,
   onSaved,
 }: {
-  open: boolean;
+  isOpen: boolean;
+  products: { id: string; name: string; sku: string }[];
+  productsLoading: boolean;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const [submitting, setSubmitting] = useState(false);
-  const [products, setProducts] = useState<{ id: string; name: string; sku: string }[]>([]);
-  const [productsLoading, setProductsLoading] = useState(true);
-
-  // Lazy load product list when modal first mounts. Previously
-  // fired in the render body — flooded the API on every keystroke
-  // (any state change re-evaluates the if-block) and double-fired
-  // under React 18 StrictMode dev.
-  useEffect(() => {
-    let cancelled = false;
-    setProductsLoading(true);
-    productApi
-      .search({ pageSize: 200 })
-      .then((res) => {
-        if (cancelled) return;
-        setProducts(res.items.map((p) => ({ id: p.id, name: p.name, sku: p.sku })));
-      })
-      .catch((e: unknown) => {
-        if (cancelled) return;
-        const msg = e instanceof ApiError ? e.message : "Gagal memuat daftar produk.";
-        toast.error(msg);
-      })
-      .finally(() => {
-        if (!cancelled) setProductsLoading(false);
-      });
-    return () => { cancelled = true; };
-  }, []);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -208,23 +235,41 @@ function InventoryFormModal({
 
   return (
     <Modal
-      open={open}
+      isOpen={isOpen}
       onClose={onClose}
       title="Catat Pergerakan Stok"
-      description="Pilih produk dan masukkan quantity. Tanda quantity otomatis mengikuti jenis pergerakan."
-      size="lg"
+      width="w-full sm:max-w-lg"
       footer={
-        <>
-          <button type="button" className={btnGhost} onClick={onClose}>Batal</button>
-          <button type="submit" form="inv-form" disabled={submitting} className={btnPrimary}>
+        <div className="flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="app-grid-btn" disabled={submitting}>
+            Batal
+          </button>
+          <button
+            type="submit"
+            form="inv-form"
+            disabled={submitting}
+            className="app-grid-btn app-grid-btn-primary"
+          >
             {submitting ? "Menyimpan…" : "Simpan"}
           </button>
-        </>
+        </div>
       }
     >
+      <p className="mb-4 text-xs text-[var(--muted-foreground)]">
+        Pilih produk dan masukkan quantity. Tanda quantity otomatis mengikuti jenis pergerakan.
+      </p>
       <form id="inv-form" onSubmit={handleSubmit} className="space-y-3">
-        <Field label="Produk" required>
-          <select name="productId" className={inputClass} required defaultValue="" disabled={productsLoading}>
+        <div className="flex flex-col gap-1.5">
+          <label className="text-[13px] font-bold text-[var(--card-foreground)]">
+            Produk <span className="text-[var(--danger)]">*</span>
+          </label>
+          <select
+            name="productId"
+            className="app-grid-filter-input"
+            required
+            defaultValue=""
+            disabled={productsLoading}
+          >
             <option value="" disabled>
               {productsLoading ? "Memuat…" : "Pilih produk…"}
             </option>
@@ -232,25 +277,33 @@ function InventoryFormModal({
               <option key={p.id} value={p.id}>{p.name} ({p.sku})</option>
             ))}
           </select>
-        </Field>
+        </div>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Jenis Pergerakan" required>
-            <select name="type" className={inputClass} defaultValue="Inbound" required>
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[13px] font-bold text-[var(--card-foreground)]">
+              Jenis Pergerakan <span className="text-[var(--danger)]">*</span>
+            </label>
+            <select name="type" className="app-grid-filter-input" defaultValue="Inbound" required>
               {Object.entries(TYPE_LABEL).map(([k, v]) => (
                 <option key={k} value={k}>{v}</option>
               ))}
             </select>
-          </Field>
-          <Field label="Quantity" required>
-            <input name="quantity" type="number" min={1} defaultValue={1} className={inputClass} required />
-          </Field>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[13px] font-bold text-[var(--card-foreground)]">
+              Quantity <span className="text-[var(--danger)]">*</span>
+            </label>
+            <input name="quantity" type="number" min={1} defaultValue={1} className="app-grid-filter-input" required />
+          </div>
         </div>
-        <Field label="Referensi" hint="cth. nomor PO, nomor invoice, dll.">
-          <input name="reference" className={inputClass} />
-        </Field>
-        <Field label="Catatan">
-          <textarea name="note" rows={2} className={inputClass} />
-        </Field>
+        <div className="flex flex-col gap-1.5">
+          <label className="text-[13px] font-bold text-[var(--card-foreground)]">Referensi</label>
+          <input name="reference" className="app-grid-filter-input" placeholder="cth. nomor PO, nomor invoice, dll." />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <label className="text-[13px] font-bold text-[var(--card-foreground)]">Catatan</label>
+          <textarea name="note" rows={2} className="app-grid-filter-input" />
+        </div>
       </form>
     </Modal>
   );

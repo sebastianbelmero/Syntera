@@ -1,13 +1,17 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Plus, Pencil, PackagePlus, AlertCircle } from "lucide-react";
+import { PackagePlus, AlertCircle } from "lucide-react";
 import { productApi } from "../../api/catalog";
 import { categoryApi, supplierApi } from "../../api/catalog";
-import type { ProductDto, ProductUpsertDto, DrugClass } from "../../types";
+import type { ProductDto, DrugClass } from "../../types";
 import { formatIDR, formatNumber, formatDate, daysUntil } from "../../lib/format";
-import { AppGrid, type AppGridColumn } from "../../components/AppGrid";
-import { Modal, Field, inputClass, btnPrimary, btnGhost } from "../../components/Modal";
+import {
+  AppGrid,
+  type ColumnProps,
+} from "../../kalventis/ui";
+import { Modal } from "../../kalventis/ui";
+import { Badge } from "../../kalventis/ui";
 import { ApiError } from "../../api/client";
 
 const DRUG_CLASS_LABELS: Record<DrugClass, string> = {
@@ -18,12 +22,29 @@ const DRUG_CLASS_LABELS: Record<DrugClass, string> = {
   Narcotic: "Narkotika",
 };
 
+/**
+ * ProductsPage — migrated to kalventis AppGrid + AppDynamicForm pattern.
+ *
+ * - enableCrud auto-wires Add/Edit/Delete buttons + a Drawer holding an
+ *   AppDynamicForm auto-generated from the ColumnProps[] schema below.
+ * - category/supplier lookups are fetched by react-query + injected as
+ *   inline arrays (lookup.dataSource accepts both URLs and arrays; we
+ *   pass arrays so AppDynamicForm doesn't need to call apiClient again
+ *   and the categories/suppliers already in the page's query cache are
+ *   reused).
+ * - Stock-adjustment flow (POST /api/products/{id}/stock) stays as a
+ *   separate kalventis Modal because it's a stock-movement record, not
+ *   a product upsert — it doesn't fit the AppDynamicForm pattern.
+ *   Triggered via customActions(row) button in the grid.
+ */
 export default function ProductsPage() {
   const queryClient = useQueryClient();
-  const [createOpen, setCreateOpen] = useState(false);
-  const [editing, setEditing] = useState<ProductDto | null>(null);
   const [adjusting, setAdjusting] = useState<ProductDto | null>(null);
 
+  // Fetch categories + suppliers for the lookup dropdowns. Reused by
+  // both the form (LookupSelect in AppDynamicForm) and... well, just
+  // the form. The grid display uses categoryName/supplierName which
+  // the API already projects onto the row.
   const categories = useQuery({
     queryKey: ["categories-list"],
     queryFn: () => categoryApi.page({ pageSize: 200 }),
@@ -33,63 +54,211 @@ export default function ProductsPage() {
     queryFn: () => supplierApi.page({ pageSize: 200 }),
   });
 
-  const columns: AppGridColumn<ProductDto>[] = [
+  const columns: ColumnProps[] = useMemo(() => [
     {
-      key: "name",
-      header: "Produk",
-      sortable: true,
-      sortAccessor: (p) => p.name,
-      render: (p) => (
+      dataField: "name",
+      caption: "Produk",
+      editorType: "text",
+      validationRules: [{ type: "required", message: "Nama wajib diisi." }],
+      cellRender: ({ row }: any) => (
         <div className="min-w-[200px]">
-          <p className="font-medium">{p.name}</p>
+          <p className="font-medium text-[var(--card-foreground)]">{row.name}</p>
           <p className="text-xs text-[var(--muted-foreground)]">
-            {p.sku} • {p.genericName ?? "—"}
+            {row.sku} • {row.genericName ?? "—"}
           </p>
         </div>
       ),
     },
     {
-      key: "category",
-      header: "Kategori",
-      sortable: true,
-      sortAccessor: (p) => p.categoryName,
-      hideOnMobile: true,
-      render: (p) => <span className="text-xs">{p.categoryName}</span>,
+      dataField: "sku",
+      caption: "SKU",
+      editorType: "text",
+      validationRules: [{ type: "required", message: "SKU wajib diisi." }],
+      hint: "Stock Keeping Unit — unik.",
+      visibleInGrid: false,
     },
     {
-      key: "supplier",
-      header: "Pemasok",
-      sortable: true,
-      sortAccessor: (p) => p.supplierName,
-      hideOnMobile: true,
-      render: (p) => <span className="text-xs">{p.supplierName}</span>,
+      dataField: "barcode",
+      caption: "Barcode",
+      editorType: "text",
+      hint: "EAN-13 / UPC-A. Dipakai untuk scan POS.",
+      placeholder: "cth. 8991234567890",
+      visibleInGrid: false,
     },
     {
-      key: "drugClass",
-      header: "Golongan",
-      hideOnMobile: true,
-      render: (p) => (
-        <span className="rounded-full bg-[var(--surface)] px-2 py-1 text-xs">
-          {DRUG_CLASS_LABELS[p.drugClass]}
-        </span>
+      dataField: "registrationNumber",
+      caption: "No. Registrasi BPOM",
+      editorType: "text",
+      visibleInGrid: false,
+    },
+    {
+      dataField: "genericName",
+      caption: "Nama Generik",
+      editorType: "text",
+      visibleInGrid: false,
+    },
+    {
+      dataField: "brandName",
+      caption: "Nama Brand",
+      editorType: "text",
+      visibleInGrid: false,
+    },
+    {
+      dataField: "manufacturer",
+      caption: "Pabrikan",
+      editorType: "text",
+      visibleInGrid: false,
+    },
+    {
+      dataField: "drugClass",
+      caption: "Golongan Obat",
+      editorType: "combobox",
+      lookup: {
+        dataSource: Object.entries(DRUG_CLASS_LABELS).map(([k, v]) => ({ value: k, label: v })),
+        valueExpr: "value",
+        displayExpr: "label",
+      },
+      validationRules: [{ type: "required", message: "Golongan wajib dipilih." }],
+      cellRender: ({ row }: any) => (
+        <Badge variant="outline">{DRUG_CLASS_LABELS[row.drugClass as DrugClass]}</Badge>
       ),
     },
     {
-      key: "stock",
-      header: "Stok",
-      align: "right",
-      sortable: true,
-      sortAccessor: (p) => p.stock,
-      render: (p) => {
-        const expired = p.isExpired;
-        const low = p.isLowStock;
+      dataField: "potency",
+      caption: "Potensi",
+      editorType: "text",
+      hint: "cth. '500 mg'",
+      visibleInGrid: false,
+    },
+    {
+      dataField: "packSize",
+      caption: "Ukuran Kemasan",
+      editorType: "text",
+      hint: "cth. 'Strip @ 10 kaplet'",
+      visibleInGrid: false,
+    },
+    {
+      dataField: "categoryId",
+      caption: "Kategori",
+      editorType: "combobox",
+      lookup: {
+        dataSource: categories.data?.items ?? [],
+        valueExpr: "id",
+        displayExpr: "name",
+      },
+      validationRules: [{ type: "required", message: "Kategori wajib dipilih." }],
+      cellRender: ({ row }: any) => (
+        <span className="text-xs">{row.categoryName ?? "—"}</span>
+      ),
+      hideOnMobile: true,
+    },
+    {
+      dataField: "supplierId",
+      caption: "Pemasok",
+      editorType: "combobox",
+      lookup: {
+        dataSource: suppliers.data?.items ?? [],
+        valueExpr: "id",
+        displayExpr: "name",
+      },
+      validationRules: [{ type: "required", message: "Pemasok wajib dipilih." }],
+      cellRender: ({ row }: any) => (
+        <span className="text-xs">{row.supplierName ?? "—"}</span>
+      ),
+      hideOnMobile: true,
+    },
+    {
+      dataField: "costPrice",
+      caption: "Harga Modal",
+      editorType: "number",
+      dataType: "number",
+      validationRules: [{ type: "required", message: "Harga modal wajib diisi." }],
+      min: 0,
+      step: 100,
+      visibleInGrid: false,
+    },
+    {
+      dataField: "sellingPrice",
+      caption: "Harga Jual",
+      editorType: "number",
+      dataType: "number",
+      validationRules: [{ type: "required", message: "Harga jual wajib diisi." }],
+      min: 0,
+      step: 100,
+      cellRender: ({ row }: any) => (
+        <div className="text-right">
+          <span className="font-semibold">{formatIDR(row.sellingPrice)}</span>
+          <p className="text-[10px] text-[var(--muted-foreground)]">
+            modal {formatIDR(row.costPrice)}
+          </p>
+        </div>
+      ),
+    },
+    {
+      dataField: "discountPrice",
+      caption: "Harga Diskon",
+      editorType: "number",
+      dataType: "number",
+      min: 0,
+      step: 100,
+      hint: "Kosongkan jika tidak ada diskon.",
+      placeholder: "cth. 8500",
+      visibleInGrid: false,
+    },
+    {
+      dataField: "reorderLevel",
+      caption: "Reorder Level",
+      editorType: "number",
+      dataType: "number",
+      min: 0,
+      hint: "Ambang batas stok minimum",
+      visibleInGrid: false,
+    },
+    {
+      dataField: "expiryDate",
+      caption: "Kadaluarsa",
+      editorType: "text", // AppDynamicForm's date editorType triggers native date picker
+      dataType: "date",
+      hideOnMobile: true,
+      cellRender: ({ row }: any) => {
+        if (!row.expiryDate) return <span className="text-xs">—</span>;
+        const d = daysUntil(row.expiryDate);
+        const isClose = d !== null && d < 30;
+        return (
+          <span className={`text-xs ${isClose ? "text-[var(--warning)]" : ""}`}>
+            {formatDate(row.expiryDate)}
+            {d !== null && (
+              <span className="block text-[10px] text-[var(--muted-foreground)]">
+                {d > 0 ? `${d} hari lagi` : "sudah lewat"}
+              </span>
+            )}
+          </span>
+        );
+      },
+    },
+    {
+      dataField: "batchNumber",
+      caption: "No. Batch",
+      editorType: "text",
+      visibleInGrid: false,
+    },
+    {
+      dataField: "stock",
+      caption: "Stok",
+      dataType: "number",
+      alignment: "right",
+      allowEditing: false,
+      visibleInForm: false,
+      cellRender: ({ row }: any) => {
+        const expired = row.isExpired;
+        const low = row.isLowStock;
         return (
           <div className="flex flex-col gap-0.5">
             <span className={low ? "font-bold text-[var(--warning)]" : "font-semibold"}>
-              {formatNumber(p.stock)}
+              {formatNumber(row.stock)}
             </span>
             <span className="text-[10px] text-[var(--muted-foreground)]">
-              reorder: {p.reorderLevel}
+              reorder: {row.reorderLevel}
             </span>
             {expired && (
               <span className="flex items-center gap-1 text-[10px] font-semibold text-[var(--danger)]">
@@ -101,403 +270,86 @@ export default function ProductsPage() {
       },
     },
     {
-      key: "expiry",
-      header: "Kadaluarsa",
-      hideOnMobile: true,
-      sortable: true,
-      sortAccessor: (p) => p.expiryDate ?? "",
-      render: (p) => {
-        if (!p.expiryDate) return <span className="text-xs">—</span>;
-        const d = daysUntil(p.expiryDate);
-        const isClose = d !== null && d < 30;
-        return (
-          <span className={`text-xs ${isClose ? "text-[var(--warning)]" : ""}`}>
-            {formatDate(p.expiryDate)}
-            {d !== null && (
-              <span className="block text-[10px] text-[var(--muted-foreground)]">
-                {d > 0 ? `${d} hari lagi` : "sudah lewat"}
-              </span>
-            )}
-          </span>
-        );
-      },
+      dataField: "isActive",
+      caption: "Aktif",
+      dataType: "boolean",
+      editorType: "switch",
+      visibleInGrid: false,
     },
     {
-      key: "price",
-      header: "Harga",
-      align: "right",
-      sortable: true,
-      sortAccessor: (p) => p.sellingPrice,
-      render: (p) => (
-        <div className="text-right">
-          <span className="font-semibold">{formatIDR(p.sellingPrice)}</span>
-          <p className="text-[10px] text-[var(--muted-foreground)]">
-            modal {formatIDR(p.costPrice)}
-          </p>
-        </div>
-      ),
+      dataField: "createdAt",
+      caption: "Dibuat",
+      dataType: "date",
+      visibleInGrid: false,
+      visibleInForm: false,
+      allowFiltering: false,
+      allowEditing: false,
     },
-    {
-      key: "actions",
-      header: "",
-      align: "right",
-      render: (p) => (
-        <div className="flex items-center justify-end gap-1">
-          <button
-            type="button"
-            onClick={() => setAdjusting(p)}
-            className="rounded-md p-1.5 text-[var(--muted-foreground)] transition hover:bg-[var(--surface)] hover:text-[var(--primary)]"
-            title="Sesuaikan stok"
-            aria-label="Sesuaikan stok"
-          >
-            <PackagePlus size={16} />
-          </button>
-          <button
-            type="button"
-            onClick={() => setEditing(p)}
-            className="rounded-md p-1.5 text-[var(--muted-foreground)] transition hover:bg-[var(--surface)] hover:text-[var(--primary)]"
-            title="Edit produk"
-            aria-label="Edit produk"
-          >
-            <Pencil size={16} />
-          </button>
-        </div>
-      ),
-    },
-  ];
+  ], [categories.data, suppliers.data]);
 
-  const handleSaved = () => {
+  const handleStockSaved = () => {
     void queryClient.invalidateQueries({ queryKey: ["products"] });
     void queryClient.invalidateQueries({ queryKey: ["dashboard-summary"] });
-    setCreateOpen(false);
-    setEditing(null);
+    setAdjusting(null);
   };
 
   return (
     <div className="flex flex-col gap-4">
-      <header className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight">Produk</h2>
-          <p className="text-sm text-[var(--muted-foreground)]">
-            Katalog obat, suplemen, dan produk kesehatan lainnya.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setCreateOpen(true)}
-          className={`${btnPrimary} flex items-center gap-2`}
-        >
-          <Plus size={16} /> Produk Baru
-        </button>
+      <header>
+        <h2 className="text-2xl font-bold tracking-tight text-[var(--card-foreground)]">
+          Produk
+        </h2>
+        <p className="text-sm text-[var(--muted-foreground)]">
+          Katalog obat, suplemen, dan produk kesehatan lainnya.
+        </p>
       </header>
 
-      <AppGrid<ProductDto>
-        columns={columns}
-        rowKey={(p) => p.id}
-        load={async ({ page, pageSize, search }) => {
-          const res = await productApi.search({ page, pageSize, search });
-          return { items: res.items, total: res.total, totalPages: res.totalPages };
-        }}
-        emptyMessage="Belum ada produk. Klik 'Produk Baru' untuk menambahkan."
+      <AppGrid
+        apiEndpoint="/api/products/grid"
+        enableCrud
+        allowAdd
+        allowEdit
+        allowDelete={false}
+        enableFiltering
+        enableSorting
+        enableColumnChooser
+        enablePagination
+        enableStatePersistence
+        persistenceKey="products-grid"
+        globalFilterFields={["name", "sku", "barcode", "genericName", "brandName", "manufacturer", "categoryName", "supplierName"]}
+        title="Daftar Produk"
+        pageSize={10}
+        dynamicColumns={columns}
+        customActions={(row: any) => (
+          <button
+            type="button"
+            onClick={() => setAdjusting(row)}
+            className="rounded p-1.5 text-[var(--primary)] transition-colors hover:bg-[var(--primary)]/10"
+            title="Sesuaikan stok"
+            aria-label="Sesuaikan stok"
+          >
+            <PackagePlus size={14} />
+          </button>
+        )}
       />
-
-      {(createOpen || editing) && (
-        <ProductFormModal
-          open
-          product={editing}
-          categories={categories.data?.items ?? []}
-          suppliers={suppliers.data?.items ?? []}
-          onClose={() => {
-            setCreateOpen(false);
-            setEditing(null);
-          }}
-          onSaved={handleSaved}
-        />
-      )}
 
       {adjusting && (
         <StockAdjustModal
           product={adjusting}
           onClose={() => setAdjusting(null)}
-          onSaved={() => {
-            void queryClient.invalidateQueries({ queryKey: ["products"] });
-            setAdjusting(null);
-          }}
+          onSaved={handleStockSaved}
         />
       )}
     </div>
   );
 }
 
-// ── Product form (create / update) ───────────────────────────
-function ProductFormModal({
-  open,
-  product,
-  categories,
-  suppliers,
-  onClose,
-  onSaved,
-}: {
-  open: boolean;
-  product: ProductDto | null;
-  categories: { id: string; name: string }[];
-  suppliers: { id: string; name: string }[];
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const isEdit = !!product;
-  const [submitting, setSubmitting] = useState(false);
-
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setSubmitting(true);
-    try {
-      const fd = new FormData(e.currentTarget);
-      const dto: ProductUpsertDto = {
-        name: String(fd.get("name") ?? ""),
-        sku: String(fd.get("sku") ?? ""),
-        barcode: (fd.get("barcode") as string) || null,
-        registrationNumber: (fd.get("registrationNumber") as string) || null,
-        genericName: (fd.get("genericName") as string) || null,
-        brandName: (fd.get("brandName") as string) || null,
-        manufacturer: (fd.get("manufacturer") as string) || null,
-        drugClass: fd.get("drugClass") as DrugClass,
-        potency: (fd.get("potency") as string) || null,
-        packSize: (fd.get("packSize") as string) || null,
-        costPrice: Number(fd.get("costPrice") ?? 0),
-        sellingPrice: Number(fd.get("sellingPrice") ?? 0),
-        discountPrice: fd.get("discountPrice")
-          ? Number(fd.get("discountPrice"))
-          : null,
-        reorderLevel: Number(fd.get("reorderLevel") ?? 0),
-        expiryDate: (fd.get("expiryDate") as string)
-          ? new Date(fd.get("expiryDate") as string).toISOString()
-          : null,
-        batchNumber: (fd.get("batchNumber") as string) || null,
-        isActive: fd.get("isActive") === "on",
-        categoryId: String(fd.get("categoryId") ?? ""),
-        supplierId: String(fd.get("supplierId") ?? ""),
-      };
-      if (isEdit && product) {
-        await productApi.update(product.id, dto);
-        toast.success("Produk diperbarui.");
-      } else {
-        await productApi.create(dto);
-        toast.success("Produk ditambahkan.");
-      }
-      onSaved();
-    } catch (err) {
-      const apiErr = err as ApiError;
-      toast.error(apiErr.message ?? "Gagal menyimpan produk.");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title={isEdit ? "Edit Produk" : "Tambah Produk"}
-      description="Isi data sesuai label kemasan dan nomor registrasi BPOM."
-      size="xl"
-      footer={
-        <>
-          <button type="button" className={btnGhost} onClick={onClose}>
-            Batal
-          </button>
-          <button
-            type="submit"
-            form="product-form"
-            disabled={submitting}
-            className={btnPrimary}
-          >
-            {submitting ? "Menyimpan…" : "Simpan"}
-          </button>
-        </>
-      }
-    >
-      <form id="product-form" onSubmit={handleSubmit} className="grid grid-cols-2 gap-3">
-        <Field label="Nama Produk" required>
-          <input
-            name="name"
-            defaultValue={product?.name}
-            className={inputClass}
-            required
-          />
-        </Field>
-        <Field label="SKU" required hint="Stock Keeping Unit — unik.">
-          <input
-            name="sku"
-            defaultValue={product?.sku}
-            className={inputClass}
-            required
-          />
-        </Field>
-        <Field label="Nama Generik">
-          <input
-            name="genericName"
-            defaultValue={product?.genericName ?? ""}
-            className={inputClass}
-          />
-        </Field>
-        <Field label="Nama Brand">
-          <input
-            name="brandName"
-            defaultValue={product?.brandName ?? ""}
-            className={inputClass}
-          />
-        </Field>
-        <Field label="Pabrikan">
-          <input
-            name="manufacturer"
-            defaultValue={product?.manufacturer ?? ""}
-            className={inputClass}
-          />
-        </Field>
-        <Field label="No. Registrasi BPOM">
-          <input
-            name="registrationNumber"
-            defaultValue={product?.registrationNumber ?? ""}
-            className={inputClass}
-          />
-        </Field>
-        <Field label="Barcode" hint="EAN-13 / UPC-A. Dipakai untuk scan POS.">
-          <input
-            name="barcode"
-            defaultValue={product?.barcode ?? ""}
-            className={inputClass}
-            inputMode="numeric"
-            placeholder="cth. 8991234567890"
-          />
-        </Field>
-        <Field label="Golongan Obat">
-          <select
-            name="drugClass"
-            defaultValue={product?.drugClass ?? "OverTheCounter"}
-            className={inputClass}
-          >
-            {Object.entries(DRUG_CLASS_LABELS).map(([k, v]) => (
-              <option key={k} value={k}>{v}</option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Potensi / Kekuatan" hint="cth. '500 mg'">
-          <input
-            name="potency"
-            defaultValue={product?.potency ?? ""}
-            className={inputClass}
-          />
-        </Field>
-        <Field label="Ukuran Kemasan" hint="cth. 'Strip @ 10 kaplet'">
-          <input
-            name="packSize"
-            defaultValue={product?.packSize ?? ""}
-            className={inputClass}
-          />
-        </Field>
-        <Field label="No. Batch">
-          <input
-            name="batchNumber"
-            defaultValue={product?.batchNumber ?? ""}
-            className={inputClass}
-          />
-        </Field>
-        <Field label="Harga Modal (Rp)" required>
-          <input
-            name="costPrice"
-            type="number"
-            min={0}
-            step="100"
-            defaultValue={product?.costPrice ?? 0}
-            className={inputClass}
-            required
-          />
-        </Field>
-        <Field label="Harga Jual (Rp)" required>
-          <input
-            name="sellingPrice"
-            type="number"
-            min={0}
-            step="100"
-            defaultValue={product?.sellingPrice ?? 0}
-            className={inputClass}
-            required
-          />
-        </Field>
-        <Field label="Harga Diskon (Rp)" hint="Kosongkan jika tidak ada diskon.">
-          <input
-            name="discountPrice"
-            type="number"
-            min={0}
-            step="100"
-            defaultValue={product?.discountPrice ?? ""}
-            className={inputClass}
-            placeholder="cth. 8500"
-          />
-        </Field>
-        <Field label="Reorder Level" hint="Ambang batas stok minimum">
-          <input
-            name="reorderLevel"
-            type="number"
-            min={0}
-            defaultValue={product?.reorderLevel ?? 10}
-            className={inputClass}
-          />
-        </Field>
-        <Field label="Tanggal Kadaluarsa">
-          <input
-            name="expiryDate"
-            type="date"
-            defaultValue={
-              product?.expiryDate
-                ? new Date(product.expiryDate).toISOString().split("T")[0]
-                : ""
-            }
-            className={inputClass}
-          />
-        </Field>
-        <Field label="Kategori" required>
-          <select
-            name="categoryId"
-            defaultValue={product?.categoryId ?? ""}
-            className={inputClass}
-            required
-          >
-            <option value="">Pilih kategori…</option>
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Pemasok" required>
-          <select
-            name="supplierId"
-            defaultValue={product?.supplierId ?? ""}
-            className={inputClass}
-            required
-          >
-            <option value="">Pilih pemasok…</option>
-            {suppliers.map((s) => (
-              <option key={s.id} value={s.id}>{s.name}</option>
-            ))}
-          </select>
-        </Field>
-        <label className="col-span-2 mt-2 flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            name="isActive"
-            defaultChecked={product?.isActive ?? true}
-            className="h-4 w-4"
-          />
-          Produk aktif (ditampilkan di katalog)
-        </label>
-      </form>
-    </Modal>
-  );
-}
-
 // ── Stock adjustment modal ──────────────────────────────────
+// Uses the kalventis Modal (focus-trapped + animated) with an inline
+// form. Not migrated to AppDynamicForm because the submit goes to
+// /api/products/{id}/stock (a movement record), not /api/products/{id}
+// (a product upsert) — different DTO shape, different validation,
+// different semantics.
 function StockAdjustModal({
   product,
   onClose,
@@ -533,45 +385,61 @@ function StockAdjustModal({
 
   return (
     <Modal
-      open
+      isOpen
       onClose={onClose}
       title="Sesuaikan Stok"
-      description={`${product.name} — SKU ${product.sku} — Stok saat ini: ${formatNumber(product.stock)}`}
-      size="md"
+      width="w-full sm:max-w-md"
       footer={
-        <>
-          <button type="button" className={btnGhost} onClick={onClose}>
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="app-grid-btn"
+            disabled={submitting}
+          >
             Batal
           </button>
           <button
             type="submit"
             form="stock-form"
             disabled={submitting}
-            className={btnPrimary}
+            className="app-grid-btn app-grid-btn-primary"
           >
             {submitting ? "Menyimpan…" : "Simpan"}
           </button>
-        </>
+        </div>
       }
     >
+      <p className="mb-4 text-xs text-[var(--muted-foreground)]">
+        {product.name} — SKU {product.sku} — Stok saat ini: {formatNumber(product.stock)}
+      </p>
       <form id="stock-form" onSubmit={handleSubmit} className="space-y-3">
-        <Field label="Selisih Quantity" required hint="Positif = masuk, negatif = keluar.">
+        <div className="flex flex-col gap-1.5">
+          <label className="text-[13px] font-bold text-[var(--card-foreground)]">
+            Selisih Quantity <span className="text-[var(--danger)]">*</span>
+          </label>
           <input
             name="quantity"
             type="number"
             defaultValue={0}
-            className={inputClass}
+            className="app-grid-filter-input"
             required
           />
-        </Field>
-        <Field label="Catatan">
+          <span className="text-xs italic text-[var(--muted-foreground)]">
+            Positif = masuk, negatif = keluar.
+          </span>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <label className="text-[13px] font-bold text-[var(--card-foreground)]">
+            Catatan
+          </label>
           <textarea
             name="note"
             rows={3}
-            className={inputClass}
+            className="app-grid-filter-input"
             placeholder="cth. PO-2026-001, retur, kerusakan…"
           />
-        </Field>
+        </div>
       </form>
     </Modal>
   );
