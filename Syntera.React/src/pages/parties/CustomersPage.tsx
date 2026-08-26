@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { Plus, Pencil } from "lucide-react";
 import { customerApi } from "../../api/operations";
 import type { CustomerDto, CustomerUpsertDto } from "../../types";
-import { DataTable, type DataTableColumn } from "../../components/DataTable";
+import { AppGrid, type AppGridColumn } from "../../components/AppGrid";
 import { Modal, Field, inputClass, btnPrimary, btnGhost } from "../../components/Modal";
 import { ApiError } from "../../api/client";
 
@@ -13,10 +13,12 @@ export default function CustomersPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<CustomerDto | null>(null);
 
-  const columns: DataTableColumn<CustomerDto>[] = [
+  const columns: AppGridColumn<CustomerDto>[] = [
     {
       key: "name",
       header: "Pelanggan",
+      sortable: true,
+      sortAccessor: (c) => c.name,
       render: (c) => (
         <div>
           <p className="font-medium">{c.name}</p>
@@ -29,6 +31,7 @@ export default function CustomersPage() {
     {
       key: "contact",
       header: "Kontak",
+      hideOnMobile: true,
       render: (c) => (
         <div className="text-xs">
           {c.email && <p>{c.email}</p>}
@@ -39,11 +42,14 @@ export default function CustomersPage() {
     {
       key: "city",
       header: "Kota",
+      sortable: true,
+      sortAccessor: (c) => c.city ?? "",
       render: (c) => <span className="text-xs">{c.city ?? "—"}</span>,
     },
     {
       key: "tax",
       header: "NPWP",
+      hideOnMobile: true,
       render: (c) => (
         <span className="text-xs text-[var(--muted-foreground)]">{c.taxId ?? "—"}</span>
       ),
@@ -51,11 +57,16 @@ export default function CustomersPage() {
     {
       key: "orders",
       header: "Total Order",
+      align: "right",
+      sortable: true,
+      sortAccessor: (c) => c.totalOrders,
       render: (c) => <span className="text-xs">{c.totalOrders}</span>,
     },
     {
       key: "active",
       header: "Status",
+      sortable: true,
+      sortAccessor: (c) => (c.isActive ? 1 : 0),
       render: (c) => (
         <span
           className={`rounded-full px-2 py-1 text-xs ${
@@ -71,6 +82,7 @@ export default function CustomersPage() {
     {
       key: "actions",
       header: "",
+      align: "right",
       render: (c) => (
         <button
           type="button"
@@ -103,7 +115,7 @@ export default function CustomersPage() {
         </button>
       </header>
 
-      <DataTable<CustomerDto>
+      <AppGrid<CustomerDto>
         columns={columns}
         rowKey={(c) => c.id}
         load={async ({ page, pageSize, search }) => {

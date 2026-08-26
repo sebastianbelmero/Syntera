@@ -6,7 +6,7 @@ import { inventoryApi } from "../../api/operations";
 import { productApi } from "../../api/catalog";
 import type { InventoryMovementDto, InventoryMovementType } from "../../types";
 import { formatDateTime } from "../../lib/format";
-import { DataTable, type DataTableColumn } from "../../components/DataTable";
+import { AppGrid, type AppGridColumn } from "../../components/AppGrid";
 import { Modal, Field, inputClass, btnPrimary, btnGhost } from "../../components/Modal";
 import { ApiError } from "../../api/client";
 
@@ -30,10 +30,13 @@ export default function InventoryPage() {
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
 
-  const columns: DataTableColumn<InventoryMovementDto>[] = [
+  const columns: AppGridColumn<InventoryMovementDto>[] = [
     {
       key: "createdAt",
       header: "Waktu",
+      sortable: true,
+      sortAccessor: (m) => m.createdAt,
+      hideOnMobile: true,
       render: (m) => <span className="text-xs">{formatDateTime(m.createdAt)}</span>,
     },
     {
@@ -49,6 +52,8 @@ export default function InventoryPage() {
     {
       key: "type",
       header: "Jenis",
+      sortable: true,
+      sortAccessor: (m) => m.type,
       render: (m) => (
         <span className={`rounded-full px-2 py-1 text-xs ${TYPE_COLOR[m.type]}`}>
           {TYPE_LABEL[m.type]}
@@ -58,6 +63,9 @@ export default function InventoryPage() {
     {
       key: "qty",
       header: "Quantity",
+      align: "right",
+      sortable: true,
+      sortAccessor: (m) => m.quantity,
       render: (m) => (
         <span className={`font-semibold ${m.quantity > 0 ? "text-[var(--success)]" : "text-[var(--danger)]"}`}>
           {m.quantity > 0 ? "+" : ""}{m.quantity}
@@ -67,11 +75,14 @@ export default function InventoryPage() {
     {
       key: "balance",
       header: "Saldo",
+      align: "right",
+      hideOnMobile: true,
       render: (m) => <span className="font-medium">{m.balanceAfter}</span>,
     },
     {
       key: "ref",
       header: "Referensi",
+      hideOnMobile: true,
       render: (m) => (
         <span className="text-xs text-[var(--muted-foreground)]">
           {m.reference ?? "—"}
@@ -81,6 +92,7 @@ export default function InventoryPage() {
     {
       key: "note",
       header: "Catatan",
+      hideOnMobile: true,
       render: (m) => (
         <span className="text-xs text-[var(--muted-foreground)]">{m.note ?? "—"}</span>
       ),
@@ -106,7 +118,7 @@ export default function InventoryPage() {
         </button>
       </header>
 
-      <DataTable<InventoryMovementDto>
+      <AppGrid<InventoryMovementDto>
         columns={columns}
         rowKey={(m) => m.id}
         load={async ({ page, pageSize, search }) => {

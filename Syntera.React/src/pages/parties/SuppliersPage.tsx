@@ -5,7 +5,7 @@ import { Plus, Pencil } from "lucide-react";
 import { supplierApi } from "../../api/catalog";
 import type { SupplierDto, SupplierUpsertDto } from "../../types";
 import { formatDate } from "../../lib/format";
-import { DataTable, type DataTableColumn } from "../../components/DataTable";
+import { AppGrid, type AppGridColumn } from "../../components/AppGrid";
 import { Modal, Field, inputClass, btnPrimary, btnGhost } from "../../components/Modal";
 import { ApiError } from "../../api/client";
 
@@ -14,10 +14,12 @@ export default function SuppliersPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<SupplierDto | null>(null);
 
-  const columns: DataTableColumn<SupplierDto>[] = [
+  const columns: AppGridColumn<SupplierDto>[] = [
     {
       key: "name",
       header: "Pemasok",
+      sortable: true,
+      sortAccessor: (s) => s.name,
       render: (s) => (
         <div>
           <p className="font-medium">{s.name}</p>
@@ -40,11 +42,15 @@ export default function SuppliersPage() {
     {
       key: "city",
       header: "Kota",
+      hideOnMobile: true,
+      sortable: true,
+      sortAccessor: (s) => s.city ?? "",
       render: (s) => <span className="text-xs">{s.city ?? "—"}</span>,
     },
     {
       key: "license",
       header: "Lisensi",
+      hideOnMobile: true,
       render: (s) => (
         <span className="text-xs text-[var(--muted-foreground)]">
           {s.licenseNumber ?? "—"}
@@ -54,6 +60,8 @@ export default function SuppliersPage() {
     {
       key: "active",
       header: "Status",
+      sortable: true,
+      sortAccessor: (s) => (s.isActive ? 1 : 0),
       render: (s) => (
         <span
           className={`rounded-full px-2 py-1 text-xs ${
@@ -69,11 +77,15 @@ export default function SuppliersPage() {
     {
       key: "created",
       header: "Bergabung",
+      hideOnMobile: true,
+      sortable: true,
+      sortAccessor: (s) => s.createdAt,
       render: (s) => <span className="text-xs">{formatDate(s.createdAt)}</span>,
     },
     {
       key: "actions",
       header: "",
+      align: "right",
       render: (s) => (
         <button
           type="button"
@@ -106,7 +118,7 @@ export default function SuppliersPage() {
         </button>
       </header>
 
-      <DataTable<SupplierDto>
+      <AppGrid<SupplierDto>
         columns={columns}
         rowKey={(s) => s.id}
         load={async ({ page, pageSize, search }) => {

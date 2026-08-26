@@ -611,3 +611,74 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--input); }
+
+/* ============================================
+   ANIMATIONS
+   - Modal (desktop dialog): scale + fade in
+   - Sheet (mobile bottom sheet): slide up + fade
+   - Grid detail row: slide down + fade
+   - Skeleton: shimmer for loading placeholders
+   These keyframes are the source of the "smooth
+   feel" for the new Modal + AppGrid components.
+   ============================================ */
+
+/* Desktop modal — scale + fade in from 0.96 → 1.0 */
+@keyframes modal-in {
+  0%   { opacity: 0; transform: scale(0.96) translateY(8px); }
+  100% { opacity: 1; transform: scale(1)    translateY(0);    }
+}
+@keyframes modal-out {
+  0%   { opacity: 1; transform: scale(1)    translateY(0);    }
+  100% { opacity: 0; transform: scale(0.96) translateY(8px); }
+}
+.animate-modal-in  { animation: modal-in  200ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+.animate-modal-out { animation: modal-out 180ms cubic-bezier(0.4, 0, 1, 1)   both; }
+
+/* Mobile bottom sheet — slide up from 100% transform */
+@keyframes sheet-in {
+  0%   { opacity: 0; transform: translateY(100%); }
+  100% { opacity: 1; transform: translateY(0);    }
+}
+@keyframes sheet-out {
+  0%   { opacity: 1; transform: translateY(0);    }
+  100% { opacity: 0; transform: translateY(100%); }
+}
+.animate-sheet-in  { animation: sheet-in  240ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+.animate-sheet-out { animation: sheet-out 200ms cubic-bezier(0.4, 0, 1, 1)   both; }
+
+/* AppGrid detail row expand — slide down + fade in */
+@keyframes grid-detail-in {
+  0%   { opacity: 0; transform: translateY(-4px); max-height: 0; }
+  100% { opacity: 1; transform: translateY(0);    max-height: 1000px; }
+}
+.animate-grid-detail-in {
+  animation: grid-detail-in 280ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Skeleton shimmer — moves a gradient sheen across the
+   placeholder so users immediately read it as "loading". */
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+.animate-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--surface) 0%,
+    color-mix(in srgb, var(--surface) 60%, var(--border) 40%) 50%,
+    var(--surface) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+}
+
+/* Reduce motion preference — disable all animations for
+   users who prefer less motion (vestibular issues). */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

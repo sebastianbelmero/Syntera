@@ -6,7 +6,7 @@ import { productApi } from "../../api/catalog";
 import { categoryApi, supplierApi } from "../../api/catalog";
 import type { ProductDto, ProductUpsertDto, DrugClass } from "../../types";
 import { formatIDR, formatNumber, formatDate, daysUntil } from "../../lib/format";
-import { DataTable, type DataTableColumn } from "../../components/DataTable";
+import { AppGrid, type AppGridColumn } from "../../components/AppGrid";
 import { Modal, Field, inputClass, btnPrimary, btnGhost } from "../../components/Modal";
 import { ApiError } from "../../api/client";
 
@@ -33,10 +33,12 @@ export default function ProductsPage() {
     queryFn: () => supplierApi.page({ pageSize: 200 }),
   });
 
-  const columns: DataTableColumn<ProductDto>[] = [
+  const columns: AppGridColumn<ProductDto>[] = [
     {
       key: "name",
       header: "Produk",
+      sortable: true,
+      sortAccessor: (p) => p.name,
       render: (p) => (
         <div className="min-w-[200px]">
           <p className="font-medium">{p.name}</p>
@@ -49,16 +51,23 @@ export default function ProductsPage() {
     {
       key: "category",
       header: "Kategori",
+      sortable: true,
+      sortAccessor: (p) => p.categoryName,
+      hideOnMobile: true,
       render: (p) => <span className="text-xs">{p.categoryName}</span>,
     },
     {
       key: "supplier",
       header: "Pemasok",
+      sortable: true,
+      sortAccessor: (p) => p.supplierName,
+      hideOnMobile: true,
       render: (p) => <span className="text-xs">{p.supplierName}</span>,
     },
     {
       key: "drugClass",
       header: "Golongan",
+      hideOnMobile: true,
       render: (p) => (
         <span className="rounded-full bg-[var(--surface)] px-2 py-1 text-xs">
           {DRUG_CLASS_LABELS[p.drugClass]}
@@ -68,6 +77,9 @@ export default function ProductsPage() {
     {
       key: "stock",
       header: "Stok",
+      align: "right",
+      sortable: true,
+      sortAccessor: (p) => p.stock,
       render: (p) => {
         const expired = p.isExpired;
         const low = p.isLowStock;
@@ -91,6 +103,9 @@ export default function ProductsPage() {
     {
       key: "expiry",
       header: "Kadaluarsa",
+      hideOnMobile: true,
+      sortable: true,
+      sortAccessor: (p) => p.expiryDate ?? "",
       render: (p) => {
         if (!p.expiryDate) return <span className="text-xs">—</span>;
         const d = daysUntil(p.expiryDate);
@@ -110,6 +125,9 @@ export default function ProductsPage() {
     {
       key: "price",
       header: "Harga",
+      align: "right",
+      sortable: true,
+      sortAccessor: (p) => p.sellingPrice,
       render: (p) => (
         <div className="text-right">
           <span className="font-semibold">{formatIDR(p.sellingPrice)}</span>
@@ -122,6 +140,7 @@ export default function ProductsPage() {
     {
       key: "actions",
       header: "",
+      align: "right",
       render: (p) => (
         <div className="flex items-center justify-end gap-1">
           <button
@@ -172,7 +191,7 @@ export default function ProductsPage() {
         </button>
       </header>
 
-      <DataTable<ProductDto>
+      <AppGrid<ProductDto>
         columns={columns}
         rowKey={(p) => p.id}
         load={async ({ page, pageSize, search }) => {
