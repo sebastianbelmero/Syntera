@@ -1,4 +1,5 @@
 import { Routes, Route, Navigate } from "react-router-dom";
+import { useEffect } from "react";
 import { AdminLayout, type MenuItem } from "./components/layout";
 import {
   LayoutDashboard,
@@ -13,6 +14,7 @@ import {
 
 import { RequireAuth, RequireRole } from "./routes/guards";
 import { useAuthStore } from "./store/authStore";
+import { useThemeStore } from "./store/themeStore";
 import LoginPage from "./pages/auth/LoginPage";
 import DashboardPage from "./pages/dashboard/DashboardPage";
 import ProductsPage from "./pages/catalog/ProductsPage";
@@ -34,56 +36,75 @@ const menu: MenuItem[] = [
   { label: "Pengaturan", path: "/settings", icon: <Settings size={18} /> },
 ];
 
+/**
+ * ThemeApplier — runs at the App root so the brand palette + dark
+ * mode are applied even on routes that don't mount <AdminLayout>
+ * (e.g. /login). One effect, one source of truth.
+ */
+function ThemeApplier() {
+  const brand = useThemeStore((s) => s.brand);
+  const isDark = useThemeStore((s) => s.isDark);
+  useEffect(() => {
+    const root = document.documentElement;
+    root.setAttribute("data-theme", brand);
+    root.classList.toggle("dark", isDark);
+  }, [brand, isDark]);
+  return null;
+}
+
 export default function App() {
   const profile = useAuthStore((s) => s.profile);
   const logout = useAuthStore((s) => s.logout);
 
   return (
-    <Routes>
-      <Route path="/" element={<Navigate to="/dashboard" replace />} />
-      <Route path="/login" element={<LoginPage />} />
+    <>
+      <ThemeApplier />
+      <Routes>
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/login" element={<LoginPage />} />
 
-      <Route
-        element={
-          <RequireAuth>
-            <AdminLayout
-              title="Syntera — Pharmaceutical Commerce Suite"
-              menuItems={menu}
-              user={
-                profile
-                  ? {
-                      name: profile.fullName ?? profile.email,
-                      email: profile.email,
-                      role: profile.roles.join(", "),
-                    }
-                  : undefined
-              }
-              onLogout={() => {
-                logout();
-                window.location.href = "/login";
-              }}
-            />
-          </RequireAuth>
-        }
-      >
-        <Route path="/dashboard" element={<DashboardPage />} />
         <Route
-          path="/products"
           element={
-            <RequireRole roles={["Admin", "Pharmacist"]}>
-              <ProductsPage />
-            </RequireRole>
+            <RequireAuth>
+              <AdminLayout
+                title="Syntera — Pharmaceutical Commerce Suite"
+                menuItems={menu}
+                user={
+                  profile
+                    ? {
+                        name: profile.fullName ?? profile.email,
+                        email: profile.email,
+                        role: profile.roles.join(", "),
+                      }
+                    : undefined
+                }
+                onLogout={() => {
+                  logout();
+                  window.location.href = "/login";
+                }}
+              />
+            </RequireAuth>
           }
-        />
-        <Route path="/categories" element={<CategoriesPage />} />
-        <Route path="/suppliers" element={<SuppliersPage />} />
-        <Route path="/inventory" element={<InventoryPage />} />
-        <Route path="/sales" element={<SalesPage />} />
-        <Route path="/customers" element={<CustomersPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
-      </Route>
+        >
+          <Route path="/dashboard" element={<DashboardPage />} />
+          <Route
+            path="/products"
+            element={
+              <RequireRole roles={["Admin", "Pharmacist"]}>
+                <ProductsPage />
+              </RequireRole>
+            }
+          />
+          <Route path="/categories" element={<CategoriesPage />} />
+          <Route path="/suppliers" element={<SuppliersPage />} />
+          <Route path="/inventory" element={<InventoryPage />} />
+          <Route path="/sales" element={<SalesPage />} />
+          <Route path="/customers" element={<CustomersPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+        </Route>
 
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
-    </Routes>
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      </Routes>
+    </>
   );
 }

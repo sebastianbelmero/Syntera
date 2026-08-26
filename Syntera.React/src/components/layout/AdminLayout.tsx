@@ -2,7 +2,6 @@ import * as React from "react";
 import { Outlet } from "react-router-dom";
 import { AppSidebar, type MenuItem } from "./AppSidebar";
 import { AppHeader } from "./AppHeader";
-import { useThemeStore } from "../../store/themeStore";
 
 export interface AdminLayoutProps {
   title?: string;
@@ -31,7 +30,6 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
   children,
 }) => {
   const [sidebarOpen, setSidebarOpen] = React.useState(true);
-  const { isDark } = useThemeStore();
 
   React.useEffect(() => {
     const handleResize = () => {
@@ -42,9 +40,9 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  React.useEffect(() => {
-    document.documentElement.classList.toggle("dark", isDark);
-  }, [isDark]);
+  // NOTE: theme attributes (data-theme + .dark class) are applied at
+  // the App root by <ThemeApplier /> so they take effect on routes
+  // outside this layout (e.g. /login) too.
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-background">

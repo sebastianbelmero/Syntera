@@ -1,25 +1,34 @@
 /* ──────────────────────────────────────────────────────────────────
  * Syntera.React — Self-contained design system
  *
- * This stylesheet inlines ALL design tokens + Tailwind v4 theme
- * mappings previously provided by the external kalventis-ui package.
- * Syntera.React now owns its full UI stack and is free to evolve
- * the brand palette without being constrained by the upstream
- * library's defaults.
+ * Six brand palettes are derived from the Syntera brand study:
+ *   - Kalbe      (Kalbe Farma — crimson red)
+ *   - Dankos     (Dankos Farma — royal blue)
+ *   - Hexpharm   (Hexpharm Jaya — teal)
+ *   - Fima       (Fima — violet)
+ *   - GOF        (GOF — amber)
+ *   - Kalventis  (Kalventis — emerald, canonical Syntera palette)
  *
- * Brand identity: "Vital Science" — Emerald Green (#007A4D) + Mint
- * (#7EDECF), derived from the Kalbe / Dankos / Hexpharm / Fima /
- * GOF / Kalventis logo study.
+ * Each palette has:
+ *   1. A `:root[data-theme="<name>"]` block for the light variant.
+ *   2. A `:root[data-theme="<name>"].dark` block for the dark variant.
+ * AdminLayout writes `data-theme` and `.dark` onto <html>.
+ *
+ * Legacy components that use Tailwind's built-in `slate-*`, `blue-*`,
+ * `red-*` etc. keep working with their default hex values — no
+ * remapping needed.
  * ────────────────────────────────────────────────────────────────── */
 
 @import "tailwindcss";
 @import "tw-animate-css";
 
 /* ============================================
-   DESIGN TOKENS (CSS Variables)
+   DEFAULT FALLBACK (no data-theme attribute)
+   Mirrors Kalventis so SSR / pre-hydration render
+   doesn't flash a different palette.
    ============================================ */
-:root {
-  /* ── Surfaces ────────────────────────────────────────────── */
+:root,
+:root[data-theme="kalventis"] {
   --background: #ffffff;
   --foreground: #0f172a;
   --surface: #f4fbf7;
@@ -29,16 +38,13 @@
   --popover: #ffffff;
   --popover-foreground: #0f172a;
 
-  /* ── Brand / Primary (Syntera Emerald) ───────────────────── */
   --primary: #007a4d;
   --primary-foreground: #ffffff;
   --primary-hover: #00563b;
 
-  /* ── Accent (Mint) ───────────────────────────────────────── */
   --accent: #7edecf;
   --accent-foreground: #0f3d24;
 
-  /* ── Semantic ────────────────────────────────────────────── */
   --success: #16a34a;
   --success-foreground: #ffffff;
   --warning: #f59e0b;
@@ -49,29 +55,24 @@
   --info: #2e7cb8;
   --info-foreground: #ffffff;
 
-  /* ── Muted ───────────────────────────────────────────────── */
   --muted: #eaf5ee;
   --muted-foreground: #4a5560;
 
-  /* ── Borders & Inputs ────────────────────────────────────── */
   --border: #d6e8dc;
   --input: #cbd5e1;
   --input-hover: #94a3b8;
   --ring: #007a4d;
   --ring-offset: rgba(0, 122, 77, 0.1);
 
-  /* ── Highlights ──────────────────────────────────────────── */
   --highlight-bg: #fef08a;
   --highlight-foreground: #854d0e;
 
-  /* ── Radii ───────────────────────────────────────────────── */
   --radius-sm: 0.125rem;
   --radius-md: 0.375rem;
   --radius-lg: 0.5rem;
   --radius-xl: 0.75rem;
   --radius-full: 9999px;
 
-  /* ── Spacing ─────────────────────────────────────────────── */
   --spacing-xs: 0.25rem;
   --spacing-sm: 0.5rem;
   --spacing-md: 1rem;
@@ -79,7 +80,7 @@
   --spacing-xl: 2rem;
 }
 
-.dark {
+:root[data-theme="kalventis"].dark {
   --background: #0b1f15;
   --foreground: #e2e8f0;
   --surface: #122b1e;
@@ -116,15 +117,356 @@
 }
 
 /* ============================================
+   KALBE — Crimson red (Kalbe Farma)
+   ============================================ */
+:root[data-theme="kalbe"] {
+  --background: #fffbfb;
+  --foreground: #1a0606;
+  --surface: #fdf2f2;
+  --surface-foreground: #4a1a1a;
+  --card: #ffffff;
+  --card-foreground: #1a0606;
+  --popover: #ffffff;
+  --popover-foreground: #1a0606;
+
+  --primary: #e2231a;
+  --primary-foreground: #ffffff;
+  --primary-hover: #b01510;
+
+  --accent: #fbc0bc;
+  --accent-foreground: #4a0e0c;
+
+  --success: #16a34a;
+  --warning: #f59e0b;
+  --danger: #c8443b;
+  --danger-hover: #a33730;
+  --info: #2e7cb8;
+
+  --muted: #fce7e5;
+  --muted-foreground: #6b4a4a;
+
+  --border: #f5c5c0;
+  --input: #e7a5a0;
+  --input-hover: #c87878;
+  --ring: #e2231a;
+  --ring-offset: rgba(226, 35, 26, 0.1);
+}
+
+:root[data-theme="kalbe"].dark {
+  --background: #1a0606;
+  --foreground: #fde8e6;
+  --surface: #2a0a0a;
+  --surface-foreground: #e7c5c2;
+  --card: #2a0a0a;
+  --card-foreground: #fde8e6;
+  --popover: #2a0a0a;
+  --popover-foreground: #fde8e6;
+
+  --primary: #ff5547;
+  --primary-foreground: #1a0606;
+  --primary-hover: #ff8a7d;
+
+  --accent: #ff8a7d;
+  --accent-foreground: #1a0606;
+
+  --success: #16a34a;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --danger-hover: #ff5547;
+  --info: #4a90e2;
+
+  --muted: #3a0e0e;
+  --muted-foreground: #c5a5a2;
+
+  --border: #5a1818;
+  --input: #6b2828;
+  --input-hover: #8a4848;
+  --ring: #ff5547;
+  --ring-offset: rgba(255, 85, 71, 0.2);
+}
+
+/* ============================================
+   DANKOS — Royal blue (Dankos Farma)
+   ============================================ */
+:root[data-theme="dankos"] {
+  --background: #f7faff;
+  --foreground: #0a1428;
+  --surface: #eaf2fc;
+  --surface-foreground: #1e3a5f;
+  --card: #ffffff;
+  --card-foreground: #0a1428;
+  --popover: #ffffff;
+  --popover-foreground: #0a1428;
+
+  --primary: #0054a6;
+  --primary-foreground: #ffffff;
+  --primary-hover: #003d7a;
+
+  --accent: #8dc8f0;
+  --accent-foreground: #0a1f3d;
+
+  --success: #16a34a;
+  --warning: #f59e0b;
+  --danger: #c8443b;
+  --danger-hover: #a33730;
+  --info: #2e7cb8;
+
+  --muted: #e0ecf8;
+  --muted-foreground: #4a5a6b;
+
+  --border: #c5d8ed;
+  --input: #a5c0db;
+  --input-hover: #7a9bbf;
+  --ring: #0054a6;
+  --ring-offset: rgba(0, 84, 166, 0.1);
+}
+
+:root[data-theme="dankos"].dark {
+  --background: #0a1428;
+  --foreground: #e0ecf8;
+  --surface: #142140;
+  --surface-foreground: #c5d8ed;
+  --card: #142140;
+  --card-foreground: #e0ecf8;
+  --popover: #142140;
+  --popover-foreground: #e0ecf8;
+
+  --primary: #4a90e2;
+  --primary-foreground: #ffffff;
+  --primary-hover: #8dc8f0;
+
+  --accent: #8dc8f0;
+  --accent-foreground: #0a1428;
+
+  --success: #16a34a;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --danger-hover: #ff5547;
+  --info: #4a90e2;
+
+  --muted: #1e2a4a;
+  --muted-foreground: #a5b8d0;
+
+  --border: #1e3a5f;
+  --input: #2d4a72;
+  --input-hover: #4a6b9a;
+  --ring: #4a90e2;
+  --ring-offset: rgba(74, 144, 226, 0.2);
+}
+
+/* ============================================
+   HEXPHARM — Teal (Hexpharm Jaya)
+   ============================================ */
+:root[data-theme="hexpharm"] {
+  --background: #f4fbfa;
+  --foreground: #06231f;
+  --surface: #e6f4f2;
+  --surface-foreground: #1a4a44;
+  --card: #ffffff;
+  --card-foreground: #06231f;
+  --popover: #ffffff;
+  --popover-foreground: #06231f;
+
+  --primary: #00796b;
+  --primary-foreground: #ffffff;
+  --primary-hover: #005a4f;
+
+  --accent: #80cbc4;
+  --accent-foreground: #022e2a;
+
+  --success: #16a34a;
+  --warning: #f59e0b;
+  --danger: #c8443b;
+  --danger-hover: #a33730;
+  --info: #2e7cb8;
+
+  --muted: #d4eae6;
+  --muted-foreground: #4a6b66;
+
+  --border: #b0d8d2;
+  --input: #8ec0b8;
+  --input-hover: #6a9a92;
+  --ring: #00796b;
+  --ring-offset: rgba(0, 121, 107, 0.1);
+}
+
+:root[data-theme="hexpharm"].dark {
+  --background: #06231f;
+  --foreground: #d4eae6;
+  --surface: #0a2f2a;
+  --surface-foreground: #b0d8d2;
+  --card: #0a2f2a;
+  --card-foreground: #d4eae6;
+  --popover: #0a2f2a;
+  --popover-foreground: #d4eae6;
+
+  --primary: #4db6ac;
+  --primary-foreground: #06231f;
+  --primary-hover: #80cbc4;
+
+  --accent: #80cbc4;
+  --accent-foreground: #06231f;
+
+  --success: #16a34a;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --danger-hover: #ff5547;
+  --info: #4a90e2;
+
+  --muted: #14403a;
+  --muted-foreground: #a5c5c0;
+
+  --border: #1a4a44;
+  --input: #2d6258;
+  --input-hover: #4a8278;
+  --ring: #4db6ac;
+  --ring-offset: rgba(77, 182, 172, 0.2);
+}
+
+/* ============================================
+   FIMA — Violet
+   ============================================ */
+:root[data-theme="fima"] {
+  --background: #faf8ff;
+  --foreground: #1a0a2e;
+  --surface: #f0eaff;
+  --surface-foreground: #3a1a5f;
+  --card: #ffffff;
+  --card-foreground: #1a0a2e;
+  --popover: #ffffff;
+  --popover-foreground: #1a0a2e;
+
+  --primary: #6b46c1;
+  --primary-foreground: #ffffff;
+  --primary-hover: #5028a8;
+
+  --accent: #c4b5fd;
+  --accent-foreground: #2a0e5a;
+
+  --success: #16a34a;
+  --warning: #f59e0b;
+  --danger: #c8443b;
+  --danger-hover: #a33730;
+  --info: #2e7cb8;
+
+  --muted: #e6deff;
+  --muted-foreground: #5a4a7a;
+
+  --border: #d0c2ed;
+  --input: #b8a5e0;
+  --input-hover: #8a78c0;
+  --ring: #6b46c1;
+  --ring-offset: rgba(107, 70, 193, 0.1);
+}
+
+:root[data-theme="fima"].dark {
+  --background: #1a0a2e;
+  --foreground: #e6deff;
+  --surface: #26123e;
+  --surface-foreground: #d0c2ed;
+  --card: #26123e;
+  --card-foreground: #e6deff;
+  --popover: #26123e;
+  --popover-foreground: #e6deff;
+
+  --primary: #9f7aea;
+  --primary-foreground: #1a0a2e;
+  --primary-hover: #c4b5fd;
+
+  --accent: #c4b5fd;
+  --accent-foreground: #1a0a2e;
+
+  --success: #16a34a;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --danger-hover: #ff5547;
+  --info: #4a90e2;
+
+  --muted: #3a1a5f;
+  --muted-foreground: #b8a5d8;
+
+  --border: #4a2a72;
+  --input: #5a3a8a;
+  --input-hover: #7a5aaa;
+  --ring: #9f7aea;
+  --ring-offset: rgba(159, 122, 234, 0.2);
+}
+
+/* ============================================
+   GOF — Amber
+   ============================================ */
+:root[data-theme="gof"] {
+  --background: #fffcf7;
+  --foreground: #2a1a0a;
+  --surface: #fdf2e6;
+  --surface-foreground: #5a3a1a;
+  --card: #ffffff;
+  --card-foreground: #2a1a0a;
+  --popover: #ffffff;
+  --popover-foreground: #2a1a0a;
+
+  --primary: #c2410c;
+  --primary-foreground: #ffffff;
+  --primary-hover: #9a330a;
+
+  --accent: #fdba74;
+  --accent-foreground: #4a1f0a;
+
+  --success: #16a34a;
+  --warning: #f59e0b;
+  --danger: #c8443b;
+  --danger-hover: #a33730;
+  --info: #2e7cb8;
+
+  --muted: #fce7d4;
+  --muted-foreground: #6b4a2a;
+
+  --border: #f5c5a0;
+  --input: #e0a578;
+  --input-hover: #c07848;
+  --ring: #c2410c;
+  --ring-offset: rgba(194, 65, 12, 0.1);
+}
+
+:root[data-theme="gof"].dark {
+  --background: #1a0e06;
+  --foreground: #fce7d4;
+  --surface: #2a1a0a;
+  --surface-foreground: #f5c5a0;
+  --card: #2a1a0a;
+  --card-foreground: #fce7d4;
+  --popover: #2a1a0a;
+  --popover-foreground: #fce7d4;
+
+  --primary: #fb923c;
+  --primary-foreground: #1a0e06;
+  --primary-hover: #fdba74;
+
+  --accent: #fdba74;
+  --accent-foreground: #1a0e06;
+
+  --success: #16a34a;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --danger-hover: #ff5547;
+  --info: #4a90e2;
+
+  --muted: #3a2410;
+  --muted-foreground: #d8b590;
+
+  --border: #5a3a1a;
+  --input: #6b4a2a;
+  --input-hover: #8a6a3a;
+  --ring: #fb923c;
+  --ring-offset: rgba(251, 146, 60, 0.2);
+}
+
+/* ============================================
    TAILWIND v4 THEME MAPPING
    Registers our custom semantic tokens as Tailwind v4
    theme colors, so utility classes like `bg-primary`,
    `text-muted-foreground`, `border-border` work out of
    the box.
-
-   Legacy components that use Tailwind's built-in
-   `slate-*`, `blue-*`, `red-*` etc. keep working
-   with their default hex values — no remapping needed.
    ============================================ */
 @theme inline {
   --color-background: var(--background);
@@ -175,6 +517,8 @@ body {
   color: var(--foreground);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* Smooth color transition when switching brand palettes. */
+  transition: background-color 200ms ease, color 200ms ease;
 }
 
 /* Slimmer scrollbar to match modern app aesthetics */
