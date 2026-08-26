@@ -108,6 +108,12 @@ public sealed class AppDbContext : IdentityDbContext<IdentityUser, IdentityRole,
         });
 
         // ── InventoryMovement ─────────────────────────────────────────
+        // Matching query filter: when a Product is soft-deleted, the
+        // Include(m => m.Product) join would silently null the navigation.
+        // Filtering the dependent the same way keeps the audit log
+        // consistent with the principal — movements of deleted products
+        // are excluded from default queries (use IgnoreQueryFilters() to
+        // surface them for forensic reports).
         builder.Entity<InventoryMovement>(e =>
         {
             e.ToTable("InventoryMovements");
@@ -120,6 +126,7 @@ public sealed class AppDbContext : IdentityDbContext<IdentityUser, IdentityRole,
                 .OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(m => m.ProductId);
             e.HasIndex(m => new { m.Type, m.CreatedAt });
+            e.HasQueryFilter(m => m.Product == null || !m.Product.IsDeleted);
         });
 
         // ── Customer ─────────────────────────────────────────────────
@@ -138,6 +145,9 @@ public sealed class AppDbContext : IdentityDbContext<IdentityUser, IdentityRole,
         });
 
         // ── Sale ──────────────────────────────────────────────────────
+        // Matching query filter: Sale references Customer (required,
+        // soft-deletable). Without a matching filter here, soft-deleted
+        // Customers would yield null Sale.Customer navigations.
         builder.Entity<Sale>(e =>
         {
             e.ToTable("Sales");
@@ -145,6 +155,7 @@ public sealed class AppDbContext : IdentityDbContext<IdentityUser, IdentityRole,
             e.Property(s => s.InvoiceNumber).HasMaxLength(40).IsRequired();
             e.HasIndex(s => s.InvoiceNumber).IsUnique();
             e.Property(s => s.SubTotal).HasPrecision(18, 2);
+            e.Property(s => s.TaxRate).HasPrecision(18, 4);
             e.Property(s => s.TaxAmount).HasPrecision(18, 2);
             e.Property(s => s.DiscountAmount).HasPrecision(18, 2);
             e.Property(s => s.GrandTotal).HasPrecision(18, 2);
@@ -154,8 +165,12 @@ public sealed class AppDbContext : IdentityDbContext<IdentityUser, IdentityRole,
                 .HasForeignKey(s => s.CustomerId)
                 .OnDelete(DeleteBehavior.Restrict);
             e.HasIndex(s => new { s.Status, s.SaleDate });
+            e.HasQueryFilter(s => s.Customer == null || !s.Customer.IsDeleted);
         });
 
+        // Matching query filter: SaleItem references Product (required,
+        // soft-deletable). Without a matching filter, Include(i => i.Product)
+        // would silently null the navigation for soft-deleted products.
         builder.Entity<SaleItem>(e =>
         {
             e.ToTable("SaleItems");
@@ -171,6 +186,7 @@ public sealed class AppDbContext : IdentityDbContext<IdentityUser, IdentityRole,
                 .WithMany(p => p.SaleItems)
                 .HasForeignKey(i => i.ProductId)
                 .OnDelete(DeleteBehavior.Restrict);
+            e.HasQueryFilter(i => i.Product == null || !i.Product.IsDeleted);
         });
     }
 
