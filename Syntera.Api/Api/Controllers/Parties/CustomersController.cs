@@ -32,14 +32,33 @@ public sealed class CustomersController : ApiControllerBase
 
     /// <summary>
     /// DevExtreme-aware grid endpoint — raw <c>{ data, totalCount }</c>
-    /// shape for AppGrid client-side binding.
+    /// shape for AppGrid client-side binding. Projects a flat row that
+    /// includes <c>totalOrders</c> (sale count, respects the soft-delete
+    /// query filter) which the React grid displays — it doesn't exist on
+    /// the raw Customer entity.
     /// </summary>
     [HttpGet("grid")]
     public async Task<IActionResult> Grid(
         DataSourceLoadOptions loadOptions,
         CancellationToken ct)
     {
-        var query = _db.Customers.AsNoTracking().AsQueryable();
+        var query = _db.Customers
+            .AsNoTracking()
+            .Select(c => new
+            {
+                c.Id,
+                c.Name,
+                c.ContactPerson,
+                c.Email,
+                c.Phone,
+                c.Address,
+                c.City,
+                c.PostalCode,
+                c.TaxId,
+                c.IsActive,
+                TotalOrders = c.Sales.Count,
+                c.CreatedAt,
+            });
         var loadResult = await DataSourceLoader.LoadAsync(query, loadOptions, ct);
         return OkRaw(loadResult);
     }

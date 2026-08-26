@@ -47,6 +47,16 @@ public sealed class ProductsController : ApiControllerBase
     /// endpoint for server-side filtering/sorting/paging, plus the
     /// Excel-style "distinct values" group query for header filter
     /// dropdowns.
+    /// <para>
+    /// The query MUST be a server-side projection (not raw entities):
+    /// the React grid filters and sorts on flattened fields —
+    /// categoryName, supplierName, stock, isExpired, isLowStock —
+    /// which only exist after this Select. Feeding raw Product
+    /// entities to DataSourceLoader makes any global search blow up
+    /// with "'categoryName' is not a member of type Product".
+    /// Semantics mirror <see cref="ProductDto"/> (stock = sum of
+    /// movements; IsExpired/IsLowStock computed the same way).
+    /// </para>
     /// </summary>
     [HttpGet("grid")]
     public async Task<IActionResult> Grid(
@@ -55,9 +65,35 @@ public sealed class ProductsController : ApiControllerBase
     {
         var query = _db.Products
             .AsNoTracking()
-            .Include(p => p.Category)
-            .Include(p => p.Supplier)
-            .AsQueryable();
+            .Select(p => new
+            {
+                p.Id,
+                p.Name,
+                p.Sku,
+                p.Barcode,
+                p.RegistrationNumber,
+                p.GenericName,
+                p.BrandName,
+                p.Manufacturer,
+                p.DrugClass,
+                p.Potency,
+                p.PackSize,
+                p.CostPrice,
+                p.SellingPrice,
+                p.DiscountPrice,
+                p.ReorderLevel,
+                p.ExpiryDate,
+                p.BatchNumber,
+                p.IsActive,
+                p.CategoryId,
+                CategoryName = p.Category.Name,
+                p.SupplierId,
+                SupplierName = p.Supplier.Name,
+                Stock = p.Movements.Sum(m => (int?)m.Quantity) ?? 0,
+                IsExpired = p.ExpiryDate != null && p.ExpiryDate < DateTime.UtcNow,
+                IsLowStock = (p.Movements.Sum(m => (int?)m.Quantity) ?? 0) <= p.ReorderLevel,
+                p.CreatedAt,
+            });
         var loadResult = await DataSourceLoader.LoadAsync(query, loadOptions, ct);
         return OkRaw(loadResult);
     }
@@ -147,9 +183,12 @@ public sealed class InventoryController : ApiControllerBase
     }
 
     /// <summary>
-    /// DevExtreme-aware grid endpoint. Loads InventoryMovements with
-    /// the parent Product navigation included so the grid can show
-    /// the product name next to each movement row.
+    /// DevExtreme-aware grid endpoint. Loads InventoryMovements as a
+    /// flat projection with the product name + SKU flattened onto the
+    /// row — the React grid filters and displays productName /
+    /// productSku, which only exist after this Select (raw entities
+    /// would 500 on global search with "'productName' is not a
+    /// member of type InventoryMovement").
     /// </summary>
     [HttpGet("grid")]
     public async Task<IActionResult> Grid(
@@ -158,8 +197,19 @@ public sealed class InventoryController : ApiControllerBase
     {
         var query = _db.InventoryMovements
             .AsNoTracking()
-            .Include(m => m.Product)
-            .AsQueryable();
+            .Select(m => new
+            {
+                m.Id,
+                m.ProductId,
+                ProductName = m.Product.Name,
+                ProductSku = m.Product.Sku,
+                m.Type,
+                m.Quantity,
+                m.BalanceAfter,
+                m.Reference,
+                m.Note,
+                m.CreatedAt,
+            });
         var loadResult = await DataSourceLoader.LoadAsync(query, loadOptions, ct);
         return OkRaw(loadResult);
     }

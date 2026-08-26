@@ -609,14 +609,19 @@ body {
 ::-webkit-scrollbar-thumb:hover { background: var(--input); }
 
 /* ============================================
-   ANIMATIONS
-   - Modal (desktop dialog): scale + fade in
-   - Sheet (mobile bottom sheet): slide up + fade
-   - Grid detail row: slide down + fade
-   - Skeleton: shimmer for loading placeholders
-   These keyframes are the source of the "smooth
-   feel" for the new Modal + AppGrid components.
+   ANIMATIONS + APP GRID + MOBILE CARD VIEW — COMPONENT LAYER
+
+   ⚠️ These sections MUST live inside `@layer components`.
+   Tailwind v4 puts its utilities in `@layer utilities`, and CSS
+   cascade rules make UNLAYERED styles beat ANY layered style.
+   When these component classes were unlayered, `.app-grid-mobile
+   { display: flex }` silently defeated the `md:hidden` utility on
+   the same element — so the mobile card view rendered BELOW the
+   desktop table on every grid page (looked like "two identical
+   tables"). Inside the components layer, utilities correctly win
+   and `md:hidden` / `hidden md:block` do their job.
    ============================================ */
+@layer components {
 
 /* Desktop modal — scale + fade in from 0.96 → 1.0 */
 @keyframes modal-in {
@@ -1094,24 +1099,15 @@ body {
 }
 
 /* ============================================
-   TAILWIND v4 THEME MAPPING
-   Registers our custom semantic tokens as Tailwind v4
-   theme colors, so utility classes like `bg-primary`,
-   `text-muted-foreground`, `border-border` work out
-   of the box.
-
-   Legacy components that use Tailwind's built-in
-   `slate-*`, `blue-*`, `red-*` etc. keep working
-   with their default hex values — no remapping needed.
-   ============================================ */
-
-/* ============================================
    MOBILE CARD VIEW
    Visible < md breakpoint. Each row becomes a stacked card —
    first column = card title (bold), remaining columns =
    label/value pairs. Replaces horizontal-scrolling table on
    phones, gives a familiar "feed" pattern that's easier to
    scan with one thumb.
+   (Visibility is toggled by the `md:hidden` Tailwind utility on
+   the element — that only works because these rules sit in the
+   components layer, BELOW utilities in the cascade.)
    ============================================ */
 .app-grid-mobile {
   display: flex;
@@ -1216,3 +1212,5 @@ body {
   padding-top: 0.5rem;
   margin-top: 0.25rem;
 }
+
+} /* end @layer components */

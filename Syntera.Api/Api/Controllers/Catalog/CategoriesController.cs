@@ -36,13 +36,31 @@ public sealed class CategoriesController : ApiControllerBase
     /// bind directly. The Category entity exposes ParentId (nullable
     /// self-FK) which the AppGrid uses to render the parent/child
     /// hierarchy as a nested master-detail grid.
+    /// <para>
+    /// Server-side projection: the React grid filters/sorts on
+    /// parentName and displays productCount — neither exists on the
+    /// raw Category entity, so they are flattened here (product
+    /// count respects the soft-delete query filter).
+    /// </para>
     /// </summary>
     [HttpGet("grid")]
     public async Task<IActionResult> Grid(
         DataSourceLoadOptions loadOptions,
         CancellationToken ct)
     {
-        var query = _db.Categories.AsNoTracking().AsQueryable();
+        var query = _db.Categories
+            .AsNoTracking()
+            .Select(c => new
+            {
+                c.Id,
+                c.Name,
+                c.Slug,
+                c.Description,
+                c.ParentId,
+                ParentName = c.Parent != null ? c.Parent.Name : null,
+                ProductCount = c.Products.Count,
+                c.CreatedAt,
+            });
         var loadResult = await DataSourceLoader.LoadAsync(query, loadOptions, ct);
         return OkRaw(loadResult);
     }

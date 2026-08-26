@@ -32,14 +32,31 @@ public sealed class SuppliersController : ApiControllerBase
 
     /// <summary>
     /// DevExtreme-aware grid endpoint — raw <c>{ data, totalCount }</c>
-    /// shape for AppGrid client-side binding.
+    /// shape for AppGrid client-side binding. Explicit flat projection
+    /// (same shape as the other grid endpoints) so internal fields
+    /// (IsDeleted, Products navigation) never leak into the payload.
     /// </summary>
     [HttpGet("grid")]
     public async Task<IActionResult> Grid(
         DataSourceLoadOptions loadOptions,
         CancellationToken ct)
     {
-        var query = _db.Suppliers.AsNoTracking().AsQueryable();
+        var query = _db.Suppliers
+            .AsNoTracking()
+            .Select(s => new
+            {
+                s.Id,
+                s.Name,
+                s.ContactPerson,
+                s.Email,
+                s.Phone,
+                s.Address,
+                s.City,
+                s.PostalCode,
+                s.LicenseNumber,
+                s.IsActive,
+                s.CreatedAt,
+            });
         var loadResult = await DataSourceLoader.LoadAsync(query, loadOptions, ct);
         return OkRaw(loadResult);
     }

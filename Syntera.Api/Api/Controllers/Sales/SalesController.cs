@@ -35,10 +35,13 @@ public sealed class SalesController : ApiControllerBase
     }
 
     /// <summary>
-    /// DevExtreme-aware grid endpoint. Loads Sales with Customer + Items
-    /// navigation included. The AppGrid uses this to render a master-detail
-    /// layout: each Sale row expands to reveal its line-items (SaleItems)
-    /// as a nested sub-table.
+    /// DevExtreme-aware grid endpoint. Projects each Sale into a flat
+    /// row with the customer name and its line-items pre-flattened
+    /// (productName / productSku per item), because the React grid
+    /// filters/sorts on <c>customerName</c> and renders the items as a
+    /// master-detail sub-table — none of which exists on the raw Sale
+    /// entity. Feeding raw entities to DataSourceLoader makes global
+    /// search fail with "'customerName' is not a member of type Sale".
     /// </summary>
     [HttpGet("grid")]
     public async Task<IActionResult> Grid(
@@ -47,9 +50,34 @@ public sealed class SalesController : ApiControllerBase
     {
         var query = _db.Sales
             .AsNoTracking()
-            .Include(s => s.Customer)
-            .Include(s => s.Items)
-            .AsQueryable();
+            .Select(s => new
+            {
+                s.Id,
+                s.InvoiceNumber,
+                s.Status,
+                s.SaleDate,
+                s.CustomerId,
+                CustomerName = s.Customer.Name,
+                s.SubTotal,
+                s.TaxRate,
+                s.TaxAmount,
+                s.DiscountAmount,
+                s.GrandTotal,
+                s.Note,
+                ItemCount = s.Items.Count,
+                Items = s.Items.Select(i => new
+                {
+                    i.Id,
+                    i.ProductId,
+                    ProductName = i.Product.Name,
+                    ProductSku = i.Product.Sku,
+                    i.Quantity,
+                    i.UnitPrice,
+                    i.DiscountAmount,
+                    i.LineTotal,
+                }).ToList(),
+                s.CreatedAt,
+            });
         var loadResult = await DataSourceLoader.LoadAsync(query, loadOptions, ct);
         return OkRaw(loadResult);
     }

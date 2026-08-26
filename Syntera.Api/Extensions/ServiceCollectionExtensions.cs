@@ -58,6 +58,13 @@ public static class ServiceCollectionExtensions
                 // and existing React code uses camelCase keys already).
                 options.JsonSerializerOptions.PropertyNamingPolicy =
                     System.Text.Json.JsonNamingPolicy.CamelCase;
+                // Enums as strings, both directions. The React client models
+                // drugClass / status / type as string unions ("OverTheCounter",
+                // "Paid", "StockIn"...) and its lookup dropdowns submit those
+                // same strings — numeric enums would break label lookups on
+                // display and 400 on upsert binding.
+                options.JsonSerializerOptions.Converters.Add(
+                    new System.Text.Json.Serialization.JsonStringEnumConverter());
             });
         return services;
     }
