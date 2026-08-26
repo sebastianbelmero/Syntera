@@ -148,7 +148,8 @@ export default function SettingsPage() {
       </section>
 
       <footer className="text-xs text-[var(--muted-foreground)]">
-        Syntera v1.0.0 — 6 brand palettes × light/dark — © 2026
+        Syntera v1.0.0 — Connecting Engineering. Unifying Excellence. —
+        One Platform. One Standard. One Direction. — © 2026
       </footer>
     </div>
   );

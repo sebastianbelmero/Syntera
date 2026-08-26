@@ -1,22 +1,25 @@
 /* ──────────────────────────────────────────────────────────────────
  * Syntera.React — Self-contained design system
  *
- * Six brand palettes are derived from the Syntera brand study:
- *   - Kalbe      (Kalbe Farma — crimson red)
- *   - Dankos     (Dankos Farma — royal blue)
- *   - Hexpharm   (Hexpharm Jaya — teal)
- *   - Fima       (Fima — violet)
- *   - GOF        (GOF — amber)
- *   - Kalventis  (Kalventis — emerald, canonical Syntera palette)
+ * Six brand palettes:
+ *   - syntera    (Syntera canonical — navy + teal + green accent,
+ *                 matching the official logo description: an "S"
+ *                 composed of two ribbon-swooshes with a 3-bar chart
+ *                 inside and an orbit line on the right; wordmark
+ *                 "SYNTERA" with a green triangle inside the final
+ *                 'A'; tagline "CONNECTING ENGINEERING. UNIFYING
+ *                 EXCELLENCE."; slogan "ONE PLATFORM. ONE STANDARD.
+ *                 ONE DIRECTION.")
+ *   - kalbe      (Kalbe Farma — crimson red)
+ *   - dankos     (Dankos Farma — royal blue)
+ *   - hexpharm   (Hexpharm Jaya — teal)
+ *   - fima       (Fima — violet)
+ *   - gof        (GOF — amber)
  *
  * Each palette has:
  *   1. A `:root[data-theme="<name>"]` block for the light variant.
  *   2. A `:root[data-theme="<name>"].dark` block for the dark variant.
- * AdminLayout writes `data-theme` and `.dark` onto <html>.
- *
- * Legacy components that use Tailwind's built-in `slate-*`, `blue-*`,
- * `red-*` etc. keep working with their default hex values — no
- * remapping needed.
+ * <ThemeApplier /> writes `data-theme` and `.dark` onto <html>.
  * ────────────────────────────────────────────────────────────────── */
 
 @import "tailwindcss";
@@ -24,26 +27,34 @@
 
 /* ============================================
    DEFAULT FALLBACK (no data-theme attribute)
-   Mirrors Kalventis so SSR / pre-hydration render
-   doesn't flash a different palette.
+   Mirrors the Syntera canonical palette so SSR
+   / pre-hydration render doesn't flash a
+   different palette.
    ============================================ */
 :root,
-:root[data-theme="kalventis"] {
-  --background: #ffffff;
-  --foreground: #0f172a;
-  --surface: #f4fbf7;
-  --surface-foreground: #334155;
+:root[data-theme="syntera"] {
+  /* Off-white with a faint blue tint — matches the Syntera logo
+     backdrop and reads as "engineering blueprint" rather than pure
+     paper white. */
+  --background: #f5f8fb;
+  --foreground: #0a1428;
+  --surface: #eaf1f8;
+  --surface-foreground: #1e3a5f;
   --card: #ffffff;
-  --card-foreground: #0f172a;
+  --card-foreground: #0a1428;
   --popover: #ffffff;
-  --popover-foreground: #0f172a;
+  --popover-foreground: #0a1428;
 
-  --primary: #007a4d;
+  /* Primary — navy blue (upper half of the Syntera "S" icon and
+     the SYNTERA wordmark). */
+  --primary: #0b3d6f;
   --primary-foreground: #ffffff;
-  --primary-hover: #00563b;
+  --primary-hover: #082a52;
 
-  --accent: #7edecf;
-  --accent-foreground: #0f3d24;
+  /* Accent — teal/cyan (lower half of the "S", the orbit line, and
+     the tagline text). */
+  --accent: #00a7b5;
+  --accent-foreground: #042a30;
 
   --success: #16a34a;
   --success-foreground: #ffffff;
@@ -55,14 +66,14 @@
   --info: #2e7cb8;
   --info-foreground: #ffffff;
 
-  --muted: #eaf5ee;
-  --muted-foreground: #4a5560;
+  --muted: #e6eef5;
+  --muted-foreground: #4a5a6b;
 
-  --border: #d6e8dc;
-  --input: #cbd5e1;
-  --input-hover: #94a3b8;
-  --ring: #007a4d;
-  --ring-offset: rgba(0, 122, 77, 0.1);
+  --border: #d0dde9;
+  --input: #b5c8d9;
+  --input-hover: #8aa0b8;
+  --ring: #0b3d6f;
+  --ring-offset: rgba(11, 61, 111, 0.1);
 
   --highlight-bg: #fef08a;
   --highlight-foreground: #854d0e;
@@ -80,37 +91,37 @@
   --spacing-xl: 2rem;
 }
 
-:root[data-theme="kalventis"].dark {
-  --background: #0b1f15;
-  --foreground: #e2e8f0;
-  --surface: #122b1e;
-  --surface-foreground: #cbd5e1;
-  --card: #122b1e;
-  --card-foreground: #e2e8f0;
-  --popover: #122b1e;
-  --popover-foreground: #e2e8f0;
+:root[data-theme="syntera"].dark {
+  --background: #0a1428;
+  --foreground: #e0eaf5;
+  --surface: #11243f;
+  --surface-foreground: #c5d8ed;
+  --card: #11243f;
+  --card-foreground: #e0eaf5;
+  --popover: #11243f;
+  --popover-foreground: #e0eaf5;
 
-  --primary: #21b673;
+  --primary: #2e7cb8;
   --primary-foreground: #ffffff;
-  --primary-hover: #7edecf;
+  --primary-hover: #4a90e2;
 
-  --accent: #7edecf;
-  --accent-foreground: #0f3d24;
+  --accent: #00d4e2;
+  --accent-foreground: #042a30;
 
   --success: #16a34a;
   --warning: #f59e0b;
-  --danger: #c8443b;
-  --danger-hover: #ef4444;
-  --info: #2e7cb8;
+  --danger: #ef4444;
+  --danger-hover: #ff5547;
+  --info: #4a90e2;
 
-  --muted: #1a3a28;
-  --muted-foreground: #94a3b8;
+  --muted: #1a2f4a;
+  --muted-foreground: #9ab0c8;
 
-  --border: #1f4530;
-  --input: #2d5a3f;
-  --input-hover: #4a7a5e;
-  --ring: #7edecf;
-  --ring-offset: rgba(126, 222, 207, 0.2);
+  --border: #1f3a5c;
+  --input: #2d4a72;
+  --input-hover: #4a6b9a;
+  --ring: #2e7cb8;
+  --ring-offset: rgba(46, 124, 184, 0.2);
 
   --highlight-bg: #854d0e;
   --highlight-foreground: #fef08a;
