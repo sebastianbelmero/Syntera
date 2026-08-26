@@ -41,8 +41,19 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
         <li key={item.path} className="mt-1">
           <div
             onClick={() => isOpen && toggleGroup(item.path)}
+            onKeyDown={(e) => {
+              if (!isOpen) return;
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                toggleGroup(item.path);
+              }
+            }}
+            tabIndex={isOpen ? 0 : -1}
+            role="button"
+            aria-expanded={isOpenGroup}
+            aria-controls={`group-${item.path}`}
             className={cn(
-              "group flex cursor-pointer select-none items-center transition-colors duration-200",
+              "group flex cursor-pointer select-none items-center transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--ring)]",
               isOpen
                 ? "justify-between px-[1.2rem] py-2.5 hover:bg-muted"
                 : "justify-center py-3"
@@ -74,6 +85,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
             )}
           </div>
           <div
+            id={`group-${item.path}`}
             className={cn(
               "overflow-hidden transition-all duration-300 ease-in-out",
               isOpen && isOpenGroup

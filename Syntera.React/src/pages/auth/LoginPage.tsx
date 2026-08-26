@@ -48,8 +48,12 @@ const PILLARS = [
 ];
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("admin@syntera.local");
-  const [password, setPassword] = useState("ChangeMe!Strong#1");
+  // Demo credentials are only auto-filled in dev (Vite's DEV flag).
+  // Production builds ship empty inputs — avoids shipping known
+  // admin credentials in the bundle's first paint.
+  const isDev = import.meta.env.DEV;
+  const [email, setEmail] = useState(isDev ? "admin@syntera.local" : "");
+  const [password, setPassword] = useState(isDev ? "ChangeMe!Strong#1" : "");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
@@ -234,6 +238,7 @@ export default function LoginPage() {
                 autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                minLength={8}
                 className="mt-1 w-full rounded-lg border border-[var(--input)] bg-card px-3 py-2 text-sm text-foreground shadow-sm outline-none transition focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--ring)]"
                 placeholder="••••••••"
                 required
@@ -249,10 +254,12 @@ export default function LoginPage() {
             {loading ? "Memverifikasi…" : "Masuk"}
           </button>
 
-          <p className="text-center text-xs text-[var(--muted-foreground)]">
-            Demo: <code className="font-mono">admin@syntera.local</code> /{" "}
-            <code className="font-mono">ChangeMe!Strong#1</code>
-          </p>
+          {isDev && (
+            <p className="text-center text-xs text-[var(--muted-foreground)]">
+              Demo: <code className="font-mono">admin@syntera.local</code> /{" "}
+              <code className="font-mono">ChangeMe!Strong#1</code>
+            </p>
+          )}
 
           {/* Compact brand strip with the full infographic PNG for
               context. Hidden on very small screens to avoid layout

@@ -129,6 +129,7 @@ export default function ProductsPage() {
             onClick={() => setAdjusting(p)}
             className="rounded-md p-1.5 text-[var(--muted-foreground)] transition hover:bg-[var(--surface)] hover:text-[var(--primary)]"
             title="Sesuaikan stok"
+            aria-label="Sesuaikan stok"
           >
             <PackagePlus size={16} />
           </button>
@@ -137,6 +138,7 @@ export default function ProductsPage() {
             onClick={() => setEditing(p)}
             className="rounded-md p-1.5 text-[var(--muted-foreground)] transition hover:bg-[var(--surface)] hover:text-[var(--primary)]"
             title="Edit produk"
+            aria-label="Edit produk"
           >
             <Pencil size={16} />
           </button>
@@ -341,6 +343,15 @@ function ProductFormModal({
             className={inputClass}
           />
         </Field>
+        <Field label="Barcode" hint="EAN-13 / UPC-A. Dipakai untuk scan POS.">
+          <input
+            name="barcode"
+            defaultValue={product?.barcode ?? ""}
+            className={inputClass}
+            inputMode="numeric"
+            placeholder="cth. 8991234567890"
+          />
+        </Field>
         <Field label="Golongan Obat">
           <select
             name="drugClass"
@@ -393,6 +404,17 @@ function ProductFormModal({
             defaultValue={product?.sellingPrice ?? 0}
             className={inputClass}
             required
+          />
+        </Field>
+        <Field label="Harga Diskon (Rp)" hint="Kosongkan jika tidak ada diskon.">
+          <input
+            name="discountPrice"
+            type="number"
+            min={0}
+            step="100"
+            defaultValue={product?.discountPrice ?? ""}
+            className={inputClass}
+            placeholder="cth. 8500"
           />
         </Field>
         <Field label="Reorder Level" hint="Ambang batas stok minimum">

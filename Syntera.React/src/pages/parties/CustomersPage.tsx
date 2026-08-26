@@ -75,6 +75,8 @@ export default function CustomersPage() {
         <button
           type="button"
           onClick={() => setEditing(c)}
+          aria-label={`Edit pelanggan ${c.name}`}
+          title="Edit pelanggan"
           className="ml-auto flex items-center gap-1 rounded-md p-1.5 text-[var(--muted-foreground)] transition hover:bg-[var(--surface)] hover:text-[var(--primary)]"
         >
           <Pencil size={16} />

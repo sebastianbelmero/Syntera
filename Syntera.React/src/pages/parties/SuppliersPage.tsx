@@ -78,6 +78,8 @@ export default function SuppliersPage() {
         <button
           type="button"
           onClick={() => setEditing(s)}
+          aria-label={`Edit pemasok ${s.name}`}
+          title="Edit pemasok"
           className="ml-auto flex items-center gap-1 rounded-md p-1.5 text-[var(--muted-foreground)] transition hover:bg-[var(--surface)] hover:text-[var(--primary)]"
         >
           <Pencil size={16} />

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Plus, Trash2, ShoppingCart, Receipt } from "lucide-react";
@@ -180,14 +180,33 @@ function NewSaleModal({
   const [addingProductId, setAddingProductId] = useState("");
   const [addingQty, setAddingQty] = useState(1);
   const [submitting, setSubmitting] = useState(false);
+  const [optsLoading, setOptsLoading] = useState(true);
 
-  // Lazy-load once
-  if (customers.length === 0) {
-    customerApi.page({ pageSize: 200 }).then((r) => setCustomers(r.items)).catch(() => undefined);
-  }
-  if (products.length === 0) {
-    productApi.search({ pageSize: 200, activeOnly: true }).then((r) => setProducts(r.items)).catch(() => undefined);
-  }
+  // Lazy-load customers + products once on mount. Previously
+  // fired in the render body (flooded the API on every keystroke
+  // in `note` and double-fired under StrictMode dev).
+  useEffect(() => {
+    let cancelled = false;
+    setOptsLoading(true);
+    Promise.all([
+      customerApi.page({ pageSize: 200 }),
+      productApi.search({ pageSize: 200, activeOnly: true }),
+    ])
+      .then(([c, p]) => {
+        if (cancelled) return;
+        setCustomers(c.items);
+        setProducts(p.items);
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        const msg = e instanceof ApiError ? e.message : "Gagal memuat pelanggan / produk.";
+        toast.error(msg);
+      })
+      .finally(() => {
+        if (!cancelled) setOptsLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   const subTotal = cart.reduce((acc, l) => acc + (l.unitPrice * l.quantity) - l.discount, 0);
   const taxAmount = Math.round(subTotal * taxRate / 100);
@@ -196,6 +215,13 @@ function NewSaleModal({
   const addToCart = () => {
     const p = products.find((x) => x.id === addingProductId);
     if (!p || addingQty < 1) return;
+    // Prevent overselling: cap cumulative cart quantity at product
+    // stock for the line being added / extended.
+    const existingQty = cart.find((l) => l.product.id === p.id)?.quantity ?? 0;
+    if (existingQty + addingQty > p.stock) {
+      toast.error(`Stok tidak cukup. Tersedia ${p.stock}, diminta ${existingQty + addingQty}.`);
+      return;
+    }
     setCart((prev) => {
       const existing = prev.find((l) => l.product.id === p.id);
       if (existing) {
@@ -271,8 +297,9 @@ function NewSaleModal({
               onChange={(e) => setCustomerId(e.target.value)}
               className={inputClass}
               required
+              disabled={optsLoading}
             >
-              <option value="">Pilih…</option>
+              <option value="">{optsLoading ? "Memuat…" : "Pilih…"}</option>
               {customers.map((c) => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
@@ -283,6 +310,7 @@ function NewSaleModal({
               type="number"
               min={0}
               max={100}
+              step="0.01"
               value={taxRate}
               onChange={(e) => setTaxRate(Number(e.target.value))}
               className={inputClass}
@@ -307,8 +335,9 @@ function NewSaleModal({
                 value={addingProductId}
                 onChange={(e) => setAddingProductId(e.target.value)}
                 className={inputClass}
+                disabled={optsLoading}
               >
-                <option value="">Pilih produk…</option>
+                <option value="">{optsLoading ? "Memuat…" : "Pilih produk…"}</option>
                 {products.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name} ({p.sku}) — {formatIDR(p.sellingPrice)} • stok {p.stock}
@@ -374,6 +403,8 @@ function NewSaleModal({
                     <button
                       type="button"
                       onClick={() => removeLine(l.product.id)}
+                      aria-label={`Hapus ${l.product.name} dari keranjang`}
+                      title="Hapus dari keranjang"
                       className="rounded-md p-1 text-[var(--muted-foreground)] hover:text-[var(--danger)]"
                     >
                       <Trash2 size={14} />

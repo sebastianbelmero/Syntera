@@ -2,10 +2,10 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 
 /**
- * Theme store — manages BOTH the brand palette (one of 6) AND the
+ * Theme store — manages BOTH the brand palette (one of 7) AND the
  * light/dark mode independently.
  *
- * Six brand palettes:
+ * Seven brand palettes:
  *   - syntera    (Syntera canonical — navy + teal + green accent,
  *                 matching the official logo and brand guidelines)
  *   - kalbe      (Kalbe Farma — crimson red)
@@ -13,6 +13,9 @@ import { persist, createJSONStorage } from "zustand/middleware";
  *   - hexpharm   (Hexpharm Jaya — teal)
  *   - fima       (Fima — violet)
  *   - gof        (GOF — amber)
+ *   - kalventis  (Kalventis — emerald green, the original placeholder
+ *                 palette before the Syntera brand identity was
+ *                 finalized; kept as a selectable option)
  *
  * The `syntera` palette is the default and reflects the official
  * Syntera brand identity per the logo description document.
@@ -31,7 +34,8 @@ export type ThemeBrand =
   | "dankos"
   | "hexpharm"
   | "fima"
-  | "gof";
+  | "gof"
+  | "kalventis";
 
 export const THEME_BRANDS: ThemeBrand[] = [
   "syntera",
@@ -40,6 +44,7 @@ export const THEME_BRANDS: ThemeBrand[] = [
   "hexpharm",
   "fima",
   "gof",
+  "kalventis",
 ];
 
 export const THEME_LABELS: Record<ThemeBrand, string> = {
@@ -49,12 +54,14 @@ export const THEME_LABELS: Record<ThemeBrand, string> = {
   hexpharm: "Hexpharm",
   fima: "Fima",
   gof: "GOF",
+  kalventis: "Kalventis",
 };
 
 /**
  * Hex used for the swatch chip in the picker.
  * The `syntera` swatch matches the navy blue of the upper half of
  * the Syntera "S" icon per the official logo description.
+ * The `kalventis` swatch is the original emerald placeholder.
  */
 export const THEME_SWATCH: Record<ThemeBrand, string> = {
   syntera: "#0B3D6F",
@@ -63,6 +70,7 @@ export const THEME_SWATCH: Record<ThemeBrand, string> = {
   hexpharm: "#00796B",
   fima: "#6B46C1",
   gof: "#C2410C",
+  kalventis: "#007A4D",
 };
 
 export interface ThemeState {

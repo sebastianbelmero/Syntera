@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 import { categoryApi } from "../../api/catalog";
@@ -14,6 +14,15 @@ export default function CategoriesPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<CategoryDto | null>(null);
   const [deleting, setDeleting] = useState<CategoryDto | null>(null);
+
+  // Fetch the full category list once so the form's parent
+  // <select> can be populated. Reused queryKey also
+  // invalidated on save so new categories appear in the
+  // picker immediately.
+  const parentsQuery = useQuery({
+    queryKey: ["categories-list"],
+    queryFn: () => categoryApi.page({ pageSize: 200 }),
+  });
 
   const columns: DataTableColumn<CategoryDto>[] = [
     {
@@ -61,6 +70,8 @@ export default function CategoriesPage() {
             type="button"
             onClick={() => setEditing(c)}
             className="rounded-md p-1.5 text-[var(--muted-foreground)] transition hover:bg-[var(--surface)] hover:text-[var(--primary)]"
+            aria-label={`Edit kategori ${c.name}`}
+            title="Edit kategori"
           >
             <Pencil size={16} />
           </button>
@@ -68,6 +79,8 @@ export default function CategoriesPage() {
             type="button"
             onClick={() => setDeleting(c)}
             className="rounded-md p-1.5 text-[var(--muted-foreground)] transition hover:bg-[var(--surface)] hover:text-[var(--danger)]"
+            aria-label={`Hapus kategori ${c.name}`}
+            title="Hapus kategori"
           >
             <Trash2 size={16} />
           </button>
@@ -107,6 +120,9 @@ export default function CategoriesPage() {
         <CategoryFormModal
           open
           category={editing}
+          parents={(parentsQuery.data?.items ?? []).filter(
+            (c) => c.id !== editing?.id,
+          )}
           onClose={() => {
             setCreateOpen(false);
             setEditing(null);
@@ -144,11 +160,13 @@ export default function CategoriesPage() {
 function CategoryFormModal({
   open,
   category,
+  parents,
   onClose,
   onSaved,
 }: {
   open: boolean;
   category: CategoryDto | null;
+  parents: { id: string; name: string }[];
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -210,6 +228,18 @@ function CategoryFormModal({
             defaultValue={category?.description ?? ""}
             className={inputClass}
           />
+        </Field>
+        <Field label="Kategori Induk" hint="Kosongkan untuk kategori tingkat atas.">
+          <select
+            name="parentId"
+            defaultValue={category?.parentId ?? ""}
+            className={inputClass}
+          >
+            <option value="">— Tanpa induk —</option>
+            {parents.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
         </Field>
       </form>
     </Modal>

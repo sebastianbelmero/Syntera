@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { ChevronLeft, ChevronRight, Search } from "lucide-react";
 import { cn } from "../lib/cn";
@@ -64,10 +64,18 @@ export function DataTable<T>({
     }
   };
 
-  // Lazy-load on first render
-  if (data.length === 0 && !loading && !error && page === 1 && search === "") {
-    Promise.resolve().then(() => reload(1, ""));
-  }
+  // Lazy-load on first mount. Previously fired in the render body
+  // (Promise.resolve().then(...)) which double-fires under React 18
+  // StrictMode in dev and re-fires whenever the guard condition
+  // becomes truthy again (e.g. after the data array is reset on
+  // error). A ref guard makes the initial load strictly once.
+  const didInitialLoadRef = useRef(false);
+  useEffect(() => {
+    if (didInitialLoadRef.current) return;
+    didInitialLoadRef.current = true;
+    void reload(1, "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -151,8 +159,22 @@ export function DataTable<T>({
                   <tr
                     key={rowKey(row)}
                     onClick={onRowClick ? () => onRowClick(row) : undefined}
+                    onKeyDown={
+                      onRowClick
+                        ? (e) => {
+                            // Activate row click via keyboard for a11y.
+                            // Enter / Space = click equivalent.
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              onRowClick(row);
+                            }
+                          }
+                        : undefined
+                    }
+                    tabIndex={onRowClick ? 0 : undefined}
+                    role={onRowClick ? "button" : undefined}
                     className={cn(
-                      "border-b border-[var(--border)] last:border-0 transition-colors hover:bg-[var(--surface)]",
+                      "border-b border-[var(--border)] last:border-0 transition-colors hover:bg-[var(--surface)] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--ring)]",
                       onRowClick && "cursor-pointer",
                     )}
                   >

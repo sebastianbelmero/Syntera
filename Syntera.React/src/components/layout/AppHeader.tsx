@@ -173,6 +173,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
             <button
               type="button"
               className="flex items-center gap-2.5 rounded-lg border-none bg-transparent px-2 py-1.5 transition-colors hover:bg-muted"
+              aria-label="Menu pengguna"
             >
               <Avatar className="size-[34px] rounded-full border-2 border-primary sm:size-[38px]">
                 {user.avatarUrl ? (
@@ -216,7 +217,14 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
             <DropdownMenuSeparator />
             <DropdownMenuItem
               variant="destructive"
-              onClick={onLogout ?? (() => undefined)}
+              onClick={onLogout ?? (() => {
+                // Defensive default — should never fire because App.tsx
+                // always passes onLogout. If it ever does, at least
+                // fail loudly with a toast rather than silently
+                // swallowing the click.
+                console.error("AppHeader: onLogout not wired — redirecting to /login as fallback.");
+                window.location.assign("/login");
+              })}
             >
               <LogOutIcon className="size-4" />
               Logout

@@ -30,8 +30,43 @@ export default function DashboardPage() {
     );
   }
 
+  // Loading state — first paint no longer shows misleading "0 sales".
+  // Renders skeleton KPI cards + an empty chart frame so users see
+  // "fetching" rather than "today has zero sales".
+  if (summary.isLoading || trend.isLoading) {
+    return (
+      <div className="flex flex-col gap-6">
+        <header className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-bold tracking-tight">Dashboard</h2>
+            <p className="text-sm text-[var(--muted-foreground)]">
+              Memuat data ringkasan operasional…
+            </p>
+          </div>
+        </header>
+        <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <article
+              key={i}
+              className="h-[124px] animate-pulse rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5"
+              aria-hidden
+            />
+          ))}
+        </section>
+        <section className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+          <article className="h-80 animate-pulse rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5 xl:col-span-2" aria-hidden />
+          <article className="h-80 animate-pulse rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5" aria-hidden />
+        </section>
+      </div>
+    );
+  }
+
   const summaryData = summary.data;
   const trendData = trend.data?.last14Days ?? [];
+  // Defend against API shape drift on the top-5 list. Without the
+  // ?? [] guard, `trend.data?.top5ProductsThisMonth.length` would
+  // throw if the field is missing from the response payload.
+  const top5 = trend.data?.top5ProductsThisMonth ?? [];
 
   return (
     <div className="flex flex-col gap-6">
@@ -103,7 +138,12 @@ export default function DashboardPage() {
                   stroke="var(--muted-foreground)"
                 />
                 <YAxis
-                  tickFormatter={(v) => formatIDR(Number(v)).replace("Rp", "").trim()}
+                  tickFormatter={(v) =>
+                    // Strip currency prefix + non-breaking space left by
+                    // id-ID locale formatter; previously a leading U+00A0
+                    // leaked into the rendered axis labels.
+                    formatIDR(Number(v)).replace(/^Rp\s*/, "")
+                  }
                   tick={{ fontSize: 11 }}
                   stroke="var(--muted-foreground)"
                 />
@@ -134,7 +174,7 @@ export default function DashboardPage() {
             <Boxes className="text-[var(--muted-foreground)]" size={18} />
           </header>
           <ul className="space-y-3">
-            {(trend.data?.top5ProductsThisMonth ?? []).map((p, idx) => (
+            {top5.map((p, idx) => (
               <li key={p.productId} className="flex items-start gap-3">
                 <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[var(--primary)]/10 text-xs font-bold text-[var(--primary)]">
                   {idx + 1}
@@ -147,7 +187,7 @@ export default function DashboardPage() {
                 </div>
               </li>
             ))}
-            {trend.data?.top5ProductsThisMonth.length === 0 && (
+            {top5.length === 0 && (
               <li className="text-sm text-[var(--muted-foreground)]">
                 Belum ada penjualan bulan ini.
               </li>

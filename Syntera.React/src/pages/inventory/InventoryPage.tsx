@@ -1,5 +1,5 @@
 import { Plus } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { inventoryApi } from "../../api/operations";
@@ -141,13 +141,31 @@ function InventoryFormModal({
 }) {
   const [submitting, setSubmitting] = useState(false);
   const [products, setProducts] = useState<{ id: string; name: string; sku: string }[]>([]);
+  const [productsLoading, setProductsLoading] = useState(true);
 
-  // Lazy load product list when modal first opens
-  if (products.length === 0) {
-    productApi.search({ pageSize: 200 }).then((res) =>
-      setProducts(res.items.map((p) => ({ id: p.id, name: p.name, sku: p.sku })))
-    ).catch(() => undefined);
-  }
+  // Lazy load product list when modal first mounts. Previously
+  // fired in the render body — flooded the API on every keystroke
+  // (any state change re-evaluates the if-block) and double-fired
+  // under React 18 StrictMode dev.
+  useEffect(() => {
+    let cancelled = false;
+    setProductsLoading(true);
+    productApi
+      .search({ pageSize: 200 })
+      .then((res) => {
+        if (cancelled) return;
+        setProducts(res.items.map((p) => ({ id: p.id, name: p.name, sku: p.sku })));
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        const msg = e instanceof ApiError ? e.message : "Gagal memuat daftar produk.";
+        toast.error(msg);
+      })
+      .finally(() => {
+        if (!cancelled) setProductsLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -194,8 +212,10 @@ function InventoryFormModal({
     >
       <form id="inv-form" onSubmit={handleSubmit} className="space-y-3">
         <Field label="Produk" required>
-          <select name="productId" className={inputClass} required defaultValue="">
-            <option value="" disabled>Pilih produk…</option>
+          <select name="productId" className={inputClass} required defaultValue="" disabled={productsLoading}>
+            <option value="" disabled>
+              {productsLoading ? "Memuat…" : "Pilih produk…"}
+            </option>
             {products.map((p) => (
               <option key={p.id} value={p.id}>{p.name} ({p.sku})</option>
             ))}

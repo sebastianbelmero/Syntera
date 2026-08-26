@@ -77,10 +77,10 @@ export default function SettingsPage() {
         </h3>
         <p className="mb-4 text-xs text-[var(--muted-foreground)]">
           Pilih palet warna merek yang diturunkan dari studi logo:
-          Syntera · Kalbe · Dankos · Hexpharm · Fima · GOF. Setiap
-          palet bekerja dalam mode terang maupun gelap.
+          Syntera · Kalbe · Dankos · Hexpharm · Fima · GOF · Kalventis.
+          Setiap palet bekerja dalam mode terang maupun gelap.
         </p>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
           {THEME_BRANDS.map((b: ThemeBrand) => {
             const active = brand === b;
             return (

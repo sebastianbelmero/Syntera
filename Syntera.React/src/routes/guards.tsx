@@ -25,9 +25,13 @@ export function RequireAuth({ children }: { children: ReactNode }) {
 }
 
 /**
- * Role guard — wraps RequireAuth and additionally requires the user
- * to hold one of the given roles. Unauthorised users see a 403 page
- * rather than being silently redirected.
+ * Role guard — additionally requires the user to hold one of the
+ * given roles. Composes RequireAuth internally so the component is
+ * self-sufficient: if reused outside a RequireAuth-wrapped layout
+ * (e.g. a future public-facing page that needs role checks), it
+ * still redirects unauthenticated users to /login rather than
+ * rendering the Forbidden page. Authenticated-but-unauthorized
+ * users see the 403 page (existing behavior preserved).
  */
 export function RequireRole({
   roles,
@@ -37,7 +41,20 @@ export function RequireRole({
   children: ReactNode;
 }) {
   const profile = useAuthStore((s) => s.profile);
-  const userRoles = profile?.roles ?? [];
+  const isAuthed = useAuthStore((s) => s.isAuthenticated());
+  const location = useLocation();
+
+  if (!isAuthed || !profile) {
+    return (
+      <Navigate
+        to="/login"
+        replace
+        state={{ from: location.pathname + location.search }}
+      />
+    );
+  }
+
+  const userRoles = profile.roles;
   const allowed = roles.some((r) => userRoles.includes(r));
   if (!allowed) {
     return <ForbiddenPage />;
