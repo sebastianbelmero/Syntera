@@ -23,22 +23,30 @@ public sealed class AppDbContext : IdentityDbContext<IdentityUser, IdentityRole,
     public DbSet<Sale> Sales => Set<Sale>();
     public DbSet<SaleItem> SaleItems => Set<SaleItem>();
 
-    protected override void OnModelCreating(ModelBuilder b)
+    // "AspNet" prefix used by IdentityDbContext — captured once so the
+    // Ordinal StartsWith call below doesn't allocate a fresh string per
+    // entity on every model build.
+    private const string AspNetTablePrefix = "AspNet";
+
+    protected override void OnModelCreating(ModelBuilder builder)
     {
-        base.OnModelCreating(b);
+        base.OnModelCreating(builder);
 
         // Identity tables get a sensible prefix to avoid name clashes.
-        foreach (var entity in b.Model.GetEntityTypes())
+        // StringComparison.Ordinal keeps this culture-invariant so a
+        // Turkish-locale server doesn't treat 'Aspnet' ≠ 'AspNet'.
+        foreach (var entity in builder.Model.GetEntityTypes())
         {
             var tableName = entity.GetTableName();
-            if (tableName != null && tableName.StartsWith("AspNet"))
+            if (tableName is not null
+                && tableName.StartsWith(AspNetTablePrefix, StringComparison.Ordinal))
             {
                 entity.SetTableName(tableName.Replace("AspNet", "Id_"));
             }
         }
 
         // ── Category ──────────────────────────────────────────────────
-        b.Entity<Category>(e =>
+        builder.Entity<Category>(e =>
         {
             e.ToTable("Categories");
             e.HasKey(c => c.Id);
@@ -55,7 +63,7 @@ public sealed class AppDbContext : IdentityDbContext<IdentityUser, IdentityRole,
         });
 
         // ── Supplier ──────────────────────────────────────────────────
-        b.Entity<Supplier>(e =>
+        builder.Entity<Supplier>(e =>
         {
             e.ToTable("Suppliers");
             e.HasKey(s => s.Id);
@@ -70,7 +78,7 @@ public sealed class AppDbContext : IdentityDbContext<IdentityUser, IdentityRole,
         });
 
         // ── Product ───────────────────────────────────────────────────
-        b.Entity<Product>(e =>
+        builder.Entity<Product>(e =>
         {
             e.ToTable("Products");
             e.HasKey(p => p.Id);
@@ -100,7 +108,7 @@ public sealed class AppDbContext : IdentityDbContext<IdentityUser, IdentityRole,
         });
 
         // ── InventoryMovement ─────────────────────────────────────────
-        b.Entity<InventoryMovement>(e =>
+        builder.Entity<InventoryMovement>(e =>
         {
             e.ToTable("InventoryMovements");
             e.HasKey(m => m.Id);
@@ -115,7 +123,7 @@ public sealed class AppDbContext : IdentityDbContext<IdentityUser, IdentityRole,
         });
 
         // ── Customer ─────────────────────────────────────────────────
-        b.Entity<Customer>(e =>
+        builder.Entity<Customer>(e =>
         {
             e.ToTable("Customers");
             e.HasKey(c => c.Id);
@@ -130,7 +138,7 @@ public sealed class AppDbContext : IdentityDbContext<IdentityUser, IdentityRole,
         });
 
         // ── Sale ──────────────────────────────────────────────────────
-        b.Entity<Sale>(e =>
+        builder.Entity<Sale>(e =>
         {
             e.ToTable("Sales");
             e.HasKey(s => s.Id);
@@ -148,7 +156,7 @@ public sealed class AppDbContext : IdentityDbContext<IdentityUser, IdentityRole,
             e.HasIndex(s => new { s.Status, s.SaleDate });
         });
 
-        b.Entity<SaleItem>(e =>
+        builder.Entity<SaleItem>(e =>
         {
             e.ToTable("SaleItems");
             e.HasKey(i => i.Id);

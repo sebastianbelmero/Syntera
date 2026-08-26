@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using Syntera.Application.Common;
 using Syntera.Application.DTOs.Sales;
 using Syntera.Application.Interfaces;
+using Syntera.Application.Logging;
 using Syntera.Domain.Entities;
 using Syntera.Domain.Enums;
 using Syntera.Domain.Exceptions;
@@ -149,7 +150,7 @@ public sealed class SaleService : ISaleService
             throw;
         }
 
-        _log.LogInformation("Sale created: {Invoice} (grand total {Total})", sale.InvoiceNumber, sale.GrandTotal);
+        SaleLogger.LogSaleCreated(_log, sale.InvoiceNumber, sale.GrandTotal);
         var fresh = await _sales.GetWithItemsAsync(sale.Id, ct) ?? sale;
         return Map(fresh);
     }

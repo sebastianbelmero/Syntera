@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using Syntera.Application.Common;
 using Syntera.Application.DTOs.Products;
 using Syntera.Application.Interfaces;
+using Syntera.Application.Logging;
 using Syntera.Domain.Entities;
 using Syntera.Domain.Enums;
 using Syntera.Domain.Exceptions;
@@ -98,7 +99,7 @@ public sealed class ProductService : IProductService
 
         await _repo.AddAsync(entity, ct);
         await _uow.SaveChangesAsync(ct);
-        _log.LogInformation("Product created: {Id} ({Sku})", entity.Id, entity.Sku);
+        ProductLogger.LogProductCreated(_log, entity.Id, entity.Sku);
         return Map(entity, 0);
     }
 
@@ -188,8 +189,7 @@ public sealed class ProductService : IProductService
             throw;
         }
 
-        _log.LogInformation(
-            "Stock adjusted: {Sku} {Delta:+0;-0;} → {Balance}", entity.Sku, dto.Quantity, newBalance);
+        ProductLogger.LogStockAdjusted(_log, entity.Sku, dto.Quantity, newBalance);
 
         return Map(entity, newBalance);
     }

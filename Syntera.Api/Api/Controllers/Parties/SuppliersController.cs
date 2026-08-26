@@ -36,7 +36,7 @@ public sealed class SuppliersController : ApiControllerBase
     [Authorize(Roles = "Admin")]
     public async Task<IActionResult> Create([FromBody] SupplierUpsertDto dto, CancellationToken ct)
     {
-        var v = await _validator.ValidateAsync(dto);
+        var v = await _validator.ValidateAsync(dto, ct);
         if (!v.IsValid) return Invalid(v.Errors.Select(e => new FieldError(e.PropertyName, e.ErrorMessage)));
         var created = await _svc.CreateAsync(dto, ct);
         return CreatedAtAction(nameof(Get), new { id = created.Id }, Ok(created));
@@ -46,7 +46,7 @@ public sealed class SuppliersController : ApiControllerBase
     [Authorize(Roles = "Admin")]
     public async Task<IActionResult> Update(Guid id, [FromBody] SupplierUpsertDto dto, CancellationToken ct)
     {
-        var v = await _validator.ValidateAsync(dto);
+        var v = await _validator.ValidateAsync(dto, ct);
         if (!v.IsValid) return Invalid(v.Errors.Select(e => new FieldError(e.PropertyName, e.ErrorMessage)));
         try { return Ok(await _svc.UpdateAsync(id, dto, ct)); }
         catch (Domain.Exceptions.NotFoundException) { return Fail("NOT_FOUND", "Supplier not found.", 404); }

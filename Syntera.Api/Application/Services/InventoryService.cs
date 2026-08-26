@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using Syntera.Application.Common;
 using Syntera.Application.DTOs.Inventory;
 using Syntera.Application.Interfaces;
+using Syntera.Application.Logging;
 using Syntera.Domain.Entities;
 using Syntera.Domain.Exceptions;
 
@@ -79,8 +80,8 @@ public sealed class InventoryService : IInventoryService
 
         await _repo.AddAsync(movement, ct);
         await _uow.SaveChangesAsync(ct);
-        _log.LogInformation("Inventory movement recorded: {Type} {Qty} on {Sku}",
-            movement.Type, movement.Quantity, product.Sku);
+        InventoryLogger.LogMovementRecorded(
+            _log, movement.Type, movement.Quantity, product.Sku);
         return Map(movement);
     }
 

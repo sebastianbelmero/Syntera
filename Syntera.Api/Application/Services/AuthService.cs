@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using Syntera.Application.DTOs.Auth;
 using Syntera.Application.Interfaces.Services;
+using Syntera.Application.Logging;
 using Syntera.Domain.Exceptions;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
@@ -45,7 +46,7 @@ public sealed class AuthService : IAuthService
         var result = await _signIn.PasswordSignInAsync(user, req.Password, false, lockoutOnFailure: true);
         if (!result.Succeeded)
         {
-            _log.LogWarning("Failed login attempt for {Email}", req.Email);
+            AuthLogger.LogFailedLogin(_log, req.Email);
             throw new BusinessRuleException("INVALID_CREDENTIALS",
                 result.IsLockedOut ? "Account is locked. Try again later." : "Email or password is incorrect.");
         }
@@ -153,7 +154,7 @@ public sealed class AuthService : IAuthService
         }
         catch (Exception ex)
         {
-            _log.LogDebug(ex, "Refresh token validation failed");
+            AuthLogger.LogRefreshValidationFailed(_log, ex);
             return null;
         }
     }

@@ -42,7 +42,7 @@ public sealed class SalesController : ApiControllerBase
     [Authorize(Roles = "Admin,Cashier")]
     public async Task<IActionResult> Create([FromBody] SaleCreateDto dto, CancellationToken ct)
     {
-        var v = await _validator.ValidateAsync(dto);
+        var v = await _validator.ValidateAsync(dto, ct);
         if (!v.IsValid) return Invalid(v.Errors.Select(e => new FieldError(e.PropertyName, e.ErrorMessage)));
         try
         {

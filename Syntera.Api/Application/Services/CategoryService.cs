@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Syntera.Application.Common;
 using Syntera.Application.DTOs.Categories;
 using Syntera.Application.Interfaces;
+using Syntera.Application.Logging;
 using Syntera.Domain.Entities;
 using Syntera.Domain.Exceptions;
 
@@ -81,7 +82,7 @@ public sealed class CategoryService : ICategoryService
 
         await _repo.AddAsync(entity, ct);
         await _uow.SaveChangesAsync(ct);
-        _log.LogInformation("Category created: {Id} ({Slug})", entity.Id, entity.Slug);
+        CategoryLogger.LogCategoryCreated(_log, entity.Id, entity.Slug);
         return Map(entity);
     }
 

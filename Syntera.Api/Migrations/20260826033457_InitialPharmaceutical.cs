@@ -1,6 +1,13 @@
 ﻿using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
+// CA1861 is suppressed for the entire file because the `new[] { ... }`
+// arguments passed to migrationBuilder.CreateIndex are emitted by the
+// EF Core migration scaffolder; rewriting them as static readonly
+// fields would make the file diverge from what the scaffolder regenerates
+// on the next migration add.
+#pragma warning disable CA1861
+
 #nullable disable
 
 namespace Syntera.Migrations

@@ -38,12 +38,12 @@ public sealed class GlobalExceptionMiddleware
         try { await _next(ctx); }
         catch (DomainException ex)
         {
-            _log.LogWarning(ex, "Domain error: {Code} {Message}", ex.Code, ex.Message);
+            GlobalExceptionLogger.LogDomainError(_log, ex.Code, ex.Message, ex);
             await WriteAsync(ctx, MapDomain(ex), ex.Message, ex.Code);
         }
         catch (Exception ex)
         {
-            _log.LogError(ex, "Unhandled exception on {Path}", ctx.Request.Path);
+            GlobalExceptionLogger.LogUnhandledError(_log, ctx.Request.Path, ex);
             var message = _env.IsDevelopment() ? ex.Message : "An unexpected error occurred.";
             await WriteAsync(ctx, HttpStatusCode.InternalServerError, message, "UNHANDLED");
         }
@@ -63,10 +63,33 @@ public sealed class GlobalExceptionMiddleware
         ctx.Response.StatusCode = (int)status;
         ctx.Response.ContentType = "application/json; charset=utf-8";
         var payload = ApiResponse<object>.Fail(code, message);
-        var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        });
+        // CA1869: reuse a single cached JsonSerializerOptions instance —
+        // creating one per request causes a reflection-driven cache miss
+        // every time and is a measurable perf hit under load.
+        var json = JsonSerializer.Serialize(payload, s_jsonOptions);
         await ctx.Response.WriteAsync(json);
     }
+
+    // Allocated once at class load; CamelCase naming policy is thread-safe.
+    private static readonly JsonSerializerOptions s_jsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    };
+}
+
+/// <summary>
+/// Compile-time generated log delegates via the [LoggerMessage] source
+/// generator. Eliminates CA1848/CA1873 (string interpolation / arg
+/// boxing when logging is disabled) and gives every log call a stable
+/// EventId for filtering in Seq/Datadog.
+/// </summary>
+internal static partial class GlobalExceptionLogger
+{
+    [LoggerMessage(EventId = 2001, Level = LogLevel.Warning,
+        Message = "Domain error: {Code} {Message}")]
+    public static partial void LogDomainError(ILogger logger, string code, string message, Exception ex);
+
+    [LoggerMessage(EventId = 2002, Level = LogLevel.Error,
+        Message = "Unhandled exception on {Path}")]
+    public static partial void LogUnhandledError(ILogger logger, string path, Exception ex);
 }

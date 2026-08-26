@@ -5,12 +5,18 @@ using Syntera.Api.Extensions;
 using Syntera.Api.Middleware;
 using Syntera.Infrastructure.Data;
 using Syntera.Infrastructure.Seed;
+using System.Globalization;
 
 // ─── Bootstrap Serilog (early-stage logs go to console) ─────────────
+// InvariantCulture is passed as the IFormatProvider so log timestamps
+// and numeric values render the same regardless of the server's
+// locale settings — important for log aggregation across regions.
 Log.Logger = new LoggerConfiguration()
     .Enrich.FromLogContext()
     .Enrich.WithEnvironmentName()
-    .WriteTo.Console(outputTemplate:
+    .WriteTo.Console(
+        formatProvider: CultureInfo.InvariantCulture,
+        outputTemplate:
         "[{Timestamp:HH:mm:ss} {Level:u3}] {SourceContext} {Message:lj}{NewLine}{Exception}")
     .CreateBootstrapLogger();
 
@@ -32,6 +38,7 @@ try
         .AddEnvironmentVariables(prefix: "SYNTERA_");
 
     // Layered DI registration — each extension owns its slice.
+    builder.Services.AddSynteraMvc();          // controllers + API behavior
     builder.Services.AddSynteraPersistence(builder.Configuration);
     builder.Services.AddSynteraIdentity(builder.Configuration);
     builder.Services.AddSynteraApplication();
@@ -42,7 +49,7 @@ try
         .AddSqlServer(
             connectionString: builder.Configuration.GetConnectionString("Default")!,
             name: "sqlserver",
-            tags: new[] { "db", "sqlserver" });
+            tags: HealthCheckTags);
 
     var app = builder.Build();
 
@@ -99,4 +106,10 @@ finally
 }
 
 // Marker so Program.cs can be referenced from the tests project.
-public partial class Program { }
+// Also hosts static readonly fields to satisfy CA1861 — constant array
+// arguments passed to a method get re-allocated on every call otherwise;
+// pulling them up to a static field allocates them exactly once at class load.
+public partial class Program
+{
+    internal static readonly string[] HealthCheckTags = { "db", "sqlserver" };
+}

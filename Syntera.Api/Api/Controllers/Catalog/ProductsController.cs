@@ -55,7 +55,7 @@ public sealed class ProductsController : ApiControllerBase
     [Authorize(Roles = "Admin,Pharmacist")]
     public async Task<IActionResult> Create([FromBody] ProductUpsertDto dto, CancellationToken ct)
     {
-        var v = await _validator.ValidateAsync(dto);
+        var v = await _validator.ValidateAsync(dto, ct);
         if (!v.IsValid) return Invalid(v.Errors.Select(e => new FieldError(e.PropertyName, e.ErrorMessage)));
         try
         {
@@ -72,7 +72,7 @@ public sealed class ProductsController : ApiControllerBase
     [Authorize(Roles = "Admin,Pharmacist")]
     public async Task<IActionResult> Update(Guid id, [FromBody] ProductUpsertDto dto, CancellationToken ct)
     {
-        var v = await _validator.ValidateAsync(dto);
+        var v = await _validator.ValidateAsync(dto, ct);
         if (!v.IsValid) return Invalid(v.Errors.Select(e => new FieldError(e.PropertyName, e.ErrorMessage)));
         try { return Ok(await _svc.UpdateAsync(id, dto, ct)); }
         catch (Domain.Exceptions.NotFoundException) { return Fail("NOT_FOUND", "Product not found.", 404); }

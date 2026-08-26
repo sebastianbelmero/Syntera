@@ -23,6 +23,28 @@ namespace Syntera.Api.Extensions;
 /// </summary>
 public static class ServiceCollectionExtensions
 {
+    // ─── MVC / Controllers ───────────────────────────────────────
+    /// <summary>
+    /// Registers controller services. In .NET 8+, AddControllers()
+    /// must be called explicitly before app.MapControllers() or
+    /// the runtime throws "Unable to find the required services"
+    /// at startup (the framework no longer auto-registers them
+    /// behind the scenes as a side effect of WebApplication.Create).
+    /// </summary>
+    public static IServiceCollection AddSynteraMvc(this IServiceCollection services)
+    {
+        services.AddControllers()
+            .ConfigureApiBehaviorOptions(options =>
+            {
+                // Suppress the default 400 ProblemDetails response so our
+                // ApiResponse envelope stays consistent. The [ApiController]
+                // pipeline still validates model state; we just take over the
+                // formatting in ApiControllerBase.Invalid(...).
+                options.SuppressModelStateInvalidFilter = false;
+            });
+        return services;
+    }
+
     // ─── Persistence ─────────────────────────────────────────────
     public static IServiceCollection AddSynteraPersistence(
         this IServiceCollection services, IConfiguration cfg)

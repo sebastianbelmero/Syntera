@@ -19,10 +19,10 @@ public sealed class ProductRepository : RepositoryBase<Product>, IProductReposit
 
     public async Task<PagedResult<Product>> SearchAsync(
         string? search, Guid? categoryId, Guid? supplierId,
-        bool? activeOnly, PageQuery query, CancellationToken ct = default)
+        bool? activeOnly, PageQuery page, CancellationToken ct = default)
     {
-        var page = Math.Max(1, query.Page);
-        var size = Math.Clamp(query.PageSize, 1, 200);
+        var pageNumber = Math.Max(1, page.Page);
+        var size = Math.Clamp(page.PageSize, 1, 200);
         var q = Db.Products
             .AsNoTracking()
             .Include(p => p.Category)
@@ -41,9 +41,9 @@ public sealed class ProductRepository : RepositoryBase<Product>, IProductReposit
 
         var total = await q.CountAsync(ct);
         var items = await q.OrderByDescending(p => p.UpdatedAt)
-            .Skip((page - 1) * size).Take(size)
+            .Skip((pageNumber - 1) * size).Take(size)
             .ToListAsync(ct);
-        return new PagedResult<Product> { Items = items, Total = total, Page = page, PageSize = size };
+        return new PagedResult<Product> { Items = items, Total = total, Page = pageNumber, PageSize = size };
     }
 
     public override Task<Product?> GetByIdAsync(Guid id, CancellationToken ct = default)

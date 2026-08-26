@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Syntera.Api.Controllers;
 using Syntera.Application.Common;
 using Syntera.Application.DTOs.Auth;
+using Syntera.Application.Logging;
 using Syntera.Application.Services;
 using Syntera.Application.Validators;
 
@@ -33,7 +34,7 @@ public sealed class AuthController : ApiControllerBase
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> Login([FromBody] LoginRequest req, CancellationToken ct)
     {
-        var validation = await _loginValidator.ValidateAsync(req);
+        var validation = await _loginValidator.ValidateAsync(req, ct);
         if (!validation.IsValid)
             return Invalid(validation.Errors.Select(e => new FieldError(e.PropertyName, e.ErrorMessage)));
 
@@ -44,7 +45,7 @@ public sealed class AuthController : ApiControllerBase
         }
         catch (Domain.Exceptions.DomainException ex)
         {
-            _log.LogWarning("Login rejected: {Code} {Message}", ex.Code, ex.Message);
+            AuthLogger.LogLoginRejected(_log, ex.Code, ex.Message);
             return Unauthorized(ApiResponse<object>.Fail(ex.Code, ex.Message));
         }
     }

@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using Syntera.Application.Common;
 using Syntera.Application.DTOs.Customers;
 using Syntera.Application.Interfaces;
+using Syntera.Application.Logging;
 using Syntera.Domain.Entities;
 using Syntera.Domain.Exceptions;
 
@@ -61,7 +62,7 @@ public sealed class CustomerService : ICustomerService
         };
         await _repo.AddAsync(entity, ct);
         await _uow.SaveChangesAsync(ct);
-        _log.LogInformation("Customer created: {Id} ({Name})", entity.Id, entity.Name);
+        CustomerLogger.LogCustomerCreated(_log, entity.Id, entity.Name);
         return Map(entity);
     }
 

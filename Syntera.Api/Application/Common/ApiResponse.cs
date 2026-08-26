@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace Syntera.Application.Common;
 
 /// <summary>
@@ -6,6 +8,19 @@ namespace Syntera.Application.Common;
 /// for success, validation error, and domain error cases — no special
 /// cases per endpoint.
 /// </summary>
+/// <remarks>
+/// The static factory methods <see cref="Ok"/>, <see cref="Fail"/>,
+/// and <see cref="Invalid"/> intentionally take the type parameter
+/// from the surrounding <typeparamref name="T"/>. This is the idiomatic
+/// Result&lt;T&gt; pattern (consumers write <c>ApiResponse&lt;MyDto&gt;.Ok(x)</c>),
+/// which keeps call sites clean and avoids a parallel non-generic
+/// helper class. CA1000 is suppressed because moving the factories off
+/// the generic type would force callers to specify the type parameter
+/// explicitly at every call site, defeating the whole purpose of the
+/// factory pattern here.
+/// </remarks>
+[SuppressMessage("Design", "CA1000:Do not declare static members on generic types",
+    Justification = "Idiomatic Result<T> factory pattern; consumers rely on the type parameter from the surrounding generic type.")]
 public sealed class ApiResponse<T>
 {
     public bool Success { get; init; }

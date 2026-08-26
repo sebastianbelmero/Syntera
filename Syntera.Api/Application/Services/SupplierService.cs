@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using Syntera.Application.Common;
 using Syntera.Application.DTOs.Suppliers;
 using Syntera.Application.Interfaces;
+using Syntera.Application.Logging;
 using Syntera.Domain.Entities;
 using Syntera.Domain.Exceptions;
 
@@ -61,7 +62,7 @@ public sealed class SupplierService : ISupplierService
         };
         await _repo.AddAsync(entity, ct);
         await _uow.SaveChangesAsync(ct);
-        _log.LogInformation("Supplier created: {Id} ({Name})", entity.Id, entity.Name);
+        SupplierLogger.LogSupplierCreated(_log, entity.Id, entity.Name);
         return Map(entity);
     }
 
