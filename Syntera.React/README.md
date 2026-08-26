@@ -2,8 +2,11 @@
 
 The React 19 single-page application for the **Syntera Pharmaceutical
 Commerce Suite**. Built on Vite 8 + Tailwind v4 + TanStack Query v5,
-and consuming the shared **`@sebastianbelmero/kalventis-ui`** component
-library.
+with a **fully self-contained UI layer** — all primitives (Avatar,
+DropdownMenu, AdminLayout, AppSidebar, AppHeader, AppBreadcrumb),
+the theme store, the token provider, and the brand design tokens
+live in this repo's `src/`. No external component library is
+required at runtime.
 
 > See the parent [../README.md](../README.md) for full architecture,
 > setup, and deployment docs. This file is a quick developer reference.
@@ -12,7 +15,7 @@ library.
 
 ```bash
 # From this directory:
-bun install                       # also links local kalventis-ui
+bun install                       # installs only Syntera.React deps
 bun run dev                       # http://localhost:5173 (proxies /api to 5113)
 bun run build                     # production build → dist/
 bun run typecheck                 # tsc --noEmit
@@ -31,13 +34,16 @@ Axios client use the relative `/api` prefix that Vite proxies to
 | Path | Purpose |
 | --- | --- |
 | `src/api/` | Single Axios client + per-aggregate endpoint helpers |
-| `src/components/` | Reusable `DataTable`, `Modal`, `Field` primitives |
+| `src/components/ui/` | In-house Radix-based primitives (Avatar, DropdownMenu, …) |
+| `src/components/layout/` | Admin shell: AdminLayout, AppSidebar, AppHeader, AppBreadcrumb |
+| `src/components/` | App-level composites (DataTable, Modal, Field) |
+| `src/providers/` | Context providers (TokenProvider — decouples axios from auth store) |
 | `src/lib/` | `cn()` class composer + ID formatters |
 | `src/pages/` | One folder per domain: auth, dashboard, catalog, parties, inventory, sales, settings |
 | `src/routes/` | `RequireAuth`, `RequireRole` guards |
-| `src/store/` | Zustand auth store (in-memory tokens) |
+| `src/store/` | Zustand stores: `authStore` (in-memory tokens) + `themeStore` (dark/light) |
 | `src/types/` | Mirror of backend DTOs (single file) |
-| `src/index.css` | Tailwind v4 entry + Kalventis brand token overrides |
+| `src/index.css` | Tailwind v4 entry + Syntera brand design tokens (single source of truth) |
 
 ## Conventions
 
@@ -47,6 +53,12 @@ Axios client use the relative `/api` prefix that Vite proxies to
 - **Typed wrappers.** Use `get<T>`, `post<T>`, `put<T>`, `patch<T>`,
   `del<T>` from `src/api/client.ts` — they return `Promise<T>` (the
   unwrapped data), not an AxiosResponse.
+- **UI primitives are owned in-house.** When you need a new Radix
+  primitive (Dialog, Tabs, Select, etc.), add it under
+  `src/components/ui/` following the Avatar/DropdownMenu pattern
+  (forwardRef + `cn(...)` + Syntera brand classes). Do NOT pull in
+  an external shadcn/ui or kalventis-ui package — Syntera.React
+  keeps its visual identity self-contained.
 - **Form state.** Use uncontrolled forms (`FormData` +
   `defaultValue`) for create/edit modals. State libraries like React
   Hook Form can be added later for complex forms; keep the surface

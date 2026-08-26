@@ -12,11 +12,15 @@ The repository is a **single monorepo with two projects**:
 | Project | Path | Stack | Purpose |
 | ------- | ---- | ----- | ------- |
 | `Syntera.Api` | `Syntera.Api/` | .NET 10 ASP.NET Core | REST API + EF Core 10 + Identity + JWT |
-| `Syntera.React` | `Syntera.React/` | React 19 + Vite 8 + Tailwind v4 | SPA front-end built on `kalventis-ui` |
+| `Syntera.React` | `Syntera.React/` | React 19 + Vite 8 + Tailwind v4 | SPA front-end with a self-contained UI layer |
 
-The shared UI library `@sebastianbelmero/kalventis-ui` is consumed via
-a local `file:` link — clone it next to this repo (see
-[Quick start](#quick-start) below).
+Syntera.React owns its **entire UI stack** in-house — all Radix-based
+primitives (`Avatar`, `DropdownMenu`, …), the admin shell
+(`AdminLayout`, `AppSidebar`, `AppHeader`, `AppBreadcrumb`), the theme
+store, the token provider, and the brand design tokens live under
+`Syntera.React/src/`. No external component library is required at
+runtime, so the project is free to evolve its visual identity without
+being constrained by an upstream shared library.
 
 ---
 
@@ -53,7 +57,7 @@ a local `file:` link — clone it next to this repo (see
 │  │  Axios (single client, auto-refresh, envelope unwrap)         │  │
 │  │  Zustand (auth + theme, in-memory only)                       │  │
 │  │  React Router v7 (nested routes, role guards)                  │  │
-│  │  @sebastianbelmero/kalventis-ui (layout + 16 primitives)      │  │
+│  │  In-house UI: primitives + AdminLayout + theme store         │  │
 │  └────────────────────────────┬───────────────────────────────────┘  │
 └───────────────────────────────┼──────────────────────────────────────┘
                                 │  HTTPS / JSON (Bearer JWT)
@@ -155,47 +159,35 @@ Customer (1) ──< (N) Sale (1) ───────< (N) SaleItem (N) >─�
   including Express/Developer)
 - **Git** with HTTPS auth to GitHub
 
-### 1 — Clone the monorepo + UI library
+### 1 — Clone the monorepo
 
 ```bash
-# Clone this repo and the shared UI library side by side:
 git clone https://github.com/sebastianbelmero/Syntera.git
-git clone https://github.com/sebastianbelmero/kalventis-ui.git
 # Resulting layout:
 #   ~/code/Syntera        ← this repo
-#   ~/code/kalventis-ui   ← shared UI library
 ```
 
-> The React project's `package.json` references kalventis-ui via
-> `"file:../../kalventis-ui"`. If your layout differs, edit that
-> path before running `bun install`.
+Syntera.React's UI is fully self-contained — no sibling repository
+is required.
 
-### 2 — Build the UI library once
+### 2 — Install React deps
 
 ```bash
-cd kalventis-ui
+cd Syntera/Syntera.React
 bun install
-bun run build     # outputs dist/index.js + dist/styles.css
 ```
 
-### 3 — Install React deps
-
-```bash
-cd ../Syntera/Syntera.React
-bun install       # picks up the local file: link to kalventis-ui
-```
-
-### 4 — Restore .NET packages + create the database
+### 3 — Restore .NET packages + create the database
 
 ```bash
 cd ../Syntera.Api
 dotnet restore
 # Update the connection string in appsettings.Development.json
-# (default: Server=localhost,1433;Database=Syntera;User Id=sa;Password=Passwordkuat!123)
+# (default: Server=localhost,1433;Database=Syntera;User Id=sa;Password=Passwordkuat123!)
 dotnet ef database update
 ```
 
-### 5 — Run both apps
+### 4 — Run both apps
 
 ```bash
 # Terminal A — API at http://localhost:5113
@@ -374,7 +366,9 @@ Syntera/
 ├── Syntera.React/                      # React 19 + Vite SPA
 │   ├── src/
 │   │   ├── api/                       # Axios client + per-aggregate endpoints
-│   │   ├── components/                # DataTable, Modal (reusable)
+│   │   ├── components/                # App-level composites (DataTable, Modal)
+│   │   │   ├── ui/                    # In-house Radix primitives (Avatar, DropdownMenu, …)
+│   │   │   └── layout/                # Admin shell (AdminLayout, AppSidebar, AppHeader, AppBreadcrumb)
 │   │   ├── hooks/                     # (placeholder for future domain hooks)
 │   │   ├── lib/                       # cn(), formatters
 │   │   ├── pages/
@@ -385,8 +379,9 @@ Syntera/
 │   │   │   ├── inventory/             # InventoryPage (ledger)
 │   │   │   ├── sales/                 # SalesPage (POS-like checkout)
 │   │   │   └── settings/              # Profile + theme toggle + logout
+│   │   ├── providers/                 # TokenProvider (decouples axios from auth store)
 │   │   ├── routes/                    # RequireAuth, RequireRole guards
-│   │   ├── store/                     # authStore (Zustand, in-memory)
+│   │   ├── store/                     # authStore (in-memory) + themeStore (dark/light)
 │   │   ├── types/                     # API DTO mirror (single file)
 │   │   ├── App.tsx                    # Router + AdminLayout shell
 │   │   ├── main.tsx                   # Providers (Query, Token, Router, Toaster)
@@ -502,10 +497,12 @@ stays in sync without manual refetch.
 
 ### Brand styling
 
-`src/index.css` imports `@sebastianbelmero/kalventis-ui/styles.css`
-(brand tokens) and overlays the canonical Kalventis palette via
-`:root` and `.dark` overrides. Every component references CSS
-variables (`var(--primary)`, `var(--accent)`, etc.) — never raw
+`src/index.css` is the **single source of truth** for the brand
+design system. It defines all CSS variables (`--primary`, `--accent`,
+`--background`, `--border`, radii, spacing, …), the dark-mode
+overrides, and the Tailwind v4 `@theme inline` mapping that exposes
+the variables as `bg-primary` / `text-muted-foreground` / etc.
+utilities. Every component references these variables — never raw
 hex — so a future rebrand touches one file.
 
 ---
@@ -662,7 +659,7 @@ jobs:
       - run: dotnet test Syntera.Api --no-build --logger trx
       - run: dotnet ef database update --project Syntera.Api --no-build
         env:
-          ConnectionStrings__Default: Server=localhost,1433;Database=Syntera;User Id=sa;Password=Passwordkuat!123;TrustServerCertificate=True
+          ConnectionStrings__Default: Server=localhost,1433;Database=Syntera;User Id=sa;Password=Passwordkuat123!;TrustServerCertificate=True
 
   web:
     runs-on: ubuntu-latest
@@ -670,18 +667,13 @@ jobs:
       - uses: actions/checkout@v4
         with: { submodules: recursive }
       - uses: oven-sh/setup-bun@v2
-      - name: Build kalventis-ui
-        run: |
-          cd ../kalventis-ui  # if vendored as a submodule
-          bun install
-          bun run build
       - run: bun install --cwd Syntera.React
       - run: bun run build --cwd Syntera.React
       - run: bun run typecheck --cwd Syntera.React
 ```
 
-> Replace the kalventis-ui path handling with a real submodule,
-> `git subtree`, or published GitHub Package reference in production.
+> Syntera.React's UI is fully self-contained, so no sibling build
+> step is required.
 
 ---
 

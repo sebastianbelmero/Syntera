@@ -1,5 +1,5 @@
 import { useAuthStore } from "../../store/authStore";
-import { useThemeStore } from "@sebastianbelmero/kalventis-ui";
+import { useThemeStore } from "../../store/themeStore";
 import { User, Moon, Sun, Shield, Activity } from "lucide-react";
 
 export default function SettingsPage() {

@@ -3,9 +3,8 @@ import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter } from "react-router-dom";
 import { Toaster } from "sonner";
-import { TokenProvider } from "@sebastianbelmero/kalventis-ui";
+import { TokenProvider } from "./providers/TokenProvider";
 
-import "@sebastianbelmero/kalventis-ui/styles.css";
 import "./index.css";
 import App from "./App.tsx";
 import { useAuthStore } from "./store/authStore";

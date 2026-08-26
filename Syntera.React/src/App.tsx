@@ -1,5 +1,5 @@
 import { Routes, Route, Navigate } from "react-router-dom";
-import { AdminLayout, type MenuItem } from "@sebastianbelmero/kalventis-ui";
+import { AdminLayout, type MenuItem } from "./components/layout";
 import {
   LayoutDashboard,
   Package,
