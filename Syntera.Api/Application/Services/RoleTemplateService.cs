@@ -107,7 +107,15 @@ public sealed partial class RoleTemplateService : IRoleTemplateService
         t.Description = dto.Description;
         t.IsSiteAdminRole = dto.IsSiteAdminRole;
 
+        // Explicitly remove existing permission rows from the DbContext.
+        // Just calling t.Permissions.Clear() is not enough in EF Core 10 when
+        // there's a unique index on (RoleTemplateId, PermissionKey) — the
+        // deleted entities stay in the change tracker and can conflict with
+        // the new ones we're about to add with the same key.
+        // RemoveRange marks them for DELETE in the next SaveChanges.
+        _db.RoleTemplatePermissions.RemoveRange(t.Permissions);
         t.Permissions.Clear();
+
         foreach (var k in dto.PermissionKeys.Distinct())
             t.Permissions.Add(new RoleTemplatePermission { PermissionKey = k });
 
