@@ -282,10 +282,38 @@ public sealed class UserManagementService : IUserManagementService
         }
 
         // 2. Find the site-business-admin role (cloned from template during publish).
-        var role = await db.Roles.FirstOrDefaultAsync(r => r.Key == "site-business-admin", ct)
-            ?? throw new BusinessRuleException("ROLE_NOT_PUBLISHED",
-                "The 'site-business-admin' role template has not been published yet. " +
-                "Go to Role Templates page and publish it first.");
+        var role = await db.Roles.FirstOrDefaultAsync(r => r.Key == "site-business-admin", ct);
+
+        if (role is null)
+        {
+            // Role not found in site DB. Check if template exists & is published
+            // in master DB — if so, the cloning failed (old bug). Give a clear
+            // error message telling the user to re-publish.
+            var template = await _platformDb.RoleTemplates
+                .FirstOrDefaultAsync(t => t.Key == "site-business-admin", ct);
+
+            if (template is null)
+            {
+                throw new BusinessRuleException("ROLE_TEMPLATE_MISSING",
+                    "The 'site-business-admin' role template does not exist in the platform. " +
+                    "Contact your developer — the seeder should have created it.");
+            }
+
+            if (!template.IsPublished)
+            {
+                throw new BusinessRuleException("ROLE_NOT_PUBLISHED",
+                    "The 'site-business-admin' role template has not been published yet. " +
+                    "Go to Role Templates page and publish it first.");
+            }
+
+            // Template is published but role is missing from site DB.
+            // This means cloning failed (old bug). User needs to re-publish.
+            throw new BusinessRuleException("ROLE_NOT_CLONED",
+                $"The 'site-business-admin' role template is published (v{template.Version}) in master DB " +
+                "but was not cloned to this site's database. This is a known issue from an earlier version. " +
+                "FIX: Go to Role Templates page and click the Publish button again — the latest code will " +
+                "correctly clone the role to all site databases.");
+        }
 
         // 3. Assign role if not already assigned (idempotent).
         var existingAssignment = await db.UserRoles
