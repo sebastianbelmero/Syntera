@@ -34,6 +34,11 @@ tamper-evident audit trail for compliance (CFR Part 11 / GxP).
 15. [Brand Theming](#brand-theming)
 16. [Operational Runbook](#operational-runbook)
 
+> **New to this project?** Start with **[SETUP.md](./SETUP.md)** — a step-by-step
+> guide from zero to a working login (SQL Server, migrations, seeding, first
+> Platform Admin login). Includes troubleshooting for common issues like
+> "More than one DbContext was found" and login 401 errors.
+
 ---
 
 ## Architecture Overview

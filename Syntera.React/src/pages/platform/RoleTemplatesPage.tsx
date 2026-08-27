@@ -1,31 +1,26 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Plus, Pencil, Send } from "lucide-react";
 import { roleTemplatesApi } from "../../api/platform";
 import { ApiError } from "../../api/client";
 import type { RoleTemplateDto, RoleTemplateUpsertDto, PermissionCatalogDto, PermissionGroupDto } from "../../types";
 
+const TEMPLATES_KEY = ["role-templates"] as const;
+
 export default function RoleTemplatesPage() {
-  const [templates, setTemplates] = useState<RoleTemplateDto[]>([]);
-  const [catalog, setCatalog] = useState<PermissionCatalogDto | null>(null);
-  const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<RoleTemplateDto | null>(null);
   const [creating, setCreating] = useState(false);
 
-  const load = async () => {
-    try {
-      setLoading(true);
-      const [t, c] = await Promise.all([roleTemplatesApi.list(), roleTemplatesApi.permissionCatalog()]);
-      setTemplates(t);
-      setCatalog(c);
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to load");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const { data: templates = [], isLoading: loading } = useQuery<RoleTemplateDto[]>({
+    queryKey: TEMPLATES_KEY,
+    queryFn: () => roleTemplatesApi.list(),
+  });
 
-  useEffect(() => { load(); }, []);
+  const { data: catalog } = useQuery<PermissionCatalogDto>({
+    queryKey: ["permission-catalog"],
+    queryFn: () => roleTemplatesApi.permissionCatalog(),
+  });
 
   return (
     <div className="space-y-4">
@@ -47,48 +42,7 @@ export default function RoleTemplatesPage() {
       ) : (
         <div className="space-y-3">
           {templates.map((t) => (
-            <div key={t.id} className="rounded-xl p-4"
-              style={{ backgroundColor: "var(--color-surface)", border: "1px solid var(--color-border)" }}>
-              <div className="flex items-start justify-between">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-semibold">{t.displayName}</h3>
-                    {t.isSiteAdminRole && (
-                      <span className="text-xs px-2 py-0.5 rounded-full"
-                        style={{ backgroundColor: "var(--color-warning)", color: "white" }}>Site Admin</span>
-                    )}
-                    {t.isPublished ? (
-                      <span className="text-xs px-2 py-0.5 rounded-full"
-                        style={{ backgroundColor: "var(--color-success)", color: "white" }}>Published v{t.version}</span>
-                    ) : (
-                      <span className="text-xs px-2 py-0.5 rounded-full"
-                        style={{ backgroundColor: "var(--color-muted)", color: "white" }}>Draft</span>
-                    )}
-                  </div>
-                  <div className="text-xs font-mono mt-0.5" style={{ color: "var(--color-muted)" }}>{t.key}</div>
-                  {t.description && <p className="text-xs mt-1" style={{ color: "var(--color-muted)" }}>{t.description}</p>}
-                </div>
-                <div className="flex gap-2">
-                  <button onClick={() => setEditing(t)} className="p-1.5 rounded-md" style={{ border: "1px solid var(--color-border)" }}>
-                    <Pencil size={14} />
-                  </button>
-                  {!t.isPublished && (
-                    <button onClick={() => publish(t)} className="p-1.5 rounded-md"
-                      style={{ backgroundColor: "var(--color-primary)", color: "white" }} title="Publish">
-                      <Send size={14} />
-                    </button>
-                  )}
-                </div>
-              </div>
-              {t.permissionKeys.length > 0 && (
-                <div className="flex flex-wrap gap-1 mt-3">
-                  {t.permissionKeys.map((p) => (
-                    <span key={p} className="text-xs px-2 py-0.5 rounded"
-                      style={{ backgroundColor: "var(--color-background)" }}>{p}</span>
-                  ))}
-                </div>
-              )}
-            </div>
+            <TemplateRow key={t.id} template={t} onEdit={() => setEditing(t)} />
           ))}
         </div>
       )}
@@ -98,30 +52,82 @@ export default function RoleTemplatesPage() {
           template={editing}
           catalog={catalog}
           onClose={() => { setEditing(null); setCreating(false); }}
-          onSaved={() => { setEditing(null); setCreating(false); load(); }}
         />
       )}
     </div>
   );
-
-  async function publish(t: RoleTemplateDto) {
-    if (!confirm(`Publish role template "${t.key}"? This will clone/update the role in every enabled site.`)) return;
-    try {
-      await roleTemplatesApi.publish(t.id);
-      toast.success("Template published");
-      load();
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed");
-    }
-  }
 }
 
-function TemplateDrawer({ template, catalog, onClose, onSaved }: {
+function TemplateRow({ template, onEdit }: { template: RoleTemplateDto; onEdit: () => void }) {
+  const queryClient = useQueryClient();
+
+  const publishMutation = useMutation({
+    mutationFn: () => roleTemplatesApi.publish(template.id),
+    onSuccess: () => {
+      toast.success("Template published");
+      void queryClient.invalidateQueries({ queryKey: TEMPLATES_KEY });
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed"),
+  });
+
+  const handlePublish = () => {
+    if (!confirm(`Publish role template "${template.key}"? This will clone/update the role in every enabled site.`)) return;
+    publishMutation.mutate();
+  };
+
+  return (
+    <div className="rounded-xl p-4"
+      style={{ backgroundColor: "var(--color-surface)", border: "1px solid var(--color-border)" }}>
+      <div className="flex items-start justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <h3 className="font-semibold">{template.displayName}</h3>
+            {template.isSiteAdminRole && (
+              <span className="text-xs px-2 py-0.5 rounded-full"
+                style={{ backgroundColor: "var(--color-warning)", color: "white" }}>Site Admin</span>
+            )}
+            {template.isPublished ? (
+              <span className="text-xs px-2 py-0.5 rounded-full"
+                style={{ backgroundColor: "var(--color-success)", color: "white" }}>Published v{template.version}</span>
+            ) : (
+              <span className="text-xs px-2 py-0.5 rounded-full"
+                style={{ backgroundColor: "var(--color-muted)", color: "white" }}>Draft</span>
+            )}
+          </div>
+          <div className="text-xs font-mono mt-0.5" style={{ color: "var(--color-muted)" }}>{template.key}</div>
+          {template.description && <p className="text-xs mt-1" style={{ color: "var(--color-muted)" }}>{template.description}</p>}
+        </div>
+        <div className="flex gap-2">
+          <button onClick={onEdit} className="p-1.5 rounded-md" style={{ border: "1px solid var(--color-border)" }}>
+            <Pencil size={14} />
+          </button>
+          {!template.isPublished && (
+            <button onClick={handlePublish} disabled={publishMutation.isPending}
+              className="p-1.5 rounded-md disabled:opacity-50"
+              style={{ backgroundColor: "var(--color-primary)", color: "white" }} title="Publish">
+              <Send size={14} />
+            </button>
+          )}
+        </div>
+      </div>
+      {template.permissionKeys.length > 0 && (
+        <div className="flex flex-wrap gap-1 mt-3">
+          {template.permissionKeys.map((p) => (
+            <span key={p} className="text-xs px-2 py-0.5 rounded"
+              style={{ backgroundColor: "var(--color-background)" }}>{p}</span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TemplateDrawer({ template, catalog, onClose }: {
   template: RoleTemplateDto | null;
   catalog: PermissionCatalogDto;
   onClose: () => void;
-  onSaved: () => void;
 }) {
+  const queryClient = useQueryClient();
   const isNew = !template;
   const [form, setForm] = useState<RoleTemplateUpsertDto>({
     key: template?.key ?? "",
@@ -130,7 +136,19 @@ function TemplateDrawer({ template, catalog, onClose, onSaved }: {
     isSiteAdminRole: template?.isSiteAdminRole ?? false,
     permissionKeys: template?.permissionKeys ?? [],
   });
-  const [saving, setSaving] = useState(false);
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      if (isNew) return roleTemplatesApi.create(form);
+      return roleTemplatesApi.update(template!.id, form);
+    },
+    onSuccess: () => {
+      toast.success("Saved");
+      void queryClient.invalidateQueries({ queryKey: TEMPLATES_KEY });
+      onClose();
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed"),
+  });
 
   const togglePerm = (key: string) => {
     setForm((f) => ({
@@ -139,20 +157,6 @@ function TemplateDrawer({ template, catalog, onClose, onSaved }: {
         ? f.permissionKeys.filter((k) => k !== key)
         : [...f.permissionKeys, key],
     }));
-  };
-
-  const save = async () => {
-    setSaving(true);
-    try {
-      if (isNew) await roleTemplatesApi.create(form);
-      else await roleTemplatesApi.update(template!.id, form);
-      toast.success("Saved");
-      onSaved();
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed");
-    } finally {
-      setSaving(false);
-    }
   };
 
   return (
@@ -188,7 +192,7 @@ function TemplateDrawer({ template, catalog, onClose, onSaved }: {
                   </div>
                   <div className="grid grid-cols-2 gap-1">
                     {g.permissions.map((p) => (
-                      <label key={p.key} className="flex items-start gap-2 p-1.5 rounded text-xs cursor-pointer hover:bg-[var(--color-background)]">
+                      <label key={p.key} className="flex items-start gap-2 p-1.5 rounded text-xs cursor-pointer hover:opacity-80">
                         <input type="checkbox" checked={form.permissionKeys.includes(p.key)}
                           onChange={() => togglePerm(p.key)} />
                         <div>
@@ -205,9 +209,10 @@ function TemplateDrawer({ template, catalog, onClose, onSaved }: {
 
           <div className="flex justify-end gap-2 pt-4 sticky bottom-0" style={{ backgroundColor: "var(--color-surface)" }}>
             <button onClick={onClose} className="px-4 py-2 rounded-md text-sm" style={{ border: "1px solid var(--color-border)" }}>Cancel</button>
-            <button onClick={save} disabled={saving} className="px-4 py-2 rounded-md text-sm"
+            <button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}
+              className="px-4 py-2 rounded-md text-sm disabled:opacity-50"
               style={{ backgroundColor: "var(--color-primary)", color: "white" }}>
-              {saving ? "Saving..." : "Save"}
+              {saveMutation.isPending ? "Saving..." : "Save"}
             </button>
           </div>
         </div>

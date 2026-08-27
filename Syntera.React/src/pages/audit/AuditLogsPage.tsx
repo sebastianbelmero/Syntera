@@ -1,32 +1,35 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { auditApi } from "../../api/audit";
 import { ApiError } from "../../api/client";
 import type { AuditLogDto } from "../../types";
 
 export default function AuditLogsPage() {
-  const [logs, setLogs] = useState<AuditLogDto[]>([]);
-  const [loading, setLoading] = useState(true);
   const [filterAction, setFilterAction] = useState("");
   const [filterOutcome, setFilterOutcome] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
-  const load = async () => {
-    try {
-      setLoading(true);
-      const data = await auditApi.query({
-        action: filterAction || undefined,
-        outcome: filterOutcome || undefined,
-        take: 100,
-      });
-      setLogs(data);
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to load");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const { data: logs, isLoading: loading } = useQuery<AuditLogDto[]>({
+    queryKey: ["audit-logs", filterAction, filterOutcome],
+    queryFn: async () => {
+      try {
+        setError(null);
+        return await auditApi.query({
+          action: filterAction || undefined,
+          outcome: filterOutcome || undefined,
+          take: 100,
+        });
+      } catch (err) {
+        const msg = err instanceof ApiError ? err.message : "Failed to load";
+        setError(msg);
+        toast.error(msg);
+        return [];
+      }
+    },
+  });
 
-  useEffect(() => { load(); }, [filterAction, filterOutcome]);
+  const displayLogs = logs ?? [];
 
   return (
     <div className="space-y-4">
@@ -50,11 +53,13 @@ export default function AuditLogsPage() {
 
       {loading ? (
         <div className="text-center py-8" style={{ color: "var(--color-muted)" }}>Loading...</div>
-      ) : logs.length === 0 ? (
-        <div className="text-center py-8" style={{ color: "var(--color-muted)" }}>No audit logs found.</div>
+      ) : displayLogs.length === 0 ? (
+        <div className="text-center py-8" style={{ color: "var(--color-muted)" }}>
+          {error ?? "No audit logs found."}
+        </div>
       ) : (
         <div className="space-y-1">
-          {logs.map((l) => (
+          {displayLogs.map((l) => (
             <div key={l.id} className="rounded-md p-3 flex items-start gap-3 text-sm"
               style={{ backgroundColor: "var(--color-surface)", border: "1px solid var(--color-border)" }}>
               <div className="w-2 h-2 rounded-full mt-1.5"

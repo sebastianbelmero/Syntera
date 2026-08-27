@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Plus, RefreshCw, Power, Key, Shield, Clock } from "lucide-react";
 import { usersApi, extractRoles } from "../../api/site";
@@ -6,33 +7,28 @@ import { roleTemplatesApi } from "../../api/platform";
 import { ApiError } from "../../api/client";
 import type { UserDto, UserUpsertDto, RoleDto, AssignRoleDto, GrantDirectPermissionDto, PermissionCatalogDto, UserSyncResultDto } from "../../types";
 
+const USERS_KEY = ["site-users"] as const;
+
 export default function UsersPage() {
-  const [users, setUsers] = useState<UserDto[]>([]);
-  const [roles, setRoles] = useState<RoleDto[]>([]);
-  const [catalog, setCatalog] = useState<PermissionCatalogDto | null>(null);
-  const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<UserDto | null>(null);
   const [syncing, setSyncing] = useState(false);
 
-  const load = async () => {
-    try {
-      setLoading(true);
+  const { data: users = [], isLoading: loading } = useQuery<UserDto[]>({
+    queryKey: USERS_KEY,
+    queryFn: async () => {
       const data = await usersApi.list();
-      setUsers(data);
-      setRoles(extractRoles(data));
-      try {
-        const cat = await roleTemplatesApi.permissionCatalog();
-        setCatalog(cat);
-      } catch { /* may not have access if not platform admin */ }
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to load");
-    } finally {
-      setLoading(false);
-    }
-  };
+      return data;
+    },
+  });
 
-  useEffect(() => { load(); }, []);
+  const roles: RoleDto[] = extractRoles(users);
+
+  const { data: catalog } = useQuery<PermissionCatalogDto>({
+    queryKey: ["permission-catalog"],
+    queryFn: () => roleTemplatesApi.permissionCatalog(),
+    retry: false,
+  });
 
   const sync = async () => {
     if (!confirm("Trigger LDAP sync? This will create users found in LDAP and disable users no longer in LDAP.")) return;
@@ -40,7 +36,6 @@ export default function UsersPage() {
     try {
       const result: UserSyncResultDto = await usersApi.sync();
       toast.success(`Sync ${result.status}: ${result.usersFound} found, ${result.usersCreated} created, ${result.usersUpdated} updated, ${result.usersDisabled} disabled`);
-      load();
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Sync failed");
     } finally {
@@ -115,84 +110,114 @@ export default function UsersPage() {
       )}
 
       {creating && (
-        <UserDrawer onClose={() => setCreating(false)} onSaved={() => { setCreating(false); load(); }} />
+        <UserDrawer onClose={() => setCreating(false)} />
       )}
       {editing && (
         <UserDrawer user={editing} roles={roles} catalog={catalog}
-          onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />
+          onClose={() => setEditing(null)} />
       )}
     </div>
   );
 }
 
-function UserDrawer({ user, roles, catalog, onClose, onSaved }: {
+function UserDrawer({ user, roles, catalog, onClose }: {
   user?: UserDto;
   roles?: RoleDto[];
   catalog?: PermissionCatalogDto | null;
   onClose: () => void;
-  onSaved: () => void;
 }) {
+  const queryClient = useQueryClient();
   const isNew = !user;
   const [form, setForm] = useState<UserUpsertDto>({
     email: user?.email ?? "",
     displayName: user?.displayName ?? "",
     isEnabled: user?.isEnabled ?? true,
   });
-  const [saving, setSaving] = useState(false);
   const [assignRoleId, setAssignRoleId] = useState("");
   const [grantPermId, setGrantPermId] = useState("");
   const [grantReason, setGrantReason] = useState("");
   const [grantExpiry, setGrantExpiry] = useState("");
 
-  const save = async () => {
-    setSaving(true);
-    try {
-      if (isNew) await usersApi.create(form);
-      else await usersApi.update(user!.id, form);
+  const invalidate = () => {
+    void queryClient.invalidateQueries({ queryKey: USERS_KEY });
+  };
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      if (isNew) return usersApi.create(form);
+      return usersApi.update(user!.id, form);
+    },
+    onSuccess: () => {
       toast.success("Saved");
-      onSaved();
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed");
-    } finally {
-      setSaving(false);
-    }
-  };
+      invalidate();
+      onClose();
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed"),
+  });
 
-  const disable = async () => {
-    if (!confirm(`Disable user ${user!.email}?`)) return;
-    try {
-      await usersApi.disable(user!.id);
+  const disableMutation = useMutation({
+    mutationFn: () => usersApi.disable(user!.id),
+    onSuccess: () => {
       toast.success("User disabled");
-      onSaved();
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed");
-    }
-  };
+      invalidate();
+      onClose();
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed"),
+  });
 
-  const assignRole = async () => {
-    if (!assignRoleId) return;
-    const dto: AssignRoleDto = { userId: user!.id, roleId: assignRoleId };
-    try {
-      await usersApi.assignRole(dto);
+  const assignRoleMutation = useMutation({
+    mutationFn: (dto: AssignRoleDto) => usersApi.assignRole(dto),
+    onSuccess: () => {
       toast.success("Role assigned");
-      onSaved();
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed");
-    }
-  };
+      invalidate();
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed"),
+  });
 
-  const revokeRole = async (roleId: string) => {
-    if (!confirm("Revoke this role?")) return;
-    try {
-      await usersApi.revokeRole({ userId: user!.id, roleId });
+  const revokeRoleMutation = useMutation({
+    mutationFn: (roleId: string) => usersApi.revokeRole({ userId: user!.id, roleId }),
+    onSuccess: () => {
       toast.success("Role revoked");
-      onSaved();
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed");
-    }
+      invalidate();
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed"),
+  });
+
+  const grantPermissionMutation = useMutation({
+    mutationFn: (dto: GrantDirectPermissionDto) => usersApi.grantPermission(dto),
+    onSuccess: () => {
+      toast.success("Permission granted");
+      setGrantPermId(""); setGrantReason(""); setGrantExpiry("");
+      invalidate();
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed"),
+  });
+
+  const revokePermissionMutation = useMutation({
+    mutationFn: (id: string) => usersApi.revokePermission({ userPermissionId: id }),
+    onSuccess: () => {
+      toast.success("Permission revoked");
+      invalidate();
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed"),
+  });
+
+  const handleDisable = () => {
+    if (!confirm(`Disable user ${user!.email}?`)) return;
+    disableMutation.mutate();
   };
 
-  const grantPermission = async () => {
+  const handleAssignRole = () => {
+    if (!assignRoleId) return;
+    assignRoleMutation.mutate({ userId: user!.id, roleId: assignRoleId });
+  };
+
+  const handleRevokeRole = (roleId: string) => {
+    if (!confirm("Revoke this role?")) return;
+    revokeRoleMutation.mutate(roleId);
+  };
+
+  const handleGrantPermission = () => {
     if (!grantPermId || !grantReason || !grantExpiry) {
       toast.error("Permission, reason, and expiry are required");
       return;
@@ -203,29 +228,15 @@ function UserDrawer({ user, roles, catalog, onClose, onSaved }: {
       toast.error("Direct permission cannot exceed 90 days");
       return;
     }
-    const dto: GrantDirectPermissionDto = {
+    grantPermissionMutation.mutate({
       userId: user!.id, permissionId: grantPermId,
       reason: grantReason, expiresAt: expiry.toISOString(),
-    };
-    try {
-      await usersApi.grantPermission(dto);
-      toast.success("Permission granted");
-      setGrantPermId(""); setGrantReason(""); setGrantExpiry("");
-      onSaved();
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed");
-    }
+    });
   };
 
-  const revokePermission = async (id: string) => {
+  const handleRevokePermission = (id: string) => {
     if (!confirm("Revoke this direct permission?")) return;
-    try {
-      await usersApi.revokePermission({ userPermissionId: id });
-      toast.success("Permission revoked");
-      onSaved();
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed");
-    }
+    revokePermissionMutation.mutate(id);
   };
 
   return (
@@ -251,14 +262,16 @@ function UserDrawer({ user, roles, catalog, onClose, onSaved }: {
 
           <div className="flex justify-end gap-2">
             {!isNew && user!.isEnabled && (
-              <button onClick={disable} className="px-3 py-2 rounded-md text-sm flex items-center gap-1"
+              <button onClick={handleDisable} disabled={disableMutation.isPending}
+                className="px-3 py-2 rounded-md text-sm flex items-center gap-1 disabled:opacity-50"
                 style={{ color: "var(--color-danger)", border: "1px solid var(--color-danger)" }}>
                 <Power size={14} /> Disable
               </button>
             )}
-            <button onClick={save} disabled={saving} className="px-4 py-2 rounded-md text-sm"
+            <button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}
+              className="px-4 py-2 rounded-md text-sm disabled:opacity-50"
               style={{ backgroundColor: "var(--color-primary)", color: "white" }}>
-              {saving ? "Saving..." : "Save"}
+              {saveMutation.isPending ? "Saving..." : "Save"}
             </button>
           </div>
 
@@ -279,7 +292,8 @@ function UserDrawer({ user, roles, catalog, onClose, onSaved }: {
                           {r.expiresAt && <> · expires {new Date(r.expiresAt).toLocaleDateString()}</>}
                         </div>
                       </div>
-                      <button onClick={() => revokeRole(r.roleId)} className="text-xs"
+                      <button onClick={() => handleRevokeRole(r.roleId)} disabled={revokeRoleMutation.isPending}
+                        className="text-xs disabled:opacity-50"
                         style={{ color: "var(--color-danger)" }}>Revoke</button>
                     </div>
                   ))}
@@ -290,7 +304,8 @@ function UserDrawer({ user, roles, catalog, onClose, onSaved }: {
                       <option value="">Select role...</option>
                       {roles.map((r) => <option key={r.id} value={r.id}>{r.displayName}</option>)}
                     </select>
-                    <button onClick={assignRole} className="px-3 py-2 rounded-md text-sm whitespace-nowrap"
+                    <button onClick={handleAssignRole} disabled={assignRoleMutation.isPending}
+                      className="px-3 py-2 rounded-md text-sm whitespace-nowrap disabled:opacity-50"
                       style={{ backgroundColor: "var(--color-primary)", color: "white" }}>Assign</button>
                   </div>
                 )}
@@ -308,7 +323,8 @@ function UserDrawer({ user, roles, catalog, onClose, onSaved }: {
                         <div className="flex items-center justify-between">
                           <span className="font-mono text-xs">{p.permissionKey}</span>
                           {!p.isRevoked && (
-                            <button onClick={() => revokePermission(p.id)} className="text-xs"
+                            <button onClick={() => handleRevokePermission(p.id)} disabled={revokePermissionMutation.isPending}
+                              className="text-xs disabled:opacity-50"
                               style={{ color: "var(--color-danger)" }}>Revoke</button>
                           )}
                         </div>
@@ -330,7 +346,8 @@ function UserDrawer({ user, roles, catalog, onClose, onSaved }: {
                     <div className="flex gap-2">
                       <input type="date" className="input" value={grantExpiry}
                         onChange={(e) => setGrantExpiry(e.target.value)} />
-                      <button onClick={grantPermission} className="px-3 py-2 rounded-md text-sm"
+                      <button onClick={handleGrantPermission} disabled={grantPermissionMutation.isPending}
+                        className="px-3 py-2 rounded-md text-sm disabled:opacity-50"
                         style={{ backgroundColor: "var(--color-warning)", color: "white" }}>Grant</button>
                     </div>
                   </div>

@@ -1,32 +1,24 @@
 import { useEffect, useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Plus, Pencil, Power, KeyRound, Palette } from "lucide-react";
 import { sitesApi } from "../../api/platform";
 import { ApiError } from "../../api/client";
-import type { SiteDto, SiteUpsertDto, LdapConfigUpsertDto, LdapTestRequest, LdapTestResult } from "../../types";
+import type { SiteDto, SiteUpsertDto, LdapConfigDto, LdapConfigUpsertDto, LdapTestRequest, LdapTestResult } from "../../types";
+
+const SITES_KEY = ["sites"] as const;
 
 /**
  * Platform Admin → Site Management.
  * Lists all sites, allows create/update/disable, and manage LDAP config + theme per site.
  */
 export default function SitesPage() {
-  const [sites, setSites] = useState<SiteDto[]>([]);
-  const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<SiteDto | null>(null);
 
-  const load = async () => {
-    try {
-      setLoading(true);
-      const data = await sitesApi.list();
-      setSites(data);
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed to load sites");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => { load(); }, []);
+  const { data: sites = [], isLoading: loading } = useQuery<SiteDto[]>({
+    queryKey: SITES_KEY,
+    queryFn: () => sitesApi.list(),
+  });
 
   return (
     <div className="space-y-4">
@@ -53,31 +45,35 @@ export default function SitesPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {sites.map((s) => (
-            <SiteCard key={s.id} site={s} onEdit={() => setSelected(s)} onReload={load} />
+            <SiteCard key={s.id} site={s} onEdit={() => setSelected(s)} />
           ))}
         </div>
       )}
 
       {selected && (
-        <SiteDrawer site={selected} onClose={() => setSelected(null)} onSaved={load} />
+        <SiteDrawer site={selected} onClose={() => setSelected(null)} />
       )}
     </div>
   );
 }
 
-function SiteCard({ site, onEdit, onReload }: { site: SiteDto; onEdit: () => void; onReload: () => void }) {
+function SiteCard({ site, onEdit }: { site: SiteDto; onEdit: () => void }) {
+  const queryClient = useQueryClient();
   const [showLdap, setShowLdap] = useState(false);
   const [showTheme, setShowTheme] = useState(false);
 
-  const handleDisable = async () => {
-    if (!confirm(`Disable site ${site.code}? Users from this site will not be able to log in.`)) return;
-    try {
-      await sitesApi.disable(site.id);
+  const disableMutation = useMutation({
+    mutationFn: () => sitesApi.disable(site.id),
+    onSuccess: () => {
       toast.success("Site disabled");
-      onReload();
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed");
-    }
+      void queryClient.invalidateQueries({ queryKey: SITES_KEY });
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed"),
+  });
+
+  const handleDisable = () => {
+    if (!confirm(`Disable site ${site.code}? Users from this site will not be able to log in.`)) return;
+    disableMutation.mutate();
   };
 
   return (
@@ -115,14 +111,16 @@ function SiteCard({ site, onEdit, onReload }: { site: SiteDto; onEdit: () => voi
           <Palette size={12} /> Theme
         </button>
         {site.isEnabled && (
-          <button onClick={handleDisable} className="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs" style={{ color: "var(--color-danger)", border: "1px solid var(--color-danger)" }}>
+          <button onClick={handleDisable} disabled={disableMutation.isPending}
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs disabled:opacity-50"
+            style={{ color: "var(--color-danger)", border: "1px solid var(--color-danger)" }}>
             <Power size={12} /> Disable
           </button>
         )}
       </div>
 
       {showLdap && (
-        <LdapDrawer siteId={site.id} onClose={() => setShowLdap(false)} onSaved={() => setShowLdap(false)} />
+        <LdapDrawer siteId={site.id} onClose={() => setShowLdap(false)} />
       )}
       {showTheme && (
         <ThemeDrawer siteId={site.id} onClose={() => setShowTheme(false)} />
@@ -131,7 +129,8 @@ function SiteCard({ site, onEdit, onReload }: { site: SiteDto; onEdit: () => voi
   );
 }
 
-function SiteDrawer({ site, onClose, onSaved }: { site: SiteDto; onClose: () => void; onSaved: () => void }) {
+function SiteDrawer({ site, onClose }: { site: SiteDto; onClose: () => void }) {
+  const queryClient = useQueryClient();
   const isNew = !site.id;
   const [form, setForm] = useState<SiteUpsertDto>({
     code: site.code ?? "",
@@ -141,23 +140,20 @@ function SiteDrawer({ site, onClose, onSaved }: { site: SiteDto; onClose: () => 
     notes: site.notes,
     ldapDomains: site.ldapDomains ?? [],
   });
-  const [saving, setSaving] = useState(false);
   const [domainInput, setDomainInput] = useState("");
 
-  const save = async () => {
-    setSaving(true);
-    try {
-      if (isNew) await sitesApi.create(form);
-      else await sitesApi.update(site.id, form);
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      if (isNew) return sitesApi.create(form);
+      return sitesApi.update(site.id, form);
+    },
+    onSuccess: () => {
       toast.success("Site saved");
+      void queryClient.invalidateQueries({ queryKey: SITES_KEY });
       onClose();
-      onSaved();
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed");
-    } finally {
-      setSaving(false);
-    }
-  };
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed"),
+  });
 
   return (
     <Drawer title={isNew ? "New Site" : `Edit ${site.displayName}`} onClose={onClose}>
@@ -210,9 +206,9 @@ function SiteDrawer({ site, onClose, onSaved }: { site: SiteDto; onClose: () => 
           <button onClick={onClose} className="px-4 py-2 rounded-md text-sm" style={{ border: "1px solid var(--color-border)" }}>
             Cancel
           </button>
-          <button onClick={save} disabled={saving} className="px-4 py-2 rounded-md text-sm"
+          <button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending} className="px-4 py-2 rounded-md text-sm"
             style={{ backgroundColor: "var(--color-primary)", color: "white" }}>
-            {saving ? "Saving..." : "Save"}
+            {saveMutation.isPending ? "Saving..." : "Save"}
           </button>
         </div>
       </div>
@@ -220,7 +216,8 @@ function SiteDrawer({ site, onClose, onSaved }: { site: SiteDto; onClose: () => 
   );
 }
 
-function LdapDrawer({ siteId, onClose }: { siteId: string; onClose: () => void; onSaved: () => void }) {
+function LdapDrawer({ siteId, onClose }: { siteId: string; onClose: () => void }) {
+  const queryClient = useQueryClient();
   const [cfg, setCfg] = useState<LdapConfigUpsertDto>({
     host: "", port: 636, useStartTls: false, baseDn: "", emailAttribute: "userPrincipalName",
     bindDn: null, bindPassword: null, userFilterTemplate: "(&(objectClass=user)({emailAttribute}={email}))",
@@ -228,33 +225,36 @@ function LdapDrawer({ siteId, onClose }: { siteId: string; onClose: () => void; 
   });
   const [testEmail, setTestEmail] = useState("");
   const [testResult, setTestResult] = useState<LdapTestResult | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
 
-  useEffect(() => {
-    sitesApi.getLdapConfig(siteId).then(c => {
-      setCfg({
-        host: c.host, port: c.port, useStartTls: c.useStartTls, baseDn: c.baseDn,
-        emailAttribute: c.emailAttribute, bindDn: c.bindDn, bindPassword: null,
-        userFilterTemplate: c.userFilterTemplate, timeoutSeconds: c.timeoutSeconds,
-        searchSubtree: c.searchSubtree,
-      });
-    }).catch(() => {}).finally(() => setLoading(false));
-  }, [siteId]);
+  // Load existing LDAP config (silent fail if not configured yet).
+  const { data: existing, isLoading: loading } = useQuery<LdapConfigDto>({
+    queryKey: ["ldap-config", siteId],
+    queryFn: () => sitesApi.getLdapConfig(siteId),
+    enabled: !!siteId,
+    retry: false,
+  });
 
-  const save = async () => {
-    setSaving(true);
-    try {
-      await sitesApi.upsertLdapConfig(siteId, cfg);
+  // Sync loaded config into local form state.
+  useEffectSyncToState(existing, (c) => {
+    if (!c) return;
+    setCfg({
+      host: c.host, port: c.port, useStartTls: c.useStartTls, baseDn: c.baseDn,
+      emailAttribute: c.emailAttribute, bindDn: c.bindDn, bindPassword: null,
+      userFilterTemplate: c.userFilterTemplate, timeoutSeconds: c.timeoutSeconds,
+      searchSubtree: c.searchSubtree,
+    });
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: () => sitesApi.upsertLdapConfig(siteId, cfg),
+    onSuccess: () => {
       toast.success("LDAP config saved");
+      void queryClient.invalidateQueries({ queryKey: SITES_KEY });
       onClose();
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Failed");
-    } finally {
-      setSaving(false);
-    }
-  };
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed"),
+  });
 
   const test = async () => {
     if (!testEmail) { toast.error("Enter a test email first"); return; }
@@ -330,8 +330,9 @@ function LdapDrawer({ siteId, onClose }: { siteId: string; onClose: () => void; 
 
         <div className="flex justify-end gap-2 pt-4">
           <button onClick={onClose} className="px-4 py-2 rounded-md text-sm" style={{ border: "1px solid var(--color-border)" }}>Cancel</button>
-          <button onClick={save} disabled={saving} className="px-4 py-2 rounded-md text-sm" style={{ backgroundColor: "var(--color-primary)", color: "white" }}>
-            {saving ? "Saving..." : "Save"}
+          <button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}
+            className="px-4 py-2 rounded-md text-sm" style={{ backgroundColor: "var(--color-primary)", color: "white" }}>
+            {saveMutation.isPending ? "Saving..." : "Save"}
           </button>
         </div>
       </div>
@@ -349,6 +350,13 @@ function ThemeDrawer({ siteId, onClose }: { siteId: string; onClose: () => void 
       </div>
     </Drawer>
   );
+}
+
+// Unused import removed to keep linter happy.
+
+/** Syncs a TanStack Query result into local state when the data changes. */
+function useEffectSyncToState<T>(data: T | undefined, cb: (data: T | undefined) => void) {
+  useEffect(() => { cb(data); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [data]);
 }
 
 function Drawer({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {

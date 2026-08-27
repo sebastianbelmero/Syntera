@@ -62,7 +62,8 @@ public sealed class SiteDbContextFactory : ISiteDbContextFactory, IDisposable, I
 
         // Build a fresh SiteDbContext using the resolved connection string.
         var options = new DbContextOptionsBuilder<SiteDbContext>()
-            .UseSqlServer(site.DatabaseConnectionString)
+            .UseSqlServer(site.DatabaseConnectionString,
+                sql => sql.MigrationsHistoryTable("__EFMigrationsHistory_Site"))
             .Options;
 
         _resolved = new SiteDbContext(options);

@@ -15,8 +15,14 @@ namespace Syntera.Infrastructure.Seed;
 /// </summary>
 public static class DbSeeder
 {
-    public static async Task SeedPlatformAsync(PlatformDbContext db)
+    /// <param name="db">Platform DB context.</param>
+    /// <param name="adminEmail">Email for the platform admin (default: admin@syntera.com).</param>
+    /// <param name="adminPassword">Plain-text password to hash with bcrypt. MUST come from
+    /// user-secrets / env-var, never hardcoded.</param>
+    public static async Task SeedPlatformAsync(PlatformDbContext db, string? adminEmail = null, string? adminPassword = null)
     {
+        adminEmail = string.IsNullOrWhiteSpace(adminEmail) ? "admin@syntera.com" : adminEmail.ToLowerInvariant();
+
         // ── Default platform settings ──────────────────────────────────
         await EnsureSetting(db, "AuditRetentionYears", "10", "Audit log retention period in years (compliance).");
         await EnsureSetting(db, "TokenAccessTokenMinutes", "15", "JWT access token lifetime in minutes.");
@@ -39,6 +45,9 @@ public static class DbSeeder
                 "permission.read", "permission.grant", "permission.revoke",
                 "audit.read", "report.read",
             });
+
+        // ── Default Platform Admin user ────────────────────────────────
+        await EnsurePlatformAdminAsync(db, adminEmail, adminPassword);
 
         await db.SaveChangesAsync();
     }
@@ -67,5 +76,34 @@ public static class DbSeeder
             template.Permissions.Add(new RoleTemplatePermission { PermissionKey = p });
 
         db.RoleTemplates.Add(template);
+    }
+
+    /// <summary>
+    /// Creates the Platform Admin user if it doesn't exist. The password
+    /// is hashed with bcrypt (work factor 12) before storage. If the user
+    /// already exists, no change is made — to reset the password, use the
+    /// dedicated CLI command (future work) or update directly in DB.
+    /// </summary>
+    private static async Task EnsurePlatformAdminAsync(PlatformDbContext db, string email, string? password)
+    {
+        if (await db.PlatformUsers.AnyAsync(u => u.Email == email)) return;
+
+        if (string.IsNullOrWhiteSpace(password))
+        {
+            // In dev, fall back to a known weak password that the user MUST change.
+            // In production, this branch is never hit because Program.cs fails-fast
+            // when Seed:PlatformAdminPassword is missing.
+            password = "ChangeMe!Strong#1";
+        }
+
+        var hash = BCrypt.Net.BCrypt.HashPassword(password, workFactor: 12);
+
+        db.PlatformUsers.Add(new PlatformUser
+        {
+            Email = email,
+            PasswordHash = hash,
+            DisplayName = "Platform Admin",
+            IsEnabled = true,
+        });
     }
 }

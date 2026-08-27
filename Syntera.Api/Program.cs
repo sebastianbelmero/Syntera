@@ -70,8 +70,10 @@ try
 
     // ─── DI: DbContexts ─────────────────────────────────────────────
     builder.Services.AddDbContext<PlatformDbContext>(opt =>
-        opt.UseSqlServer(builder.Configuration.GetConnectionString("Platform")
-            ?? throw new InvalidOperationException("ConnectionStrings:Platform is required.")));
+        opt.UseSqlServer(
+            builder.Configuration.GetConnectionString("Platform")
+                ?? throw new InvalidOperationException("ConnectionStrings:Platform is required."),
+            sql => sql.MigrationsHistoryTable("__EFMigrationsHistory_Platform")));
 
     builder.Services.AddScoped<ISiteDbContextFactory, SiteDbContextFactory>();
 
@@ -129,15 +131,22 @@ try
 
     app.MapHealthChecks("/health");
 
-    // ─── Database init (NO automatic migration in production — apply via CLI) ─
+    // ─── Database init ─────────────────────────────────────────────
+    // In Development: auto-migrate + seed so `dotnet run` "just works".
+    // In Production: migrations must be applied via CLI before startup;
+    // we only seed (idempotent — safe to call on every boot).
     using (var scope = app.Services.CreateScope())
     {
         var platformDb = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+
         if (app.Environment.IsDevelopment())
         {
-            await platformDb.Database.EnsureCreatedAsync();
-            await DbSeeder.SeedPlatformAsync(platformDb);
+            await platformDb.Database.MigrateAsync();
         }
+
+        var adminEmail = app.Configuration["Seed:PlatformAdminEmail"] ?? "admin@syntera.com";
+        var adminPassword = app.Configuration["Seed:PlatformAdminPassword"];
+        await DbSeeder.SeedPlatformAsync(platformDb, adminEmail, adminPassword);
     }
 
     app.Run();
