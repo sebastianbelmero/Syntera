@@ -72,76 +72,114 @@ Harusnya muncul semua key di atas.
 
 ---
 
-## Step 3: Install EF Core Tool
+## Step 3: Create All Databases & Apply Migrations (One Command)
 
-Cek apakah sudah terinstall:
-```bash
-dotnet ef --version
-```
+Syntera punya **2 DbContext** (Platform + Site) dan **7 database** (1 master + 6 site).
+Untungnya, ada `Syntera.DbSetup` — console project yang otomatis:
 
-Kalau belum:
-```bash
-dotnet tool install --global dotnet-ef --version 10.0.11
-```
+1. Create 7 database jika belum ada (`syntera_master` + `syntera_kalventis`, `syntera_kalbe`, `syntera_fima`, `syntera_gof`, `syntera_dankos`, `syntera_hexpharm`)
+2. Apply PlatformDbContext migration ke `syntera_master`
+3. Apply SiteDbContext migration ke 6 site database
+4. Seed platform data (admin user, role templates, 6 sites + themes)
 
-Pastikan `~/.dotnet/tools` ada di PATH:
-```bash
-echo 'export PATH="$PATH:$HOME/.dotnet/tools"' >> ~/.bashrc
-source ~/.bashrc
-```
-
----
-
-## Step 4: Apply Database Migrations
-
-Ada **2 DbContext** — masing-masing punya migration sendiri:
+### Cara pakai
 
 ```bash
-cd Syntera.Api
+cd ~/Syntera
 
-# Migrate Platform DB (master)
-dotnet ef database update --context PlatformDbContext
+# Opsi A: pakai wrapper script
+./setup-db.sh
 
-# (Optional) Generate SQL script untuk review
-dotnet ef migrations script --context PlatformDbContext --output ../migrate-platform.sql
+# Opsi B: langsung pakai dotnet
+cd Syntera.DbSetup
+dotnet run
 ```
 
-Output yang benar:
+### Output yang benar
+
 ```
-Build started...
-Build succeeded.
-Applying migration '20260827043056_InitialPlatform'.
-Done.
+[14:35:01 INF] ════════════════════════════════════════════════════════════════
+[14:35:01 INF]   Syntera DbSetup — creating all databases & applying migrations
+[14:35:01 INF] ════════════════════════════════════════════════════════════════
+[14:35:01 INF]
+[14:35:01 INF] ▶ Step 1/3: Platform database (syntera_master)
+[14:35:01 INF]
+[14:35:01 INF]   Ensuring database 'syntera_master' exists...
+[14:35:02 INF]   ✓ Database 'syntera_master' ready
+[14:35:02 INF]   Applying PlatformDbContext migrations...
+[14:35:03 INF]   ✓ Platform migrations applied
+[14:35:03 INF]
+[14:35:03 INF] ▶ Step 2/3: Site databases (6 sites)
+[14:35:03 INF]
+[14:35:03 INF]   [KALVENTIS]
+[14:35:03 INF]   Ensuring database 'syntera_kalventis' exists...
+[14:35:04 INF]   ✓ Database 'syntera_kalventis' ready
+[14:35:04 INF]     Applying SiteDbContext migrations...
+[14:35:04 INF]     ✓ kalventis migrations applied
+[14:35:04 INF]   [KALBE]
+[14:35:04 INF]   ... (repeat for fima, gof, dankos, hexpharm)
+[14:35:15 INF]
+[14:35:15 INF] ▶ Step 3/3: Seed platform data (admin user, role templates, 6 sites, themes)
+[14:35:15 INF]
+[14:35:15 INF]   ✓ Seeding complete
+[14:35:15 INF]
+[14:35:15 INF] ════════════════════════════════════════════════════════════════
+[14:35:15 INF]   ✓ All databases ready!
+[14:35:15 INF]
+[14:35:15 INF]   Platform DB: syntera_master (11 tables)
+[14:35:15 INF]   Site DB kalventis : syntera_kalventis (9 tables)
+[14:35:15 INF]   Site DB kalbe     : syntera_kalbe (9 tables)
+[14:35:15 INF]   Site DB fima      : syntera_fima (9 tables)
+[14:35:15 INF]   Site DB gof       : syntera_gof (9 tables)
+[14:35:15 INF]   Site DB dankos    : syntera_dankos (9 tables)
+[14:35:15 INF]   Site DB hexpharm  : syntera_hexpharm (9 tables)
+[14:35:15 INF]
+[14:35:15 INF]   Platform Admin: admin@syntera.com
+[14:35:15 INF]   Password:       (from Seed:PlatformAdminPassword in appsettings)
+[14:35:15 INF]
+[14:35:15 INF]   Next: cd ../Syntera.Api && dotnet run
+[14:35:15 INF] ════════════════════════════════════════════════════════════════
 ```
 
-Verifikasi tabel terbuat:
+### Troubleshooting DbSetup
+
+| Error | Solusi |
+|-------|--------|
+| `Login failed for user 'sa'` | Password salah di `appsettings.json` `ConnectionStrings:Platform` |
+| `Network-related error` | SQL Server tidak running — start dengan `sudo systemctl start mssql-server` |
+| `Cannot find package` | Jalankan `dotnet restore` di `Syntera.DbSetup/` |
+| Hanya 1 site yang gagal | Edit connection string di `appsettings.json` `ConnectionStrings:Sites:{code}` |
+
+### Verifikasi manual (opsional)
+
 ```bash
-# Kalau pakai Docker
-docker exec -it syntera-sql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "YourStrongPass123!" -C -Q "
+# Cek semua database sudah ada
+sqlcmd -S localhost,1433 -U sa -P 'Passwordkuat123!' -C -Q "
+SELECT name FROM sys.databases WHERE name LIKE 'syntera_%' ORDER BY name;
+"
+
+# Cek tabel di platform DB
+sqlcmd -S localhost,1433 -U sa -P 'Passwordkuat123!' -C -Q "
 USE syntera_master;
 SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES ORDER BY TABLE_NAME;
 "
+
+# Cek platform admin sudah di-seed
+sqlcmd -S localhost,1433 -U sa -P 'Passwordkuat123!' -C -Q "
+USE syntera_master;
+SELECT Email, IsEnabled FROM PlatformUsers;
+"
+
+# Cek 6 sites sudah di-seed
+sqlcmd -S localhost,1433 -U sa -P 'Passwordkuat123!' -C -Q "
+USE syntera_master;
+SELECT Code, DisplayName, IsEnabled FROM Sites ORDER BY Code;
+"
 ```
 
-Harusnya muncul tabel-tabel: `Sites`, `SiteLdapDomains`, `SiteLdapConfigs`,
-`SiteThemes`, `RoleTemplates`, `RoleTemplatePermissions`, `PlatformUsers`,
-`RefreshTokens`, `AuditLogs`, `PlatformSettings`, `__EFMigrationsHistory_Platform`.
-
 ---
 
-## Step 5: Seed Default Data (otomatis saat run)
-
-Seeder berjalan otomatis saat `dotnet run` di Development mode.
-Seeder akan membuat:
-- Default platform settings (audit retention 10 tahun, dll.)
-- 2 role templates: `viewer`, `site-business-admin`
-- Platform Admin user: `admin@syntera.com` (password dari user-secrets)
-
-**Tidak perlu manual SQL** — seeder idempotent dan aman dijalankan berulang.
-
----
-
-## Step 6: Jalankan Backend
+## Step 4: Jalankan Backend
 
 ```bash
 cd Syntera.Api
@@ -159,7 +197,7 @@ Swagger UI: http://localhost:5000/docs
 
 ---
 
-## Step 7: Test Login Platform Admin
+## Step 5: Test Login Platform Admin
 
 Dari terminal lain:
 
@@ -201,7 +239,7 @@ Kalau dapat **401**: cek password, atau cek tabel `PlatformUsers` di DB.
 
 ---
 
-## Step 8: Jalankan Frontend
+## Step 6: Jalankan Frontend
 
 ```bash
 cd Syntera.React
@@ -217,40 +255,7 @@ Login dengan:
 
 ---
 
-## Step 9: Setup Site Database (untuk user LDAP)
-
-Setelah login sebagai Platform Admin, buat site pertama Anda:
-
-1. Buka UI → **Sites** → **New Site**
-2. Isi:
-   - Code: `kalventis`
-   - Display Name: `PT Kalventis Surya Pratama`
-   - Database Connection String: `Server=localhost,1433;Database=syntera_kalventis;User Id=sa;Password=YourStrongPass123!;TrustServerCertificate=True;MultipleActiveResultSets=True`
-   - Email Domains: `kalventis.com`
-   - Default Theme Key: `kalventis-navy`
-3. Save
-
-**Buat database kosong** untuk site tersebut:
-```bash
-docker exec -it syntera-sql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "YourStrongPass123!" -C -Q "CREATE DATABASE syntera_kalventis;"
-```
-
-**Apply migration Site** ke database site tersebut:
-```bash
-cd Syntera.Api
-
-# Set connection string site sementara
-export SYNTERA_ConnectionStrings__Site="Server=localhost,1433;Database=syntera_kalventis;User Id=sa;Password=YourStrongPass123!;TrustServerCertificate=True;MultipleActiveResultSets=True"
-
-# Apply migration
-dotnet ef database update --context SiteDbContext --connection "$SYNTERA_ConnectionStrings__Site"
-```
-
-Ulangi untuk setiap site (kalbe, dankos, hexpharm, fima, gof).
-
----
-
-## Step 10: Konfigurasi LDAP per Site
+## Step 7: Konfigurasi LDAP per Site
 
 Di UI → **Sites** → klik **LDAP** pada site yang sesuai:
 
@@ -266,7 +271,7 @@ Klik **Test** dengan email user LDAP yang valid. Jika berhasil, klik **Save**.
 
 ---
 
-## Step 11: Provision Site Users
+## Step 8: Provision Site Users
 
 **Opsi A: Trigger LDAP Sync** (otomatis, butuh bind credential)
 
