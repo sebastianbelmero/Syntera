@@ -72,7 +72,12 @@ echo "════════════════════════�
 # ─── 1. Podman ──────────────────────────────────────────────────────
 section "1. Podman Container"
 
-command -v podman &>/dev/null && check_pass "podman: $(podman --version)" || { check_fail "podman not installed"; exit 1; }
+if command -v podman >/dev/null 2>&1; then
+  check_pass "podman: $(podman --version)"
+else
+  check_fail "podman not installed"
+  exit 1
+fi
 
 if podman ps --format '{{.Names}}' | grep -q "^${CONTAINER}$"; then
   check_pass "Container '$CONTAINER' is running"

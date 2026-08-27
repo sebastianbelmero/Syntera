@@ -56,7 +56,7 @@ kill_port() {
 
 # Check if a command exists
 check_cmd() {
-  if ! command -v "$1" &>/dev/null; then
+  if ! command -v "$1" >/dev/null 2>&1; then
     log_err "$1 not found. $2"
     return 1
   fi
