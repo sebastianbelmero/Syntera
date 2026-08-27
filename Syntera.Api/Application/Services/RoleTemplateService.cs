@@ -97,48 +97,55 @@ public sealed partial class RoleTemplateService : IRoleTemplateService
 
     public async Task<RoleDto> UpdateAsync(Guid id, RoleTemplateUpsertDto dto, CancellationToken ct = default)
     {
-        // Use bulk UPDATE — bypass change tracker entirely.
-        // The change-tracked path throws DbUpdateConcurrencyException because
-        // SQL Server uniqueidentifier comparisons in the WHERE clause are
-        // case-sensitive when EF generates the SQL, but the seeded data uses
-        // uppercase GUIDs while the request URL has lowercase. ExecuteUpdateAsync
-        // generates a single UPDATE statement that matches correctly.
-        var affected = await _db.RoleTemplates
-            .Where(x => x.Id == id)
-            .ExecuteUpdateAsync(setter => setter
-                .SetProperty(x => x.Key, dto.Key)
-                .SetProperty(x => x.DisplayName, dto.DisplayName)
-                .SetProperty(x => x.Description, dto.Description)
-                .SetProperty(x => x.IsSiteAdminRole, dto.IsSiteAdminRole)
-                .SetProperty(x => x.UpdatedAt, DateTime.UtcNow), ct);
+        // ─── 100% raw SQL, zero EF tracking ───────────────────────────
+        // Previous EF-based approaches threw DbUpdateConcurrencyException
+        // due to change-tracker state conflicts. Raw SQL with a transaction
+        // is bulletproof and atomic.
+        using var tx = await _db.Database.BeginTransactionAsync(ct);
 
-        if (affected == 0)
-            throw new NotFoundException("RoleTemplate", id);
-
-        // Replace permissions: delete all existing, then insert new ones.
-        // ExecuteDeleteAsync generates a single DELETE WHERE clause that's
-        // case-insensitive on the FK column.
-        await _db.RoleTemplatePermissions
-            .Where(p => p.RoleTemplateId == id)
-            .ExecuteDeleteAsync(ct);
-
-        foreach (var k in dto.PermissionKeys.Distinct())
+        try
         {
-            _db.RoleTemplatePermissions.Add(new RoleTemplatePermission
+            // 1. UPDATE the role template row.
+            var updated = await _db.Database.ExecuteSqlInterpolatedAsync($@"
+                UPDATE RoleTemplates
+                SET [Key] = {dto.Key},
+                    DisplayName = {dto.DisplayName},
+                    Description = {dto.Description ?? (string?)null},
+                    IsSiteAdminRole = {dto.IsSiteAdminRole},
+                    UpdatedAt = {DateTime.UtcNow}
+                WHERE Id = {id}", ct);
+
+            if (updated == 0)
+                throw new NotFoundException("RoleTemplate", id);
+
+            // 2. DELETE all existing permission rows.
+            await _db.Database.ExecuteSqlInterpolatedAsync($@"
+                DELETE FROM RoleTemplatePermissions
+                WHERE RoleTemplateId = {id}", ct);
+
+            // 3. INSERT new permission rows.
+            var now = DateTime.UtcNow;
+            foreach (var k in dto.PermissionKeys.Distinct())
             {
-                RoleTemplateId = id,
-                PermissionKey = k,
-            });
+                await _db.Database.ExecuteSqlInterpolatedAsync($@"
+                    INSERT INTO RoleTemplatePermissions (Id, RoleTemplateId, PermissionKey, CreatedAt, UpdatedAt)
+                    VALUES ({Guid.NewGuid()}, {id}, {k}, {now}, {now})", ct);
+            }
+
+            await tx.CommitAsync(ct);
+        }
+        catch
+        {
+            await tx.RollbackAsync(ct);
+            throw;
         }
 
-        await _db.SaveChangesAsync(ct);
-
-        // Reload for the response DTO.
-        var updated = await _db.RoleTemplates
+        // Reload for the response DTO (read-only, no tracking).
+        var result = await _db.RoleTemplates
             .AsNoTracking()
             .Include(x => x.Permissions)
             .FirstOrDefaultAsync(x => x.Id == id, ct);
-        return Map(updated!);
+        return Map(result!);
     }
 
     public async Task PublishAsync(Guid id, Guid publishedBy, CancellationToken ct = default)
