@@ -2,6 +2,15 @@ using Microsoft.EntityFrameworkCore;
 using Syntera.Domain.Entities;
 using Syntera.Infrastructure.Data;
 
+// Seeder runs once at startup — LoggerMessage delegate optimization
+// (CA1848, CA1873) is not worth the complexity for these infrequent calls.
+[assembly: System.Diagnostics.CodeAnalysis.SuppressMessage("Performance",
+    "CA1848:Use the LoggerMessage delegates",
+    Justification = "Seeder runs once at startup; performance is not critical here.")]
+[assembly: System.Diagnostics.CodeAnalysis.SuppressMessage("Performance",
+    "CA1873:LoggerMessage argument evaluation",
+    Justification = "Seeder runs once at startup; performance is not critical here.")]
+
 namespace Syntera.Infrastructure.Seed;
 
 /// <summary>
@@ -34,18 +43,12 @@ public static class DbSeeder
         // ── Default role templates ─────────────────────────────────────
         await EnsureRoleTemplate(db, "viewer", "Viewer", "Read-only access to dashboards and own profile.",
             isSiteAdminRole: false,
-            permissions: new[] { "dashboard.read", "audit.read", "profile.read" });
+            permissions: ViewerPermissions);
 
         await EnsureRoleTemplate(db, "site-business-admin", "Site Business Admin",
             "Manages users, roles, and permissions within own site.",
             isSiteAdminRole: true,
-            permissions: new[]
-            {
-                "user.read", "user.write", "user.disable", "user.sync",
-                "role.read", "user_role.assign", "user_role.revoke",
-                "permission.read", "permission.grant", "permission.revoke",
-                "audit.read", "report.read",
-            });
+            permissions: SiteBusinessAdminPermissions);
 
         // ── 6 fixed sites ──────────────────────────────────────────────
         await EnsureSitesAsync(db, config, logger);
@@ -100,7 +103,7 @@ public static class DbSeeder
             var connStr = config[$"ConnectionStrings:Sites:{sc.Code}"];
             if (string.IsNullOrWhiteSpace(connStr))
             {
-                logger?.LogWarning("No connection string found for site '{Code}' (ConnectionStrings:Sites:{Code}). Site will be disabled.", sc.Code, sc.Code);
+                logger?.LogWarning("No connection string found for site {Code}. Site will be disabled.", sc.Code);
             }
 
             var site = await db.Sites
@@ -128,7 +131,10 @@ public static class DbSeeder
                 });
 
                 db.Sites.Add(site);
-                logger?.LogInformation("Seeded site '{Code}' ({DisplayName}).", sc.Code, sc.DisplayName);
+                if (logger is not null)
+                {
+                    logger.LogInformation("Seeded site {Code} ({DisplayName}).", sc.Code, sc.DisplayName);
+                }
             }
             else
             {
@@ -138,7 +144,7 @@ public static class DbSeeder
                 site.DefaultThemeKey = $"{sc.Code}-default";
 
                 // Ensure the primary email domain exists.
-                if (!site.LdapDomains.Any(d => d.Domain == sc.EmailDomain.ToLowerInvariant()))
+                if (!site.LdapDomains.Any(d => string.Equals(d.Domain, sc.EmailDomain, StringComparison.OrdinalIgnoreCase)))
                 {
                     site.LdapDomains.Add(new SiteLdapDomain
                     {
@@ -189,6 +195,21 @@ public static class DbSeeder
             IsEnabled = true,
         });
     }
+
+    // ── Static readonly permission arrays (CA1861: avoid allocating
+    //    new[] on every call — pull up to static readonly fields). ──────
+    private static readonly string[] ViewerPermissions =
+    {
+        "dashboard.read", "audit.read", "profile.read",
+    };
+
+    private static readonly string[] SiteBusinessAdminPermissions =
+    {
+        "user.read", "user.write", "user.disable", "user.sync",
+        "role.read", "user_role.assign", "user_role.revoke",
+        "permission.read", "permission.grant", "permission.revoke",
+        "audit.read", "report.read",
+    };
 }
 
 /// <summary>Seed configuration for a single site (from appsettings Sites section).</summary>

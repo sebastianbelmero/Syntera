@@ -97,7 +97,7 @@ public sealed class NovellLdapClient : ILdapClient
             if (endpoint.UseStartTls && endpoint.Port != 636)
             {
                 LogInfo("Starting TLS upgrade...");
-                await conn.StartTlsAsync().ConfigureAwait(false);
+                await conn.StartTlsAsync(CancellationToken.None).ConfigureAwait(false);
                 LogInfo("TLS established.");
             }
 
@@ -106,7 +106,7 @@ public sealed class NovellLdapClient : ILdapClient
             LogInfo("Binding as {Email}...", email);
             try
             {
-                await conn.BindAsync(email, password).ConfigureAwait(false);
+                await conn.BindAsync(email, password, CancellationToken.None).ConfigureAwait(false);
                 LogInfo("Bind result: Bound={Bound}", conn.Bound);
                 if (!conn.Bound)
                 {
@@ -153,16 +153,16 @@ public sealed class NovellLdapClient : ILdapClient
 
             // Extract display name and account status.
             var attrSet = userEntry.GetAttributeSet();
-            string? displayName = attrSet.ContainsKey(AttrDisplayName)
-                ? attrSet[AttrDisplayName].StringValue
+            string? displayName = attrSet.TryGetValue(AttrDisplayName, out var dnAttr)
+                ? dnAttr.StringValue
                 : null;
-            string? mail = attrSet.ContainsKey(AttrMail)
-                ? attrSet[AttrMail].StringValue
+            string? mail = attrSet.TryGetValue(AttrMail, out var mailAttr)
+                ? mailAttr.StringValue
                 : email;
 
-            if (attrSet.ContainsKey(AttrAccountControl))
+            if (attrSet.TryGetValue(AttrAccountControl, out var uacAttribute))
             {
-                var uacStr = attrSet[AttrAccountControl].StringValue;
+                var uacStr = uacAttribute.StringValue;
                 LogInfo("userAccountControl={Uac}", uacStr);
                 if (int.TryParse(uacStr, out var uac) && (uac & UF_ACCOUNTDISABLE) != 0)
                 {
@@ -217,7 +217,7 @@ public sealed class NovellLdapClient : ILdapClient
                 case '\\': sb.Append("\\5c"); break;
                 case '\0': sb.Append("\\00"); break;
                 default:
-                    if (c < 0x20) sb.Append('\\').Append(((int)c).ToString("x2"));
+                    if (c < 0x20) sb.Append('\\').Append(((int)c).ToString("x2", System.Globalization.CultureInfo.InvariantCulture));
                     else sb.Append(c);
                     break;
             }
@@ -254,8 +254,10 @@ public sealed class NovellLdapClient : ILdapClient
 
         // Accept self-signed certificates — operator accepts the risk for internal AD.
         // In production with proper CA trust, remove this callback.
+#pragma warning disable CA5359 // Do not disable certificate validation
         options.ConfigureRemoteCertificateValidationCallback(
             (sender, certificate, chain, sslPolicyErrors) => true);
+#pragma warning restore CA5359
 
         var conn = new LdapConnection(options)
         {
@@ -264,9 +266,16 @@ public sealed class NovellLdapClient : ILdapClient
         return conn;
     }
 
+    // Logging helpers. CA1848/CA2254 suppressed because LDAP diagnostic
+    // messages are intentionally dynamic (interpolated filter strings, etc.)
+    // and the performance impact is negligible for this low-frequency path.
+#pragma warning disable CA1848 // Use LoggerMessage delegates
+#pragma warning disable CA2254 // Template should be a static expression
     private void LogInfo(string msg, params object[] args) => _logger?.LogInformation(msg, args);
     private void LogWarning(string msg, params object[] args) => _logger?.LogWarning(msg, args);
     private void LogError(string msg, params object[] args) => _logger?.LogError(msg, args);
     private void LogError(Exception ex, string msg, params object[] args) => _logger?.LogError(ex, msg, args);
+#pragma warning restore CA2254
+#pragma warning restore CA1848
 }
 

@@ -286,33 +286,11 @@ public sealed class UserManagementService : IUserManagementService
 
         if (role is null)
         {
-            // Role not found in site DB. Check if template exists & is published
-            // in master DB — if so, the cloning failed (old bug). Give a clear
-            // error message telling the user to re-publish.
-            var template = await _platformDb.RoleTemplates
-                .FirstOrDefaultAsync(t => t.Key == "site-business-admin", ct);
-
-            if (template is null)
-            {
-                throw new BusinessRuleException("ROLE_TEMPLATE_MISSING",
-                    "The 'site-business-admin' role template does not exist in the platform. " +
-                    "Contact your developer — the seeder should have created it.");
-            }
-
-            if (!template.IsPublished)
-            {
-                throw new BusinessRuleException("ROLE_NOT_PUBLISHED",
-                    "The 'site-business-admin' role template has not been published yet. " +
-                    "Go to Role Templates page and publish it first.");
-            }
-
-            // Template is published but role is missing from site DB.
-            // This means cloning failed (old bug). User needs to re-publish.
-            throw new BusinessRuleException("ROLE_NOT_CLONED",
-                $"The 'site-business-admin' role template is published (v{template.Version}) in master DB " +
-                "but was not cloned to this site's database. This is a known issue from an earlier version. " +
-                "FIX: Go to Role Templates page and click the Publish button again — the latest code will " +
-                "correctly clone the role to all site databases.");
+            // Role not found in site DB — auto-clone it now.
+            // This handles the case where the role template was published
+            // but cloning failed (e.g., due to an earlier bug, or because
+            // the site DB was created after the publish).
+            role = await AutoCloneRoleFromTemplateAsync(db, siteId, "site-business-admin", ct);
         }
 
         // 3. Assign role if not already assigned (idempotent).
@@ -360,4 +338,75 @@ public sealed class UserManagementService : IUserManagementService
             up.Reason, up.ApprovedBy, "", up.CreatedAt, up.ExpiresAt,
             up.IsDeny, up.IsRevoked)).ToList(),
         CreatedAt: u.CreatedAt, UpdatedAt: u.UpdatedAt);
+
+    /// <summary>
+    /// Auto-clones a role from the platform's RoleTemplates into a site DB.
+    /// Called when a role is needed but missing from the site DB (e.g.,
+    /// because the template was published before the cloning bug was fixed,
+    /// or because the site DB was created after the last publish).
+    /// </summary>
+    private async Task<Role> AutoCloneRoleFromTemplateAsync(
+        SiteDbContext db, Guid siteId, string roleKey, CancellationToken ct)
+    {
+        // Load the template (with permissions) from the platform DB.
+        var template = await _platformDb.RoleTemplates
+            .Include(t => t.Permissions)
+            .FirstOrDefaultAsync(t => t.Key == roleKey, ct)
+            ?? throw new BusinessRuleException("ROLE_TEMPLATE_MISSING",
+                $"The '{roleKey}' role template does not exist in the platform DB. " +
+                "Contact your developer — the seeder should have created it.");
+
+        // Create the role in the site DB.
+        var role = new Role
+        {
+            Key = template.Key,
+            DisplayName = template.DisplayName,
+            Description = template.Description,
+            IsSiteAdminRole = template.IsSiteAdminRole,
+            OriginTemplateId = template.Id,
+        };
+        db.Roles.Add(role);
+        await db.SaveChangesAsync(ct); // Save to get role.Id
+
+        // Ensure all permission keys exist in the site's Permissions table.
+        var desiredKeys = template.Permissions.Select(p => p.PermissionKey).Distinct().ToList();
+        var existingPerms = await db.Permissions
+            .Where(p => desiredKeys.Contains(p.Key))
+            .ToListAsync(ct);
+        var existingKeys = existingPerms.Select(p => p.Key).ToHashSet();
+        var catalog = PermissionCatalog.Static;
+
+        foreach (var key in desiredKeys)
+        {
+            if (!existingKeys.Contains(key))
+            {
+                var catPerm = catalog.Groups
+                    .SelectMany(g => g.Permissions)
+                    .FirstOrDefault(p => p.Key == key);
+                var group = catPerm != null
+                    ? catalog.Groups.First(g => g.Permissions.Contains(catPerm)).Group
+                    : "Custom";
+
+                var newPerm = new Permission
+                {
+                    Key = key,
+                    DisplayName = catPerm?.Description ?? key,
+                    Group = group,
+                    IsPlatformOnly = false,
+                };
+                db.Permissions.Add(newPerm);
+                existingPerms.Add(newPerm);
+            }
+        }
+        await db.SaveChangesAsync(ct);
+
+        // Insert role-permission rows.
+        foreach (var p in existingPerms)
+        {
+            db.RolePermissions.Add(new RolePermission { RoleId = role.Id, PermissionId = p.Id });
+        }
+        await db.SaveChangesAsync(ct);
+
+        return role;
+    }
 }
