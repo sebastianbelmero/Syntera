@@ -18,7 +18,7 @@ export default defineConfig({
       // This keeps cookies/CORS simple in dev and lets the React app
       // hardcode /api/* in code without knowing the backend port.
       '/api': {
-        target: 'http://localhost:5113',
+        target: 'http://localhost:5000',
         changeOrigin: true,
         // Note: rewrite is NOT applied — the .NET routes are already
         // prefixed with /api/, so we want the full path preserved.
