@@ -28,3 +28,11 @@ logs/
 # OS
 .DS_Store
 Thumbs.db
+
+# Data Protection keys (DPAPI)
+*.dataprotection-keys/
+.dataprotection-keys/
+
+# Worklog & analysis files (not part of the codebase)
+worklog.md
+.tool-results/

@@ -1,862 +1,848 @@
-# 🌿 Syntera
+# 🌿 Syntera IAM
 
-> **Vital Science, Vital Commerce.**
+> **One Platform. One Standard. One Direction.**
 >
-> A full-stack pharmaceutical inventory + point-of-sale platform built on
-> **.NET 10 + React 19 + SQL Server 2022**, themed around the Syntera /
-> Kalbe / Dankos / Hexpharm / Fima / GOF brand family. The default
-> Syntera palette (navy `#0B3D6F` + teal `#00A7B5`) mirrors the
-> official Syntera logo; five additional brand palettes ship alongside.
+> A multi-tenant **Identity & Access Management** platform for the Syntera /
+> Kalbe / Dankos / Hexpharm / Fima / GOF / Kalventis pharmaceutical group.
+> Built on **.NET 10 + React 19 + SQL Server 2022**, themed around each
+> site's brand identity.
 
-The repository is a **single monorepo with two projects**:
-
-| Project | Path | Stack | Purpose |
-| ------- | ---- | ----- | ------- |
-| `Syntera.Api` | `Syntera.Api/` | .NET 10 ASP.NET Core | REST API + EF Core 10 + Identity + JWT |
-| `Syntera.React` | `Syntera.React/` | React 19 + Vite 8 + Tailwind v4 | SPA front-end with a self-contained UI layer |
-
-Syntera.React owns its **entire UI stack** in-house — all Radix-based
-primitives (`Button`, `Badge`, `Select`, `Avatar`, …), the in-house
-AppGrid data grid system, the admin shell
-(`AdminLayout`, `AppSidebar`, `AppHeader`, `AppBreadcrumb`), the theme
-store, and the brand design tokens live under
-`Syntera.React/src/`. No external component library is required at
-runtime, so the project is free to evolve its visual identity without
-being constrained by an upstream shared library.
+This repository was refactored from a pharmaceutical inventory + POS
+application into a centralized **IAM platform** that authenticates users
+from 6+ affiliated sites via their respective LDAP directories, manages
+role-based access control with delegated administration, and provides a
+tamper-evident audit trail for compliance (CFR Part 11 / GxP).
 
 ---
 
 ## 📑 Table of Contents
 
 1. [Architecture Overview](#architecture-overview)
-2. [Domain Model](#domain-model)
-3. [Quick start](#quick-start)
-4. [Configuration & Secrets](#configuration--secrets)
-5. [Database setup](#database-setup)
-6. [Running the apps](#running-the-apps)
-7. [Project layout](#project-layout)
-8. [API surface](#api-surface)
-9. [Front-end architecture](#front-end-architecture)
-10. [Security model](#security-model)
-11. [Brand identity](#brand-identity)
-12. [Testing strategy](#testing-strategy)
-13. [CI / CD](#ci--cd)
-14. [Deployment](#deployment)
-15. [Roadmap (v2 → v3)](#roadmap-v2--v3)
-16. [Contributing](#contributing)
-17. [License](#license)
+2. [Login Flow with LDAP Domain Routing](#login-flow-with-ldap-domain-routing)
+3. [Permission Model (Hybrid RBAC + Direct Permission)](#permission-model-hybrid-rbac--direct-permission)
+4. [Multi-Tenant Database Architecture](#multi-tenant-database-architecture)
+5. [3-Tier Admin Delegation](#3-tier-admin-delegation)
+6. [Quick Start](#quick-start)
+7. [Configuration & Secrets](#configuration--secrets)
+8. [Database Setup](#database-setup)
+9. [Running the Apps](#running-the-apps)
+10. [Project Layout](#project-layout)
+11. [API Surface](#api-surface)
+12. [Front-End Architecture](#front-end-architecture)
+13. [Security Model](#security-model)
+14. [Audit & Compliance](#audit--compliance)
+15. [Brand Theming](#brand-theming)
+16. [Operational Runbook](#operational-runbook)
 
 ---
 
 ## Architecture Overview
 
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│                         Browser (SPA)                                │
-│  ┌────────────────────────────────────────────────────────────────┐  │
-│  │  React 19 + Vite 8 + Tailwind v4                              │  │
-│  │  TanStack Query v5 (server cache)                             │  │
-│  │  Axios (single client, auto-refresh, envelope unwrap)         │  │
-│  │  Zustand (auth + theme, in-memory only)                       │  │
-│  │  React Router v7 (nested routes, role guards)                  │  │
-│  │  In-house UI: primitives + AdminLayout + theme store         │  │
-│  └────────────────────────────┬───────────────────────────────────┘  │
-└───────────────────────────────┼──────────────────────────────────────┘
-                                │  HTTPS / JSON (Bearer JWT)
-                                ▼
-┌──────────────────────────────────────────────────────────────────────┐
-│                    Syntera.Api (.NET 10)                              │
-│                                                                      │
-│  ┌─ Api layer ─────────────────────────────────────────────────────┐ │
-│  │  Controllers → ApiControllerBase (uniform ApiResponse<T> env.)  │ │
-│  │  GlobalExceptionMiddleware → 404/409/500 mapping                │ │
-│  └────────────────────────────┬───────────────────────────────────┘ │
-│                               ▼                                      │
-│  ┌─ Application layer ────────────────────────────────────────────┐ │
-│  │  Services (auth, catalog, inventory, sales, dashboard)         │ │
-│  │  DTOs, FluentValidation, repository contracts                   │ │
-│  └────────────────────────────┬───────────────────────────────────┘ │
-│                               ▼                                      │
-│  ┌─ Infrastructure layer ──────────────────────────────────────────┐│
-│  │  AppDbContext (EF Core 10 + SQL Server)                          ││
-│  │  Repository<T> + UnitOfWork (transactions, retries)              ││
-│  │  Identity stores + JWT issuer                                    ││
-│  │  DbSeeder (roles, admin, sample pharma data)                     ││
-│  └────────────────────────────┬───────────────────────────────────┘│
-│                               ▼                                      │
-│  ┌─ Cross-cutting ─────────────────────────────────────────────────┐│
-│  │  Serilog (console + file)  •  Swagger /health  •  Rate limiter   ││
-│  └─────────────────────────────────────────────────────────────────┘│
-└───────────────────────────────┼──────────────────────────────────────┘
-                                ▼
-                       ┌─────────────────┐
-                       │  SQL Server 2022 │
-                       │  (Docker / local)│
-                       └─────────────────┘
-```
+Syntera is a **single monorepo with two projects**:
 
-### Layered responsibilities
+| Project | Path | Stack | Purpose |
+| ------- | ---- | ----- | ------- |
+| `Syntera.Api` | `Syntera.Api/` | .NET 10 ASP.NET Core | REST API + EF Core 10 + JWT + LDAP |
+| `Syntera.React` | `Syntera.React/` | React 19 + Vite 8 + Tailwind v4 | SPA front-end for admin UI |
 
-- **Domain** (`Domain/`) — pure entities, enums, and domain exceptions.
-  No EF Core, no HTTP, no DI. The single source of truth for business
-  invariants ("an expired product cannot be sold", "stock is append-only").
-- **Application** (`Application/`) — DTOs, FluentValidation rules,
-  service interfaces, and service implementations. Coordinates
-  repositories through `IUnitOfWork` so multi-step writes (e.g.
-  creating a sale + decrementing stock) happen atomically.
-- **Infrastructure** (`Infrastructure/`) — EF Core `AppDbContext`,
-  generic repository base, per-aggregate repositories, ASP.NET
-  Identity user store, and the idempotent `DbSeeder`.
-- **Api** (`Api/`) — Controllers, the global exception middleware, and
-  `Program.cs` bootstrap. Each controller is a thin adapter: validate,
-  call service, map to `ApiResponse<T>`.
+**Key design principles:**
+
+1. **Multi-tenant by database isolation** — One platform database (`syntera_master`)
+   + one isolated database per site (`syntera_kalventis`, `syntera_kalbe`, ...).
+   A compromise of Site A's database never exposes Site B's data.
+
+2. **Email-domain routing** — Users log in with a single form; the platform
+   routes authentication to the correct LDAP server based on the email's
+   domain (`@kalventis.com` → LDAP Kalventis, `@kalbe.co.id` → LDAP Kalbe, ...).
+
+3. **3-tier delegated administration** — Platform Admin (`admin@syntera.com`)
+   manages sites & role templates. Site Business Admins (delegated per site)
+   provision users and assign roles. End Users access features per their
+   effective permission set.
+
+4. **Hybrid RBAC + Direct Permission** — Users receive permissions from
+   assigned roles PLUS direct grants (with mandatory expiry, reason, and
+   approver) for temporary elevated access. Direct permissions auto-revoke
+   at expiry (max 90 days).
+
+5. **Tamper-evident audit log** — Append-only, hash-chained entries.
+   UPDATE/DELETE rejected at the EF Core pipeline level. Retention
+   configurable (default 10 years) for CFR Part 11 compliance.
+
+6. **DB-stored brand themes** — Each site's palette (light + dark) is
+   stored as JSON in the platform DB and cached in-memory on the API.
+   Platform Admin can update brand colors without redeploying.
+
+### Architecture Diagrams
+
+Four architecture diagrams are generated and stored in `docs/diagrams/`:
+
+| Diagram | File | Description |
+| ------- | ---- | ----------- |
+| Login Flow | `01_login_flow.png` | Email domain → LDAP routing → JWT issuance |
+| Permission Model | `02_permission_model.png` | Hybrid RBAC + Direct Permission with expiry |
+| Multi-Tenant DB | `03_multi_tenant_db.png` | Platform DB + per-site DB isolation |
+| Role Hierarchy | `04_role_hierarchy.png` | 3-tier admin delegation with permission scope |
 
 ---
 
-## Domain Model
-
-The data model covers a typical apotek / pharmaceutical wholesale flow:
+## Login Flow with LDAP Domain Routing
 
 ```
-Category (1) ───────< (N) Product (N) >─────── (1) Supplier
-                       │
-                       │ (N)
-                       ▼
-              InventoryMovement (ledger)
-                       ▲
-                       │
-Customer (1) ──< (N) Sale (1) ───────< (N) SaleItem (N) >─── (1) Product
+User input email + password
+        ↓
+┌─────────────────────────────────────────────────────┐
+│ admin@syntera.com        → Platform Admin (local)   │
+│ xxx@kalventis.com        → Auth via LDAP Kalventis  │
+│ xxx@kalbe.co.id          → Auth via LDAP Kalbe       │
+│ xxx@dankos.com           → Auth via LDAP Dankos      │
+│ xxx@hexpharm.com         → Auth via LDAP Hexpharm    │
+│ xxx@fima.com             → Auth via LDAP Fima        │
+│ xxx@gof.com              → Auth via LDAP GOF         │
+└─────────────────────────────────────────────────────┘
+        ↓
+LDAP bind (always LDAPS or StartTLS — never plain)
+        ↓
+Pre-provisioning check (user must exist in site DB)
+        ↓
+Issue JWT (15 min) + Refresh Token (24h, rotating)
+Apply site theme (light/dark from user preference)
+Write audit log (immutable, hash-chained)
+        ↓
+✓ Authenticated → redirect to /dashboard
 ```
 
-- **Category** — self-referencing tree (Antibiotik › Penisilin, etc.)
-- **Supplier** — distributor with BPOM licence number
-- **Product** — obat with SKU, BPOM registration, potency, pack size,
-  cost/selling price, batch number, expiry date, reorder level
-- **InventoryMovement** — append-only ledger; **stock is never a
-  column on Product**, it's `Σ Inbound − Σ Outbound`
-- **Customer** — apotek / klinik / rumah sakit / B2B buyer
-- **Sale** — invoice header with sub-total, tax, discount, grand total
-- **SaleItem** — line with snapshotted unit price (historical accuracy)
+**Key points:**
 
-### Drug classification (Indonesian Ministry of Health)
-
-| Enum value | Local label | Icon circle |
-| --- | --- | --- |
-| `OverTheCounter` | Bebas | Hijau |
-| `RestrictedOTC` | Bebas Terbatas | Biru |
-| `PrescriptionOnly` | Keras | Merah (K) |
-| `PharmacyOnly` | Wajib Apotek | — |
-| `Narcotic` | Narkotika | BPOM special licence |
+- **No fallback** — If LDAP is down, login fails. Platform Admin (`@syntera.com`)
+  is the only user that can log in without LDAP.
+- **Pre-provisioning required** — Even after LDAP authentication succeeds,
+  the user must exist in the site database (provisioned by the Site Business
+  Admin) before they can access the platform. This prevents unauthorized
+  users from any LDAP from logging in.
+- **LDAP injection protection** — User email is escaped per RFC 4515 before
+  being inserted into the LDAP filter (`* ( ) \ NUL` and bytes < 0x20).
+- **Account lockout** — After 5 failed attempts per IP+email, the account
+  is locked for 15 minutes (configurable via platform settings).
 
 ---
 
-## Quick start
+## Permission Model (Hybrid RBAC + Direct Permission)
+
+```
+effective = role_permissions(user) ∪ direct_permissions(user, not_expired)
+denied    = explicit_deny_grants(user)
+final     = effective \ denied
+```
+
+### Permission Sources
+
+1. **RBAC path (stable, audit-friendly):**
+   `User → UserRole → Role → RolePermission → Permission`
+
+2. **Direct permission path (temporary, with mandatory expiry):**
+   `User → UserPermission → Permission`
+   Every direct grant MUST have:
+   - `Reason` (required text, min 10 chars)
+   - `ApprovedBy` (FK → User, the Site Business Admin)
+   - `ExpiresAt` (required, max 90 days from grant)
+   - Auto-revoked by a background job at expiry
+
+### Permission Granularity
+
+Fine-grained, namespace-scoped keys: `resource.action[.scope]`
+
+| Group | Example permissions |
+| ----- | ------------------- |
+| Site Management | `site.create`, `site.read`, `site.update`, `site.disable` |
+| LDAP Configuration | `ldap.read`, `ldap.write`, `ldap.test_connection` |
+| Theme Management | `theme.read`, `theme.write` |
+| Role Templates | `role_template.read`, `role_template.write`, `role_template.publish` |
+| Delegation | `business_admin.assign`, `business_admin.revoke` |
+| Platform Audit | `platform.audit.read`, `platform.config.read/write` |
+| Platform Users | `platform_user.read/create/update/disable` |
+| User Management (Site) | `user.read`, `user.write`, `user.disable`, `user.sync` |
+| Role Assignment (Site) | `role.read`, `user_role.assign`, `user_role.revoke` |
+| Permission Grants (Site) | `permission.read`, `permission.grant`, `permission.revoke` |
+| Site Audit | `audit.read`, `report.read` |
+
+### Permission Cache
+
+- In-memory cache per user with 5-min TTL.
+- Cache invalidation: `User.PermissionsVersion` is bumped on any role/permission
+  change. The JWT carries this version; if it doesn't match the current value
+  on a request, the permission engine re-resolves the effective set.
+
+### Authorization Attributes (Backend)
+
+```csharp
+[HasPermission("user.write")]      // Requires the specific permission in JWT
+[PlatformAdminOnly]                 // admin@syntera.com only
+[SiteBusinessAdmin]                 // Site admin or platform admin
+```
+
+---
+
+## Multi-Tenant Database Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ Application Tier — single .NET 10 API process                   │
+│                                                                  │
+│  ISiteDbContextFactory ──── resolves correct DbContext           │
+│         ↓ based on JWT site_id claim                             │
+│  PlatformDbContext (singleton) ── always points to master        │
+│  SiteDbContext (scoped per request) ── per-site connection       │
+└─────────────────────────────────────────────────────────────────┘
+        ↓
+┌─────────────────────────────────────────────────────────────────┐
+│ Database Tier — 7 databases total                                │
+│                                                                  │
+│  syntera_master (PLATFORM)                                       │
+│    ├── Sites, SiteLdapDomains, SiteLdapConfigs, SiteThemes       │
+│    ├── RoleTemplates, RoleTemplatePermissions                    │
+│    ├── PlatformUsers, RefreshTokens (platform scope)             │
+│    ├── PlatformSettings (audit retention, token lifetimes)       │
+│    └── AuditLogs (platform-level)                                │
+│                                                                  │
+│  syntera_kalventis   syntera_kalbe   syntera_dankos              │
+│  syntera_hexpharm    syntera_fima    syntera_gof                 │
+│    Each contains:                                                │
+│    ├── Users, Roles, Permissions, UserRoles, RolePermissions     │
+│    ├── UserPermissions (direct grants)                           │
+│    ├── RefreshTokens (site scope)                                │
+│    ├── AuditLogs (site-level)                                    │
+│    └── UserSyncHistory                                           │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Isolation Guarantees
+
+- **Connection-level isolation** — Each Site DbContext uses its own
+  connection string; no shared connection pool.
+- **No cross-site JOIN** — Forbidden at the repository layer. Cross-site
+  aggregation done in application code.
+- **Backup / Restore per-site** — Each DB backed up independently; site
+  outage does not affect others.
+- **Per-site encryption keys** — TDE per DB with distinct certificate;
+  key rotation isolated per site.
+
+---
+
+## 3-Tier Admin Delegation
+
+### Tier 1 — Platform Admin (`admin@syntera.com`)
+
+- Local bcrypt credential (must work even if all site LDAPs are down)
+- Stored in `syntera_master.PlatformUsers`
+- Permissions: `site.*`, `ldap.*`, `theme.*`, `role_template.*`,
+  `business_admin.assign/revoke`, `platform.*`
+- **Cannot:** read site business data, view individual users, assign
+  roles to end users (only delegate to business admins)
+
+### Tier 2 — Site Business Admin (per site)
+
+- Authenticated via site LDAP, scoped to own site DB
+- Permissions: `user.*`, `role.read`, `user_role.assign/revoke`,
+  `permission.grant/revoke`, `user.sync`, `audit.read`
+- **Cannot:** create role templates, modify LDAP config, view other
+  sites, escalate to Platform Admin
+
+### Tier 3 — End User (per site)
+
+- Authenticated via site LDAP
+- Permissions come from assigned roles + direct grants
+- Standard roles: `viewer` (read-only), `site-business-admin`
+- Direct permission override possible with expiry
+
+---
+
+## Quick Start
 
 ### Prerequisites
 
-- **.NET 10 SDK** (`dotnet --version` → `10.0.x`)
-- **Bun 1.3+** (or npm/pnpm if you prefer — `bun` scripts work with
-  any Node 18+ runtime)
-- **SQL Server 2022** (Docker or local install — any edition works,
-  including Express/Developer)
-- **Git** with HTTPS auth to GitHub
+- .NET 10 SDK
+- Node.js 24+ (or Bun)
+- SQL Server 2022 (local or remote)
 
-### 1 — Clone the monorepo
+### Backend
 
 ```bash
-git clone https://github.com/sebastianbelmero/Syntera.git
-# Resulting layout:
-#   ~/code/Syntera        ← this repo
-```
-
-Syntera.React's UI is fully self-contained — no sibling repository
-is required.
-
-### 2 — Install React deps
-
-```bash
-cd Syntera/Syntera.React
-bun install
-```
-
-### 3 — Restore .NET packages + create the database
-
-```bash
-cd ../Syntera.Api
-dotnet restore
-# Update the connection string in appsettings.Development.json
-# (default: Server=localhost,1433;Database=Syntera;User Id=sa;Password=Passwordkuat123!)
-dotnet ef database update
-```
-
-### 4 — Run both apps
-
-```bash
-# Terminal A — API at http://localhost:5113
 cd Syntera.Api
-dotnet run
 
-# Terminal B — Vite dev server at http://localhost:5173
-cd Syntera.React
-bun run dev
+# Set required secrets (Development only — use env vars in production)
+dotnet user-secrets set "Jwt:SigningKey" "your-32-char-min-secret-key-here-xxxxxxx"
+dotnet user-secrets set "Seed:PlatformAdminPassword" "YourStrongPa55!"
+
+# Set connection string (Development)
+dotnet user-secrets set "ConnectionStrings:Platform" "Server=localhost,1433;Database=syntera_master;User Id=sa;Password=YourSaPassword;TrustServerCertificate=True;MultipleActiveResultSets=True"
+
+# Run
+dotnet run
 ```
 
-Open `http://localhost:5173`, log in with the seeded admin account
-(`admin@syntera.local` / `ChangeMe!Strong#1`), and explore the
-dashboard, product catalog, inventory ledger, and POS flow.
+The API will be available at `http://localhost:5000` (or as configured in `launchSettings.json`).
+Swagger UI at `http://localhost:5000/docs`.
 
-> Swagger UI: `http://localhost:5113/docs`
-> Health: `http://localhost:5113/health` and `/health/ready`
+### Frontend
+
+```bash
+cd Syntera.React
+bun install   # or npm install
+bun run dev   # or npm run dev
+```
+
+The SPA will be available at `http://localhost:5173`.
 
 ---
 
 ## Configuration & Secrets
 
-The API reads configuration in this priority order (later wins):
+### Backend (`appsettings.json`)
 
-1. `appsettings.json`
-2. `appsettings.{Environment}.json`
-3. **User Secrets** (Development only) — `dotnet user-secrets`
-4. Environment variables prefixed with `SYNTERA_`
-5. Command-line arguments
+| Key | Description | Required in Production |
+| --- | ----------- | ---------------------- |
+| `ConnectionStrings:Platform` | SQL Server connection string for `syntera_master` | ✅ Yes |
+| `Jwt:SigningKey` | HS256 signing key, min 32 chars | ✅ Yes (env var `SYNTERA_Jwt__SigningKey`) |
+| `Jwt:AccessTokenMinutes` | JWT lifetime (default 15) | Optional |
+| `Jwt:RefreshTokenDays` | Refresh token lifetime (default 1) | Optional |
+| `Cors:AllowedOrigins` | Comma-separated list of allowed origins | ✅ Yes (fail-closed if empty in Production) |
+| `Cors:DevOrigins` | Development-only origins (localhost) | Optional |
+| `DataProtection:KeyPath` | Directory for DPAPI key ring (LDAP credential encryption) | Optional (default `/var/lib/syntera/keys`) |
+| `Seed:PlatformAdminEmail` | Platform admin email (default `admin@syntera.com`) | Optional |
+| `Seed:PlatformAdminPassword` | Initial platform admin password | ✅ Yes (env var) |
+| `Audit:RetentionYears` | Audit log retention (default 10) | Optional |
 
-### Required secrets
+### Fail-Fast Startup Checks (Production)
 
-Never commit real secrets. In Development, set them with User Secrets:
+The API refuses to start in Production if any of these conditions are true:
+
+1. `Jwt:SigningKey` missing or shorter than 32 chars
+2. `Cors:AllowedOrigins` missing or empty
+3. `Ldap:AllowPlain=true` (plain LDAP forbidden in production)
+
+### Environment Variable Convention
+
+All config keys can be overridden via environment variables using `__` (double underscore) as the hierarchy separator:
+
+```bash
+SYNTERA_ConnectionStrings__Platform="Server=..."
+SYNTERA_Jwt__SigningKey="..."
+SYNTERA_Seed__PlatformAdminPassword="..."
+```
+
+---
+
+## Database Setup
+
+### Initial Setup (Platform DB)
+
+In Development, the API auto-creates the platform database on startup via
+`EnsureCreatedAsync()`. For Production, use EF Core migrations:
 
 ```bash
 cd Syntera.Api
-
-# 1. JWT signing key (≥ 32 chars, random)
-dotnet user-secrets set "Jwt:SigningKey" "$(openssl rand -base64 48)"
-
-# 2. Initial admin password (change on first login)
-dotnet user-secrets set "Seed:AdminPassword" "Strong#Password!2026"
-
-# 3. Optional: override the DB connection string
-dotnet user-secrets set "ConnectionStrings:Default" \
-  "Server=localhost,1433;Database=Syntera;User Id=sa;Password=YourSaPassword;TrustServerCertificate=True"
+dotnet ef migrations add InitialPlatform --context PlatformDbContext --output-dir Migrations/Platform
+dotnet ef database update --context PlatformDbContext
 ```
 
-In Production, set the same keys as environment variables:
+### Site Database Setup
 
-```bash
-export SYNTERA_JWT__SIGNINGKEY="$(openssl rand -base64 48)"
-export SYNTERA_SEED__ADMINPASSWORD="Strong#Password!2026"
-export SYNTERA_CONNECTIONSTRINGS__DEFAULT="Server=prod-sql;Database=Syntera;User Id=sa;Password=…;Encrypt=True"
+Each site database must be created manually (or via your DB provisioning
+pipeline) with the connection string stored in the platform DB's `Sites`
+table. The schema is identical across all site DBs.
+
+To provision a new site database:
+
+1. Platform Admin creates the site via UI (`POST /api/platform/sites`)
+2. Create the database manually in SQL Server with the same name as configured
+3. The schema is created on first site-DbContext access via `EnsureCreatedAsync()`
+   (Development only — use migrations in Production)
+
+### Seeding Default Data
+
+The seeder (`DbSeeder.SeedPlatformAsync`) creates:
+
+- Default platform settings (audit retention = 10 years, token lifetimes, etc.)
+- Default role templates:
+  - `viewer` — read-only access
+  - `site-business-admin` — manages users in own site
+
+The Platform Admin user (`admin@syntera.com`) is **NOT** auto-seeded in the
+current version. To create it manually:
+
+```sql
+USE syntera_master;
+INSERT INTO PlatformUsers (Id, Email, PasswordHash, DisplayName, IsEnabled, CreatedAt, UpdatedAt)
+VALUES (NEWID(), 'admin@syntera.com', '<bcrypt-hash>', 'Platform Admin', 1, SYSUTCDATETIME(), SYSUTCDATETIME());
 ```
 
-### Connection string reference
-
-The default in `appsettings.Development.json` is:
-
-```
-Server=localhost,1433;Database=Syntera;User Id=sa;Password=Passwordkuat!123;TrustServerCertificate=True;MultipleActiveResultSets=True
-```
-
-- `TrustServerCertificate=True` — Dev only. In production, install a
-  real TLS cert on SQL Server and switch to `Encrypt=True` alone.
-- `MultipleActiveResultSets=True` — required by EF Core for streaming
-  query + side-effect writes in the same connection.
+Generate the bcrypt hash via your favorite tool (e.g., `htpasswd -bnBC 12 "" "password" | tr -d ':\n'`).
 
 ---
 
-## Database setup
+## Running the Apps
 
-### Option A — SQL Server via Docker
-
-```bash
-docker run -d --name syntera-sql \
-  -e "ACCEPT_EULA=Y" \
-  -e "MSSQL_SA_PASSWORD=Passwordkuat!123" \
-  -p 1433:1433 \
-  mcr.microsoft.com/mssql/server:2022-latest
-```
-
-> The SA password must match `Passwordkuat!123` (or whatever you set
-> in `appsettings.Development.json`). SQL Server password policy
-> requires ≥ 8 chars with upper, lower, digit, and symbol — the
-> default satisfies this.
-
-### Option B — Local SQL Server install
-
-Use SQL Server Management Studio / Azure Data Studio to create a
-blank database named `Syntera`. The first `dotnet ef database update`
-will create all tables + the Identity schema.
-
-### Create / update schema
+### Development
 
 ```bash
+# Terminal 1: Backend
 cd Syntera.Api
+dotnet run
 
-# Apply existing migrations (also runs on app startup via DbSeeder)
-dotnet ef database update
-
-# Add a new migration after changing entities
-dotnet ef migrations add YourChangeName --output-dir Migrations
-
-# Drop & recreate (DEV ONLY)
-dotnet ef database drop --force
-dotnet ef database update
+# Terminal 2: Frontend
+cd Syntera.React
+bun run dev
 ```
 
-### Seeding
+### Production
 
-On every application start, `DbSeeder.SeedAsync` runs and:
+```bash
+# Backend
+cd Syntera.Api
+dotnet publish -c Release -o ./publish
+./publish/Syntera.Api
 
-1. Ensures the `Admin`, `Cashier`, `Pharmacist` roles exist.
-2. Creates the initial admin user from `Seed:AdminEmail` /
-   `Seed:AdminPassword` if it doesn't exist.
-3. If `SEED_SAMPLE_DATA=true` (Development only), inserts a small
-   demo dataset: 3 categories, 3 suppliers (PT Kalbe Farma,
-   PT Hexpharm Jaya, PT Dankos Farma), 5 products (Amoxicillin,
-   Paracetamol, Vitamin C, Ibuprofen, Cetirizine), 5 inbound stock
-   movements, and 1 sample customer.
-
----
-
-## Running the apps
-
-| Command | What it does |
-| --- | --- |
-| `cd Syntera.Api && dotnet run` | Start API at `http://localhost:5113` |
-| `cd Syntera.React && bun run dev` | Vite dev server at `http://localhost:5173` (proxies `/api/*` to the API) |
-| `cd Syntera.React && bun run build` | Production build → `dist/` |
-| `cd Syntera.React && bun run preview` | Preview the production build locally |
-| `cd Syntera.Api && dotnet build` | Compile-check the API |
-| `cd Syntera.React && bun run typecheck` | `tsc --noEmit` |
-
-### Dev ports
-
-| Service | Port | Notes |
-| --- | --- | --- |
-| Syntera.Api | 5113 | Configured in `Properties/launchSettings.json` |
-| Syntera.React (dev) | 5173 | Proxies `/api/*` → `5113` via Vite |
-| SQL Server | 1433 | Default SQL port |
+# Frontend
+cd Syntera.React
+bun run build
+# Serve dist/ via nginx, Apache, or any static file server
+```
 
 ---
 
-## Project layout
+## Project Layout
 
 ```
 Syntera/
-├── Syntera.Api/                        # .NET 10 backend
-│   ├── Domain/
-│   │   ├── Entities/                   # BaseEntity, Product, Sale, ...
-│   │   ├── Enums/                      # DrugClass, SaleStatus, ...
-│   │   └── Exceptions/                 # DomainException, NotFoundException
-│   ├── Application/
-│   │   ├── Common/                    # ApiResponse<T>, PagedResult, PageQuery
-│   │   ├── DTOs/                       # Auth, Catalog, Inventory, Sales, ...
-│   │   ├── Interfaces/                 # IRepository<T>, IUnitOfWork, per-aggregate
-│   │   ├── Services/                  # AuthService, ProductService, SaleService, ...
-│   │   └── Validators/                # FluentValidation rules
-│   ├── Infrastructure/
-│   │   ├── Data/                      # AppDbContext, RepositoryBase, UnitOfWork
-│   │   ├── Repositories/              # Concrete EF Core repositories
-│   │   ├── Identity/                  # CurrentUserService
-│   │   └── Seed/                      # DbSeeder (idempotent)
+├── README.md
+├── docs/
+│   └── diagrams/
+│       ├── 01_login_flow.png
+│       ├── 02_permission_model.png
+│       ├── 03_multi_tenant_db.png
+│       └── 04_role_hierarchy.png
+│
+├── Syntera.Api/
 │   ├── Api/
-│   │   ├── Controllers/               # Auth, Catalog, Parties, Sales, Dashboard
-│   │   └── Middleware/                # GlobalExceptionMiddleware
-│   ├── Extensions/                    # ServiceCollectionExtensions (DI wiring)
-│   ├── Migrations/                    # EF Core migration history
-│   ├── Program.cs                     # Bootstrap + seed
-│   ├── appsettings.json               # Base config (no secrets)
-│   └── appsettings.Development.json   # Dev config (with sample secrets)
+│   │   ├── Controllers/
+│   │   │   ├── Auth/AuthController.cs        # login, refresh, logout, profile
+│   │   │   ├── Platform/
+│   │   │   │   ├── SitesController.cs        # site CRUD + LDAP config + theme
+│   │   │   │   └── RoleTemplatesController.cs
+│   │   │   ├── Site/UsersController.cs       # user CRUD + role/perm assignment + sync
+│   │   │   ├── AuditLogsController.cs
+│   │   │   └── ApiControllerBase.cs
+│   │   ├── Middleware/GlobalExceptionMiddleware.cs
+│   │   └── ModelBinding/DataSourceLoadOptions.cs
+│   │
+│   ├── Application/
+│   │   ├── DTOs/                              # request/response DTOs
+│   │   │   ├── Auth/, Sites/, Users/, Roles/, Audit/, Common/
+│   │   ├── Services/
+│   │   │   ├── AuthService.cs                 # login orchestration
+│   │   │   ├── JwtTokenService.cs             # JWT issuance + bcrypt hasher
+│   │   │   ├── PermissionService.cs           # RBAC + direct perm resolution
+│   │   │   ├── AuditService.cs                # hash-chained audit log writer
+│   │   │   ├── ThemeService.cs                # DB-stored palettes + cache
+│   │   │   ├── SiteManagementService.cs       # site/LDAP/theme CRUD
+│   │   │   ├── UserManagementService.cs       # user CRUD + sync + grants
+│   │   │   └── RoleTemplateService.cs         # template publish → clone
+│   │   ├── Interfaces/Services/
+│   │   └── Common/ApiResponse.cs
+│   │
+│   ├── Domain/
+│   │   ├── Entities/
+│   │   │   ├── BaseEntity.cs                  # audit + soft-delete base
+│   │   │   ├── Site.cs                        # Site, SiteLdapDomain, SiteLdapConfig, SiteTheme
+│   │   │   ├── User.cs                        # User, Role, Permission, UserRole, RolePermission, UserPermission
+│   │   │   ├── PlatformEntities.cs            # RoleTemplate, PlatformUser, RefreshToken
+│   │   │   └── AuditLog.cs                    # AuditLog, UserSyncHistory
+│   │   └── Exceptions/DomainException.cs
+│   │
+│   ├── Infrastructure/
+│   │   ├── Data/
+│   │   │   ├── PlatformDbContext.cs           # master DB context
+│   │   │   ├── SiteDbContext.cs               # per-site DB context
+│   │   │   └── SiteDbContextFactory.cs        # resolves site DB by JWT claim
+│   │   ├── Identity/CurrentUserService.cs     # JWT claim reader
+│   │   ├── Authorization/
+│   │   │   └── HasPermissionAttribute.cs      # [HasPermission], [PlatformAdminOnly], [SiteBusinessAdmin]
+│   │   ├── Ldap/NovellLdapClient.cs           # LDAPS / StartTLS, search, bind, sync
+│   │   ├── Security/LdapConfigProtector.cs    # DPAPI encryption for bind passwords
+│   │   └── Seed/DbSeeder.cs
+│   │
+│   ├── Extensions/ServiceCollectionExtensions.cs
+│   ├── Program.cs
+│   ├── appsettings.json
+│   └── appsettings.Development.json
 │
-├── Syntera.React/                      # React 19 + Vite SPA
-│   ├── src/
-│   │   ├── api/                       # Axios client + per-aggregate endpoints
-│   │   ├── components/
-│   │   │   ├── grid/                  # AppGrid system (AppGrid, Column, AppDynamicForm, filter dropdowns)
-│   │   │   ├── ui/                    # In-house Radix primitives (Button, Badge, Select, ...)
-│   │   │   ├── layout/                # Admin shell (AdminLayout, AppSidebar, AppHeader, AppBreadcrumb)
-│   │   │   ├── Modal.tsx              # Animated + focus-trapped dialog
-│   │   │   └── Drawer.tsx             # Animated + focus-trapped slide-out panel
-│   │   ├── hooks/                     # useDevExtremeData (DevExtreme grid data protocol)
-│   │   ├── lib/                       # cn(), formatters, devextreme.ts (query builder)
-│   │   ├── pages/
-│   │   │   ├── auth/                  # LoginPage (brand split-panel)
-│   │   │   ├── dashboard/             # KPI cards + 14-day sales trend chart
-│   │   │   ├── catalog/               # ProductsPage, CategoriesPage
-│   │   │   ├── parties/               # SuppliersPage, CustomersPage
-│   │   │   ├── inventory/             # InventoryPage (ledger)
-│   │   │   ├── sales/                 # SalesPage (POS-like checkout)
-│   │   │   └── settings/              # Profile + theme toggle + logout
-│   │   ├── routes/                    # RequireAuth, RequireRole guards
-│   │   ├── store/                     # authStore (persisted) + themeStore (7 brands x light/dark)
-│   │   ├── types/                     # API DTO mirror (single file)
-│   │   ├── App.tsx                    # Router + AdminLayout shell
-│   │   ├── main.tsx                   # Providers (Query, Router, Toaster)
-│   │   └── index.css                  # 7 brand palettes + AppGrid styles + Tailwind v4 entry
-│   ├── vite.config.ts                 # Vite + React Compiler + Tailwind v4
-│   └── tsconfig.app.json              # Strict, verbatim, noUnusedLocals
-│
-└── README.md                           # ← you are here
+└── Syntera.React/
+    ├── src/
+    │   ├── api/
+    │   │   ├── client.ts                      # axios instance + 401 refresh
+    │   │   ├── auth.ts                        # login, refresh, logout
+    │   │   ├── platform.ts                    # sites, role templates
+    │   │   ├── site.ts                        # users, roles, permissions, sync
+    │   │   └── audit.ts                       # audit log query
+    │   ├── store/
+    │   │   ├── authStore.ts                   # tokens, profile, theme bundle
+    │   │   └── themeStore.ts                  # light/dark mode preference
+    │   ├── pages/
+    │   │   ├── auth/LoginPage.tsx
+    │   │   ├── dashboard/DashboardPage.tsx
+    │   │   ├── platform/
+    │   │   │   ├── SitesPage.tsx              # site CRUD + LDAP config + test
+    │   │   │   └── RoleTemplatesPage.tsx      # template CRUD + publish
+    │   │   ├── site/UsersPage.tsx             # user CRUD + role/perm grants + sync
+    │   │   ├── audit/AuditLogsPage.tsx
+    │   │   └── settings/SettingsPage.tsx
+    │   ├── routes/guards.tsx                  # RequireAuth, RequirePlatformAdmin, RequireSiteAdmin
+    │   ├── components/
+    │   │   ├── layout/                        # AdminLayout, AppSidebar, AppHeader, AppBreadcrumb
+    │   │   ├── ui/                            # Button, Badge, Avatar, Select, etc. (Radix-based)
+    │   │   └── grid/                          # AppGrid + helpers (DevExtreme-based)
+    │   ├── App.tsx
+    │   └── main.tsx
+    ├── package.json
+    ├── vite.config.ts
+    └── tsconfig*.json
 ```
 
 ---
 
-## API surface
+## API Surface
 
-All endpoints return the **uniform `ApiResponse<T>` envelope**:
+All endpoints are JSON over HTTPS, returning a uniform `ApiResponse<T>` envelope:
 
 ```json
 {
   "success": true,
-  "data": { /* endpoint-specific payload */ },
-  "message": "optional success message"
+  "data": { /* ... */ },
+  "message": "Optional message"
 }
 ```
 
-On failure:
+On error:
 
 ```json
 {
   "success": false,
-  "errorCode": "VALIDATION_FAILED",
-  "message": "One or more fields failed validation.",
-  "fieldErrors": [
-    { "field": "name", "message": "Nama produk wajib diisi." }
-  ]
+  "errorCode": "BUSINESS_RULE_VIOLATION",
+  "message": "Description of the error"
 }
 ```
 
-### Endpoints
+### Auth (anonymous)
 
-| Method | Path | Auth | Purpose |
-| --- | --- | --- | --- |
-| POST | `/api/auth/login` | anonymous | Email + password → JWT + refresh |
-| POST | `/api/auth/refresh` | anonymous | Exchange refresh token for new access |
-| GET | `/api/dashboard/summary` | authenticated | KPI counts + today/month/year totals |
-| GET | `/api/dashboard/trend` | authenticated | 14-day trend + top-5 products |
-| GET | `/api/categories` | authenticated | Paged category list |
-| GET | `/api/categories/tree` | authenticated | Hierarchical category tree |
-| POST | `/api/categories` | Admin | Create category |
-| PUT | `/api/categories/{id}` | Admin | Update category |
-| DELETE | `/api/categories/{id}` | Admin | Soft-delete category |
-| GET | `/api/suppliers` | authenticated | Paged supplier list |
-| POST/PUT/DELETE | `/api/suppliers/...` | Admin | Supplier CRUD |
-| GET | `/api/products` | authenticated | Search products (filter by category, supplier, active) |
-| GET | `/api/products/{id}` | authenticated | Product detail |
-| POST | `/api/products` | Admin, Pharmacist | Create product |
-| PUT | `/api/products/{id}` | Admin, Pharmacist | Update product |
-| DELETE | `/api/products/{id}` | Admin | Soft-delete product |
-| POST | `/api/products/{id}/stock` | Admin, Pharmacist | Adjust stock (auto-writes inventory ledger) |
-| GET | `/api/inventory` | authenticated | Paged stock movements |
-| GET | `/api/inventory/product/{id}` | authenticated | Movement history for one product |
-| POST | `/api/inventory` | Admin, Pharmacist | Record inbound/outbound/adjustment |
-| GET | `/api/customers` | authenticated | Paged customer list |
-| POST/PUT/DELETE | `/api/customers/...` | Admin, Cashier | Customer CRUD |
-| GET | `/api/sales` | authenticated | Paged invoice list |
-| GET | `/api/sales/{id}` | authenticated | Invoice detail with items |
-| POST | `/api/sales` | Admin, Cashier | Create sale (atomic with stock deduction) |
-| PATCH | `/api/sales/{id}/status` | Admin, Cashier | Transition sale status (guarded) |
-| GET | `/health` | anonymous | Liveness probe |
-| GET | `/health/ready` | anonymous | Readiness probe (SQL Server ping) |
-| GET | `/docs` (Dev only) | anonymous | Swagger UI |
+| Method | Path | Description |
+| ------ | ---- | ----------- |
+| POST | `/api/auth/login` | Login by email + password (routes by domain) |
+| POST | `/api/auth/refresh` | Refresh platform admin token |
+| POST | `/api/auth/refresh-site` | Refresh site user token (with `siteId`) |
 
----
+### Auth (authenticated)
 
-## Front-end architecture
+| Method | Path | Description |
+| ------ | ---- | ----------- |
+| POST | `/api/auth/logout` | Revoke refresh token |
+| GET | `/api/auth/profile` | Get current user profile from JWT |
 
-### Single Axios client
+### Platform Admin (`[PlatformAdminOnly]`)
 
-`src/api/client.ts` exports one configured axios instance. Every page
-imports typed wrappers (`get<T>`, `post<T>`, `put<T>`, `patch<T>`,
-`del<T>`). The instance:
+| Method | Path | Description |
+| ------ | ---- | ----------- |
+| GET | `/api/platform/sites` | List all sites |
+| POST | `/api/platform/sites` | Create a site |
+| GET | `/api/platform/sites/{id}` | Get a site |
+| PUT | `/api/platform/sites/{id}` | Update a site |
+| POST | `/api/platform/sites/{id}/disable` | Disable a site |
+| GET | `/api/platform/sites/{siteId}/ldap-config` | Get LDAP config |
+| PUT | `/api/platform/sites/{siteId}/ldap-config` | Upsert LDAP config |
+| POST | `/api/platform/sites/ldap-test` | Test LDAP connection |
+| GET | `/api/platform/sites/{siteId}/theme` | Get theme |
+| PUT | `/api/platform/sites/{siteId}/theme` | Upsert theme |
+| GET | `/api/platform/role-templates` | List role templates |
+| POST | `/api/platform/role-templates` | Create template |
+| PUT | `/api/platform/role-templates/{id}` | Update template |
+| POST | `/api/platform/role-templates/{id}/publish` | Publish → clone to all sites |
+| GET | `/api/platform/role-templates/permission-catalog` | List all permission keys |
 
-1. Injects the Bearer token from the Zustand auth store on every
-   request.
-2. Unwraps the `ApiResponse<T>` envelope so call sites see the inner
-   `data` directly.
-3. Catches 401s, requests a refresh **once per concurrent burst**,
-   replays the original request, and on failure redirects to `/login`.
-4. Maps failures to a single `ApiError` type carrying `code`,
-   `message`, `status`, and `fieldErrors` — so pages can react with
-   a single `catch`.
+### Site Business Admin (`[SiteBusinessAdmin]`)
 
-### Routing & guards
+| Method | Path | Description |
+| ------ | ---- | ----------- |
+| GET | `/api/site/users` | List users in own site |
+| POST | `/api/site/users` | Create user (pre-provision) |
+| GET | `/api/site/users/{id}` | Get user with roles + direct perms |
+| PUT | `/api/site/users/{id}` | Update user |
+| POST | `/api/site/users/{id}/disable` | Disable user |
+| POST | `/api/site/users/assign-role` | Assign role (with optional expiry) |
+| POST | `/api/site/users/revoke-role` | Revoke role |
+| POST | `/api/site/users/grant-permission` | Grant direct permission (≤90d, with reason) |
+| POST | `/api/site/users/revoke-permission` | Revoke direct permission |
+| POST | `/api/site/users/sync` | Trigger LDAP sync |
 
-React Router v7 with nested routes. `RequireAuth` redirects to
-`/login` when unauthenticated. `RequireRole` shows a 403 page when
-the user lacks any of the required roles.
+### Audit (both platform and site admins)
 
-### Data fetching
-
-TanStack Query v5 is used for read endpoints (dashboard summary,
-category/supplier dropdowns, etc.). Mutations invalidate the relevant
-query keys (`products`, `inventory`, `dashboard-summary` …) so the UI
-stays in sync without manual refetch.
-
-### Reusable components
-
-All shared UI lives under `src/components/` — imported from pages via a
-single barrel (`import { AppGrid, Column, Modal, Badge } from "../../components"`):
-
-- `grid/` — **the AppGrid system**, Syntera's in-house data grid built on
-  `@tanstack/react-table` v8:
-  - `<AppGrid>` — declarative grid with toolbar search, sorting, column
-    filters, column chooser, pagination, master-detail expansion, mobile
-    card view, and built-in CRUD (add/edit/delete) with auto-rendered
-    forms. Grid state (sorting / visibility / pagination) persists to
-    localStorage per `gridId`.
-  - `<Column>` — declarative column schema (renders null, like
-    DevExtreme's Column). One `ColumnProps[]` schema drives BOTH the
-    table cells AND the auto-generated form editors.
-  - `AppDynamicForm` — renders form fields (text, number, date,
-    textarea, switch, combobox/tagbox lookups, nested arrays,
-    `formRender` escape hatch) straight from the same column schema.
-  - Server paging/sorting/filtering speaks the DevExtreme ASP.NET Data
-    protocol: `useDevExtremeData` (src/hooks) +
-    `buildDevExtremeQuery` (src/lib/devextreme.ts) →
-    `/api/{entity}/grid` endpoints backed by the `DevExtreme.AspNet.Data`
-    NuGet package.
-  - `Modal` / `Drawer` — portal-based, animated (300 ms opacity +
-    scale/translate), focus-trapped overlays with restore-focus-on-close,
-    Escape to close, and body scroll lock.
-- `ui/` — Radix-based primitives owned in-house (`Button`, `Badge`,
-  `Select`, `Popover`, `Tooltip`, `Checkbox`, `Skeleton`, `Avatar`,
-  `DropdownMenu`). Only primitives that are actually consumed live here.
-- `layout/` — the admin shell (`AdminLayout`, `AppSidebar`, `AppHeader`,
-  `AppBreadcrumb`).
-
-### Brand styling
-
-`src/index.css` is the **single source of truth** for the brand
-design system. It defines all CSS variables (`--primary`, `--accent`,
-`--background`, `--border`, radii, spacing, …), the dark-mode
-overrides, and the Tailwind v4 `@theme inline` mapping that exposes
-the variables as `bg-primary` / `text-muted-foreground` / etc.
-utilities. Every component references these variables — never raw
-hex — so a future rebrand touches one file.
+| Method | Path | Description |
+| ------ | ---- | ----------- |
+| GET | `/api/audit/logs?from=&to=&action=&actorUserId=&outcome=&skip=&take=` | Query audit logs (scoped to user's site or platform-wide) |
 
 ---
 
-## Security model
+## Front-End Architecture
+
+### Stack
+
+- **React 19** + **TypeScript 6** (strict mode enabled in tsconfig)
+- **Vite 8** (build tool, dev server)
+- **Tailwind CSS 4** (utility-first styling)
+- **Zustand 4** (state management — auth + theme stores)
+- **Axios** (HTTP client with 401-refresh-token interceptor)
+- **Sonner** (toast notifications)
+- **Lucide React** (icons)
+- **Radix UI** (accessible primitives — used in-house, no external UI lib at runtime)
+
+### State Management
+
+- `authStore` — access/refresh tokens, profile, theme bundle (persisted to localStorage)
+- `themeStore` — light/dark mode preference (persisted to localStorage)
+
+### Theme Application
+
+The `ThemeApplier` component reads `authStore.theme` (the brand palette from
+the user's site) and `themeStore.isDark` (the user's preferred mode), then
+writes CSS variables (`--color-primary`, `--color-accent`, etc.) onto the
+`<html>` element. Users can toggle light/dark independently; the brand
+palette is determined by their site.
+
+### Routing
+
+```
+/login                  — anonymous, public
+/dashboard              — any authenticated user
+/platform/sites         — Platform Admin only
+/platform/role-templates — Platform Admin only
+/site/users             — Site Business Admin (or Platform Admin)
+/audit/logs             — Platform Admin (sees all) or Site Admin (own site only)
+/site/audit             — alias for /audit/logs (site-scoped)
+/settings               — any authenticated user
+```
+
+---
+
+## Security Model
 
 ### Authentication
 
-- ASP.NET Core Identity with email-as-username, strong password
-  policy (≥ 8 chars, upper + lower + digit + symbol), and lockout
-  after 5 failed attempts for 15 minutes.
-- JWT bearer tokens (HS256). Access token 15 min in prod, 60 min in
-  dev. Refresh token 7 days prod, 30 days dev.
-- Refresh tokens are signed with the **same** key as access tokens
-  but a separate audience (`Syntera.Web-refresh`) so a stolen access
-  JWT can't be replayed as a refresh grant.
+1. **Platform Admin** — Local bcrypt credential in `PlatformUsers` table.
+   Must work even if all site LDAPs are down.
+2. **Site Users** — LDAP bind with user's own credentials. LDAP server
+   must use LDAPS (port 636) or StartTLS (port 389). Plain 389 is
+   rejected at save time.
+3. **JWT** — HS256 signed, 15-minute lifetime, carries:
+   - `sub` (user ID), `email`, `display_name`
+   - `scope` (platform | site)
+   - `site_id`, `site_code` (null for platform)
+   - `perm_ver` (for stale-perm detection)
+   - `role[]` claims
+   - `perm[]` claims (each effective permission)
+   - `is_platform_admin` / `is_site_admin` boolean flags
+
+### Refresh Token
+
+- Opaque 256-bit random string, stored as SHA-256 hash in DB.
+- 24-hour lifetime, rotating on use.
+- Revocable (logout, admin force-revoke).
+- Tracked server-side per user — stolen tokens can be invalidated.
 
 ### Authorization
 
-Three roles ship out of the box:
+- **Fail-closed** — Anonymous requests are denied by default.
+- **Permission-based** — `[HasPermission("user.write")]` checks JWT claim.
+- **Platform Admin bypass** — Platform admin tokens bypass site-level
+  permission checks.
+- **Tenant isolation** — Site Business Admins can NEVER touch users in
+  another site (enforced by `SiteDbContextFactory` resolving the
+  connection string from JWT `site_id` claim).
 
-| Role | Capabilities |
-| --- | --- |
-| `Admin` | Full CRUD on every aggregate + manage users |
-| `Pharmacist` | Create / edit products, adjust stock, record inventory movements |
-| `Cashier` | Create / update sales, manage customers, view everything |
+### LDAP Credential Storage
 
-Role checks are enforced via `[Authorize(Roles = "...")]` on
-controllers and mirrored in the React router (`RequireRole`).
+- Bind DN + bind password are encrypted via ASP.NET Core Data Protection
+  (DPAPI) before being persisted to the platform DB.
+- The DPAPI key ring is persisted to disk (configurable path).
+- Decryption happens only in-memory at sync time.
 
-### Defence in depth
+### Rate Limiting
 
-- **CORS** — locked to the configured origins (defaults to
-  `localhost:5173` and `4173`).
-- **Rate limiting** — 500 req/min global default, 60 req/min on the
-  `strict` policy (tag sensitive endpoints with
-  `[EnableRateLimiting("strict")]`).
-- **Global exception middleware** — every unhandled exception is
-  logged with Serilog and returned as a uniform JSON envelope. In
-  production, internal error text is hidden from the client.
-- **Soft-delete** — `IsDeleted` flag + EF Core query filters means
-  deleted records stay for audit but never leak into the UI.
-- **Audit fields** — `CreatedAt` and `UpdatedAt` are stamped by
-  `AppDbContext.SaveChangesAsync`, never by application code.
-- **Stock ledger** — on-hand quantity is computed as
-  `Σ Inbound − Σ Outbound` from the `InventoryMovements` table;
-  there is no mutable `Stock` column on `Product`, so concurrent
-  writes can't overwrite each other.
-- **Append-only inventory** — the ledger is never edited; corrections
-  are written as new `Adjustment` rows with a note.
+- **Default policy** — 500 requests/min per IP.
+- **Auth policy** — 20 requests/min per IP for `/api/auth/*` endpoints.
+- **User-level lockout** — After 5 failed logins per IP+email, the
+  account is locked for 15 minutes.
 
-### What's intentionally NOT done
+### CORS
 
-- **No localStorage for tokens.** The Zustand auth store lives in
-  memory only — users re-login on refresh, but XSS-based token theft
-  is impossible.
-- **No hardcoded secrets in appsettings.** The dev file ships a
-  placeholder; real secrets go to User Secrets (dev) or env vars
-  (prod).
-- **No `TrustServerCertificate` in prod.** Dev-only shortcut; prod
-  must use a real cert and `Encrypt=True`.
+- **Fail-closed in Production** — If `Cors:AllowedOrigins` is empty,
+  all cross-origin requests are rejected.
+- **DevOrigins** — A separate list for development-only origins
+  (localhost), ignored in Production.
+
+### HTTPS / HSTS
+
+- `UseHttpsRedirection` + `UseHsts` enabled in Production.
+- `RequireHttpsMetadata = true` for JWT validation in Production.
 
 ---
 
-## Brand identity
+## Audit & Compliance
 
-Built around six brand palettes: **Syntera** (canonical navy + teal,
-derived from the official Syntera logo), **Kalbe Farma** (crimson),
-**Dankos Farma** (royal blue), **Hexpharm Jaya** (teal), **Fima
-Internasional** (violet), and **Global Onkolab Farma / GOF** (amber).
-Each palette ships both light and dark variants; users switch live
-from the header dropdown or the Settings page. The default Syntera
-palette is the only one tied to the actual product logo.
+### Audit Log Properties
 
-| Token | Hex | Usage |
-| --- | --- | --- |
-| `--primary` | `#0B3D6F` | Buttons, links, brand accents (Syntera navy) |
-| `--primary-hover` | `#082A52` | Pressed/hover state |
-| `--accent` | `#00A7B5` | Highlights, KPI tiles (Syntera teal) |
-| `--accent-foreground` | `#042A30` | Text on accent background |
-| `--background` | `#F5F8FB` (light) / `#0A1428` (dark) | Page background |
-| `--surface` | `#EAF1F8` (light) / `#11243F` (dark) | Cards, sub-surfaces |
-| `--border` | `#D0DDE9` (light) / `#1F3A5C` (dark) | Lines, dividers |
+- **Append-only** — UPDATE and DELETE rejected at the EF Core SaveChanges
+  pipeline level (`RejectAuditLogMutation` in PlatformDbContext and
+  SiteDbContext).
+- **Hash-chained** — Each entry's `Hash` is SHA-256 of
+  `PreviousHash + canonical JSON of the entry`. Any retroactive tampering
+  is detectable by recomputing the chain.
+- **Denormalized actor info** — `ActorEmail`, `ActorIp`, `ActorUserAgent`
+  are stored on each entry so forensic queries work even after user
+  deletion.
+- **Dual scope** — Platform-level actions go to `syntera_master.AuditLogs`;
+  site-level actions go to the site's `AuditLogs` table.
 
-The "Vital Science" theme pairs the navy + teal palette with the modern
-humanist sans-serif (Inter / system-ui). Every component references
-these tokens, so a future rebrand touches one file.
+### Retention
+
+- Default: **10 years** (configurable via `PlatformSettings:AuditRetentionYears`).
+- Past retention, entries are archived to cold storage (Azure Blob Cool
+  tier) by a monthly background job and pruned from the hot table.
+- Archived entries kept indefinitely for compliance.
+
+### Audit Events Captured
+
+| Event | Trigger |
+| ----- | ------- |
+| `auth.login` | Login attempt (success or failure) |
+| `site.create` / `site.update` / `site.disable` | Platform admin site actions |
+| `ldap.write` / `ldap.test_connection` | LDAP config changes |
+| `theme.write` | Theme palette changes |
+| `role_template.create` / `role_template.publish` | Role template lifecycle |
+| `business_admin.assign` / `business_admin.revoke` | Delegation changes |
+| `user.create` / `user.update` / `user.disable` | Site user lifecycle |
+| `user_role.assign` / `user_role.revoke` | Role assignment changes |
+| `permission.grant` / `permission.revoke` | Direct permission changes |
+| `user.sync` | LDAP sync runs |
 
 ---
 
-## Testing strategy
+## Brand Theming
 
-The current shipping tests focus on build correctness and manual
-verification. The recommended next steps for a real QA pipeline:
+Each site has a `SiteTheme` record in the platform DB:
 
-### Unit tests
+```json
+{
+  "themeKey": "kalventis-navy",
+  "lightPaletteJson": "{\"primary\":\"#0B3D6F\",\"accent\":\"#00A7B5\",...}",
+  "darkPaletteJson":  "{\"primary\":\"#60A5FA\",\"accent\":\"#22D3EE\",...}",
+  "logoUrl": null
+}
+```
 
-- **Application layer** — service classes (`ProductService`,
-  `SaleService`, `AuthService`) tested against an in-memory
-  `IUnitOfWork` + fake repositories. No DB, no HTTP.
-- **Domain** — pure entity behavior (e.g. `SaleService` rejects
-  expired products, negative stock, illegal status transitions).
+### Default Palettes
 
-### Integration tests
-
-- `WebApplicationFactory<Program>` against an in-memory or
-  TestContainers SQL Server. Hit the API end-to-end:
-  - `/api/auth/login` → 200 with valid creds, 401 with bad
-  - `/api/products/{id}/stock` → stock decremented, ledger row added
-  - `/api/sales` → 201 with valid cart; 409 with expired product;
-    409 with insufficient stock
-
-### E2E tests
-
-- Playwright against the React SPA:
-  - Login flow (admin + cashier + pharmacist)
-  - Create product → adjust stock → make sale → verify dashboard
-  - Role guard: cashier blocked from /products create button
+| Site | Light Primary | Light Accent | Dark Primary | Dark Accent |
+| ---- | ------------- | ------------ | ------------ | ----------- |
+| Syntera (default) | `#0B3D6F` navy | `#00A7B5` teal | `#60A5FA` | `#22D3EE` |
+| Kalventis | (configured per site) | | | |
+| Kalbe | | | | |
+| Dankos | | | | |
+| Hexpharm | | | | |
+| Fima | | | | |
+| GOF | | | | |
 
 ### Performance
 
-- BenchmarkDotNet for hot paths (`ProductRepository.GetStockAsync`,
-  `SaleRepository.NextInvoiceNumberAsync`).
-- k6 load script for `/api/dashboard/*` endpoints (cache candidate).
+- Themes are cached in-memory for 5 minutes (`IMemoryCache`).
+- Cache invalidated on theme update via `IThemeService.InvalidateCacheAsync`.
+- No per-request DB hit on the hot path (login → theme → response).
+
+### User Override
+
+Users can toggle between light/dark mode via the header toggle. The
+preference is stored in `localStorage` (key: `syntera.theme`). The brand
+palette is NOT user-overridable — it is determined by the user's site.
 
 ---
 
-## CI / CD
+## Operational Runbook
 
-A minimal GitHub Actions workflow is recommended at
-`.github/workflows/ci.yml`:
+### Adding a New Site
 
-```yaml
-name: CI
-on:
-  push: { branches: [main] }
-  pull_request: { branches: [main] }
+1. **Platform Admin** logs in to the UI.
+2. Navigate to **Sites** → **New Site**.
+3. Fill in:
+   - Code (e.g., `newsite`)
+   - Display Name (e.g., `PT New Site Pharma`)
+   - Database Connection String (SQL Server)
+   - Email Domains (e.g., `newsite.com`)
+   - Default Theme Key
+4. Save. The site is created in the platform DB.
+5. **Configure LDAP** for the new site:
+   - Host, Port (636 for LDAPS, 389 for StartTLS)
+   - Base DN (e.g., `DC=NEWSITE,DC=DOM`)
+   - Email Attribute (default: `userPrincipalName`)
+   - Bind DN + Bind Password (service account for sync)
+   - User Filter Template
+6. **Test LDAP Connection** with a real user email.
+7. **Configure Theme** palette (light + dark JSON).
+8. The site's database must be created in SQL Server (manually or via
+   provisioning pipeline). The schema is created on first access.
+9. **Publish Role Templates** — they auto-clone into the new site.
 
-jobs:
-  api:
-    runs-on: ubuntu-latest
-    services:
-      sqlserver:
-        image: mcr.microsoft.com/mssql/server:2022-latest
-        env:
-          ACCEPT_EULA: Y
-          MSSQL_SA_PASSWORD: Passwordkuat!123
-        ports: ["1433:1433"]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
-        with: { dotnet-version: '10.0.x' }
-      - run: dotnet restore Syntera.Api
-      - run: dotnet build Syntera.Api --no-restore
-      - run: dotnet test Syntera.Api --no-build --logger trx
-      - run: dotnet ef database update --project Syntera.Api --no-build
-        env:
-          ConnectionStrings__Default: Server=localhost,1433;Database=Syntera;User Id=sa;Password=Passwordkuat123!;TrustServerCertificate=True
+### Delegating a Site Business Admin
 
-  web:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with: { submodules: recursive }
-      - uses: oven-sh/setup-bun@v2
-      - run: bun install --cwd Syntera.React
-      - run: bun run build --cwd Syntera.React
-      - run: bun run typecheck --cwd Syntera.React
-```
+1. Platform Admin creates a User row in the site database (via API or
+   after the Business Admin's first LDAP login).
+2. Assign the `site-business-admin` role to that user.
+3. The user can now log in and manage users in their site.
 
-> Syntera.React's UI is fully self-contained, so no sibling build
-> step is required.
+### Triggering LDAP Sync
 
----
+Site Business Admin can trigger sync from the UI:
 
-## Deployment
+1. Navigate to **Users** → **Sync LDAP**.
+2. Confirm the action.
+3. The sync job:
+   - Searches LDAP for all active users
+   - Creates new users in the site DB
+   - Updates display names if changed
+   - Disables users no longer in LDAP
+4. Result summary shown via toast.
 
-### Recommended target topology
+### Recovering from LDAP Outage
 
-```
-                   Internet
-                      │
-              ┌───────┴────────┐
-              │  Reverse proxy  │   (nginx / Caddy / Azure Front Door)
-              │  TLS + WAF      │
-              └───────┬────────┘
-                      │
-        ┌─────────────┴─────────────┐
-        ▼                            ▼
-  ┌─────────────┐            ┌─────────────┐
-  │ Syntera.Api │            │ Syntera.Api │   ← 2+ instances behind LB
-  │  container  │            │  container  │     (stateless, scale-out)
-  └──────┬──────┘            └──────┬──────┘
-         └──────────┬───────────────┘
-                    ▼
-          ┌──────────────────┐
-          │  SQL Server 2022  │   (managed / Azure SQL / AWS RDS)
-          │  Always-On AG     │
-          └──────────────────┘
-```
+If a site's LDAP is down:
 
-### Docker
+- All users from that site cannot log in (no fallback, per requirement).
+- **Platform Admin** can still log in (`admin@syntera.com` uses local credential).
+- Platform Admin can disable the site (`POST /api/platform/sites/{id}/disable`)
+  to prevent confusion, then re-enable when LDAP is back.
 
-A `Dockerfile` for the API (recommended next step):
+### Rotating the JWT Signing Key
 
-```dockerfile
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
-WORKDIR /app
-EXPOSE 5113
+1. Generate a new key (min 32 chars, random).
+2. Set via environment variable: `SYNTERA_Jwt__SigningKey=<new-key>`.
+3. Restart the API.
+4. All existing JWTs become invalid — users will be force-logged-out.
+   Their refresh tokens still work (the refresh flow issues new JWTs
+   signed with the new key).
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
-WORKDIR /src
-COPY Syntera.Api/ ./Syntera.Api/
-RUN dotnet restore Syntera.Api/Syntera.Api.csproj
-RUN dotnet publish Syntera.Api/Syntera.Api.csproj -c Release -o /app/publish
+### Backup & Restore
 
-FROM base
-COPY --from=build /app/publish ./
-ENV ASPNETCORE_URLS=http://+:5113
-ENV ASPNETCORE_ENVIRONMENT=Production
-ENTRYPOINT ["dotnet", "Syntera.Api.dll"]
-```
-
-The React app builds to a static `dist/` folder; serve it via any CDN
-or static host (Vercel, Cloudflare Pages, nginx).
-
-### Production checklist
-
-- [ ] Rotate `Jwt:SigningKey` (≥ 48 random bytes) and store in a real
-      secret manager (Azure Key Vault, AWS Secrets Manager, Doppler).
-- [ ] Set `Seed:AdminPassword` once, change it from the UI on first
-      login, then remove the env var.
-- [ ] Use real SQL Server TLS cert (`Encrypt=True`,
-      `TrustServerCertificate=False`).
-- [ ] Set `Cors:Origins` to the production front-end domain only.
-- [ ] Configure Serilog to ship to a real sink (Seq, Datadog, Loki).
-- [ ] Enable Prometheus metrics exporter + OpenTelemetry traces.
-- [ ] Run smoke tests against `/health/ready` after every deploy.
-- [ ] Set up alerting on `429` rate-limit bursts (auth endpoint
-      specifically).
-
----
-
-## Roadmap (v2 → v3)
-
-The v1 release delivers a working catalog + inventory + POS flow.
-The next iterations aim at a production-grade, multi-tenant pharma
-commerce platform:
-
-### v2 — Operational scale
-
-- **Multi-tenancy** — branch / apotek concept, per-tenant inventory
-  and pricing, role scoping by tenant.
-- **Prescription upload** — pharmacist uploads PDF / image of a
-  resep; OCR fills the cart; the original is stored for audit.
-- **BPOM batch recall** — flag a batch as recalled → cascade-block
-  sale of every product with that batch number across all tenants.
-- **Real-time stock** — SignalR hub pushes inventory updates to all
-  connected dashboards so concurrent cashiers see the latest stock
-  without polling.
-- **Audit log** — append-only `AuditLog` table capturing every
-  mutation (actor, action, before/after diff) for compliance audits.
-- **Distributed cache** — Redis for dashboard summary + token
-  blacklist (for forced logout / token revocation).
-- **Reporting** — `/api/reports/sales?from=&to=` exporting XLSX
-  via ClosedXML, scheduled for monthly email.
-- **OpenTelemetry** — traces from API → EF Core → SQL Server, all
-  exported to Tempo/Jaeger.
-
-### v3 — Commerce growth
-
-- **E-commerce** — public storefront for B2C customers, integrated
-  with Midtrans / Xendit for payment, JNE / Sicepat for shipping.
-- **Loyalty** — point accrual per sale, redeemable as discounts.
-- **WhatsApp delivery** — Twilio integration for invoice delivery
-  + status notifications.
-- **Accounting export** — journal entry export to Accurate / Zahir
-  via CSV or their respective REST APIs.
-- **Mobile companion** — React Native app for pharmacists to scan
-  barcodes and record outbound movements from the floor.
-- **AI** — demand forecasting per product per week based on the
-  `Sales` history, surfaced on the dashboard reorder card.
-
-### Architecture drift to watch
-
-- **Read model split** — once the dashboard becomes a hot path,
-  introduce a separate `IDashboardReadModel` backed by Dapper or a
-  materialised view, so EF Core stays focused on transactional
-  writes.
-- **CQRS** — if command volume grows beyond ~50 writes/sec, split
-  commands and queries into separate projects and consider MediatR
-  or a custom pipeline.
-- **Event sourcing** — for high-compliance scenarios (narcotics),
-  consider an event-sourced `InventoryMovement` aggregate with
-  snapshots.
-- **gRPC** — for internal service-to-service calls (e.g. a future
-  billing service), prefer gRPC over JSON to cut payload size.
-
----
-
-## Contributing
-
-1. Branch from `main`: `git checkout -b feat/your-feature`.
-2. Write code; run `dotnet build` and `bun run typecheck` locally.
-3. Add tests for any new domain invariant or controller route.
-4. Commit with conventional commits
-   (`feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`).
-5. Open a PR — CI runs build + tests; the maintainer reviews.
-6. Squash-merge to `main`; the deploy pipeline ships.
-
-### Code style
-
-- **C#** — file-scoped namespaces, nullable reference types on,
-  `private readonly` fields with `_` prefix, no regions, async
-  all-the-way-down (no `.Result` / `.Wait()`).
-- **TypeScript** — strict mode, `verbatimModuleSyntax` on,
-  `noUnusedLocals` on. Use `import type` for types. Function
-  components only. Hooks prefixed with `use`.
-- **Tailwind v4** — prefer `var(--token)` references over arbitrary
-  hex; reuse `btnPrimary` / `inputClass` helpers in forms.
-
----
-
-## License
-
-Copyright © 2026 Syntera. All rights reserved.
-
-This repository is private and intended for internal use by the
-Kalbe Farma affiliated pharmaceutical commerce team. Contact the
-maintainer for licensing / contribution inquiries.
+- **Platform DB** — Back up daily. Contains all site configs, role
+  templates, platform admin credentials, and platform audit logs.
+- **Site DBs** — Back up independently per site. Restore one site
+  without affecting others.
+- **DPAPI key ring** — Back up the directory at `DataProtection:KeyPath`.
+  If lost, all encrypted LDAP bind passwords become undecryptable;
+  Platform Admin must re-enter them.

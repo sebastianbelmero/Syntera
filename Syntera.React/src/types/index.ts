@@ -1,23 +1,7 @@
 /**
- * Shared domain types — mirror of the backend DTOs. Kept in a single
- * file per aggregate to make the contract easy to scan and update when
- * the backend evolves. Currency is always `number` (Rupiah scale 18,2
- * is small enough to fit safely in JS numbers for daily pharmacy flows).
+ * Shared domain types — mirror of backend DTOs for the IAM platform.
+ * All currency/decimal fields are typed as number (scale 18,2 fits JS doubles).
  */
-
-export interface PageQuery {
-  page?: number;
-  pageSize?: number;
-  search?: string;
-}
-
-export interface PagedResult<T> {
-  items: T[];
-  total: number;
-  page: number;
-  pageSize: number;
-  totalPages: number;
-}
 
 export interface ApiResponse<T> {
   success: boolean;
@@ -40,280 +24,292 @@ export interface LoginRequest {
 
 export interface LoginResponse {
   accessToken: string;
-  tokenType: string;
   expiresAt: string;
   refreshToken: string;
   profile: UserProfile;
+  theme: ThemeBundle;
+}
+
+export interface RefreshResponse {
+  accessToken: string;
+  expiresAt: string;
+  refreshToken: string;
+  profile: UserProfile;
+  theme: ThemeBundle;
 }
 
 export interface UserProfile {
+  userId: string;
+  email: string;
+  displayName: string;
+  scope: "platform" | "site" | "anonymous";
+  siteId: string | null;
+  siteCode: string | null;
+  siteDisplayName: string | null;
+  roles: string[];
+  permissions: string[];
+}
+
+export interface ThemeBundle {
+  themeKey: string;
+  light: ThemePalette;
+  dark: ThemePalette;
+  logoUrl: string | null;
+}
+
+export interface ThemePalette {
+  primary: string;
+  accent: string;
+  background: string;
+  surface: string;
+  text: string;
+  muted: string;
+  border: string;
+  success: string;
+  warning: string;
+  danger: string;
+}
+
+// ── Sites ──────────────────────────────────────────────
+export interface SiteDto {
+  id: string;
+  code: string;
+  displayName: string;
+  defaultThemeKey: string;
+  isEnabled: boolean;
+  notes: string | null;
+  ldapDomains: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SiteUpsertDto {
+  code: string;
+  displayName: string;
+  defaultThemeKey: string;
+  databaseConnectionString: string;
+  notes?: string | null;
+  ldapDomains: string[];
+}
+
+export interface LdapConfigDto {
+  siteId: string;
+  host: string;
+  port: number;
+  useStartTls: boolean;
+  baseDn: string;
+  emailAttribute: string;
+  bindDn: string | null;
+  userFilterTemplate: string;
+  timeoutSeconds: number;
+  searchSubtree: boolean;
+  hasBindPassword: boolean;
+}
+
+export interface LdapConfigUpsertDto {
+  host: string;
+  port: number;
+  useStartTls: boolean;
+  baseDn: string;
+  emailAttribute: string;
+  bindDn?: string | null;
+  bindPassword?: string | null;
+  userFilterTemplate: string;
+  timeoutSeconds: number;
+  searchSubtree: boolean;
+}
+
+export interface LdapTestRequest {
+  host: string;
+  port: number;
+  useStartTls: boolean;
+  baseDn: string;
+  emailAttribute: string;
+  bindDn?: string | null;
+  bindPassword?: string | null;
+  userFilterTemplate: string;
+  timeoutSeconds: number;
+  searchSubtree: boolean;
+  testEmail: string;
+}
+
+export interface LdapTestResult {
+  success: boolean;
+  dn: string | null;
+  displayName: string | null;
+  email: string | null;
+  errorMessage: string | null;
+  latencyMs: number;
+}
+
+export interface ThemeUpsertDto {
+  themeKey: string;
+  light: ThemePalette;
+  dark: ThemePalette;
+  logoUrl?: string | null;
+}
+
+// ── Role Templates ─────────────────────────────────────
+export interface RoleTemplateDto {
+  id: string;
+  key: string;
+  displayName: string;
+  description: string | null;
+  isSiteAdminRole: boolean;
+  isPublished: boolean;
+  version: number;
+  permissionKeys: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RoleTemplateUpsertDto {
+  key: string;
+  displayName: string;
+  description?: string | null;
+  isSiteAdminRole: boolean;
+  permissionKeys: string[];
+}
+
+export interface PermissionDto {
+  id: string;
+  key: string;
+  displayName: string;
+  group: string;
+  isPlatformOnly: boolean;
+}
+
+export interface PermissionCatalogDto {
+  groups: PermissionGroupDto[];
+}
+
+export interface PermissionGroupDto {
+  group: string;
+  permissions: PermissionDto[];
+}
+
+// ── Users ──────────────────────────────────────────────
+export interface UserDto {
   id: string;
   email: string;
-  fullName?: string | null;
-  roles: string[];
-}
-
-// ── Catalog ─────────────────────────────────────────────
-export type DrugClass =
-  | "OverTheCounter"
-  | "RestrictedOTC"
-  | "PrescriptionOnly"
-  | "PharmacyOnly"
-  | "Narcotic";
-
-export interface CategoryDto {
-  id: string;
-  name: string;
-  slug: string;
-  description?: string | null;
-  parentId?: string | null;
-  parentName?: string | null;
-  productCount: number;
+  displayName: string;
+  isEnabled: boolean;
+  lastLoginAt: string | null;
+  permissionsVersion: number;
+  roles: RoleAssignmentDto[];
+  directPermissions: DirectPermissionDto[];
   createdAt: string;
+  updatedAt: string;
 }
 
-export interface CategoryTreeNodeDto {
+export interface RoleAssignmentDto {
+  roleId: string;
+  roleKey: string;
+  roleDisplayName: string;
+  assignedBy: string;
+  assignedAt: string;
+  expiresAt: string | null;
+}
+
+export interface DirectPermissionDto {
   id: string;
-  name: string;
-  slug: string;
-  children: CategoryTreeNodeDto[];
+  permissionKey: string;
+  permissionDisplayName: string;
+  reason: string;
+  approvedBy: string;
+  approvedByEmail: string;
+  grantedAt: string;
+  expiresAt: string;
+  isDeny: boolean;
+  isRevoked: boolean;
 }
 
-export interface CategoryUpsertDto {
-  name: string;
-  description?: string | null;
-  parentId?: string | null;
+export interface UserUpsertDto {
+  email: string;
+  displayName: string;
+  isEnabled: boolean;
 }
 
-export interface SupplierDto {
+export interface AssignRoleDto {
+  userId: string;
+  roleId: string;
+  expiresAt?: string | null;
+  reason?: string | null;
+}
+
+export interface RevokeRoleDto {
+  userId: string;
+  roleId: string;
+}
+
+export interface GrantDirectPermissionDto {
+  userId: string;
+  permissionId: string;
+  reason: string;
+  expiresAt: string;
+  isDeny?: boolean;
+}
+
+export interface RevokeDirectPermissionDto {
+  userPermissionId: string;
+}
+
+export interface UserSyncResultDto {
+  syncHistoryId: string;
+  status: "running" | "success" | "partial" | "failed";
+  usersFound: number;
+  usersCreated: number;
+  usersUpdated: number;
+  usersDisabled: number;
+  errors: string | null;
+}
+
+// ── Roles (site-level) ─────────────────────────────────
+export interface RoleDto {
   id: string;
-  name: string;
-  contactPerson?: string | null;
-  email?: string | null;
-  phone?: string | null;
-  address?: string | null;
-  city?: string | null;
-  postalCode?: string | null;
-  licenseNumber?: string | null;
-  isActive: boolean;
-  productCount: number;
-  createdAt: string;
+  key: string;
+  displayName: string;
+  description: string | null;
+  isSiteAdminRole: boolean;
 }
 
-export interface SupplierUpsertDto {
-  name: string;
-  contactPerson?: string | null;
-  email?: string | null;
-  phone?: string | null;
-  address?: string | null;
-  city?: string | null;
-  postalCode?: string | null;
-  licenseNumber?: string | null;
-  isActive?: boolean;
+// ── Audit Log ──────────────────────────────────────────
+export interface AuditLogDto {
+  id: number;
+  timestamp: string;
+  siteId: string | null;
+  actorUserId: string | null;
+  actorEmail: string | null;
+  actorIp: string | null;
+  actorUserAgent: string | null;
+  action: string;
+  targetType: string | null;
+  targetId: string | null;
+  outcome: "success" | "failure";
+  errorMessage: string | null;
 }
 
-export interface ProductDto {
-  id: string;
-  name: string;
-  sku: string;
-  barcode?: string | null;
-  registrationNumber?: string | null;
-  genericName?: string | null;
-  brandName?: string | null;
-  manufacturer?: string | null;
-  drugClass: DrugClass;
-  potency?: string | null;
-  packSize?: string | null;
-  costPrice: number;
-  sellingPrice: number;
-  discountPrice?: number | null;
-  reorderLevel: number;
-  expiryDate?: string | null;
-  batchNumber?: string | null;
-  isActive: boolean;
-  stock: number;
-  isExpired: boolean;
-  isLowStock: boolean;
-  categoryId: string;
-  categoryName: string;
-  supplierId: string;
-  supplierName: string;
-  createdAt: string;
+export interface AuditLogQuery {
+  from?: string;
+  to?: string;
+  action?: string;
+  actorUserId?: string;
+  outcome?: string;
+  skip?: number;
+  take?: number;
 }
 
-export interface ProductUpsertDto {
-  name: string;
-  sku: string;
-  barcode?: string | null;
-  registrationNumber?: string | null;
-  genericName?: string | null;
-  brandName?: string | null;
-  manufacturer?: string | null;
-  drugClass: DrugClass;
-  potency?: string | null;
-  packSize?: string | null;
-  costPrice: number;
-  sellingPrice: number;
-  discountPrice?: number | null;
-  reorderLevel: number;
-  expiryDate?: string | null;
-  batchNumber?: string | null;
-  isActive: boolean;
-  categoryId: string;
-  supplierId: string;
+// ── Legacy PageQuery (kept for AppGrid compatibility) ──
+export interface PageQuery {
+  page?: number;
+  pageSize?: number;
+  search?: string;
 }
 
-export interface ProductStockAdjustDto {
-  quantity: number;
-  note?: string | null;
-}
-
-// ── Inventory ──────────────────────────────────────────
-export type InventoryMovementType =
-  | "Inbound"
-  | "Outbound"
-  | "Adjustment"
-  | "Return"
-  | "Damage";
-
-export interface InventoryMovementDto {
-  id: string;
-  productId: string;
-  productName: string;
-  productSku: string;
-  type: InventoryMovementType;
-  quantity: number;
-  balanceAfter: number;
-  reference?: string | null;
-  note?: string | null;
-  performedByUserId?: string | null;
-  createdAt: string;
-}
-
-export interface InventoryAdjustmentRequest {
-  productId: string;
-  type: InventoryMovementType;
-  quantity: number;
-  reference?: string | null;
-  note?: string | null;
-}
-
-// ── Customers ──────────────────────────────────────────
-export interface CustomerDto {
-  id: string;
-  name: string;
-  contactPerson?: string | null;
-  email?: string | null;
-  phone?: string | null;
-  address?: string | null;
-  city?: string | null;
-  postalCode?: string | null;
-  taxId?: string | null;
-  isActive: boolean;
-  totalOrders: number;
-  createdAt: string;
-}
-
-export interface CustomerUpsertDto {
-  name: string;
-  contactPerson?: string | null;
-  email?: string | null;
-  phone?: string | null;
-  address?: string | null;
-  city?: string | null;
-  postalCode?: string | null;
-  taxId?: string | null;
-  isActive?: boolean;
-}
-
-// ── Sales ───────────────────────────────────────────────
-export type SaleStatus =
-  | "Draft"
-  | "Pending"
-  | "Paid"
-  | "Shipped"
-  | "Completed"
-  | "Cancelled";
-
-export interface SaleDto {
-  id: string;
-  invoiceNumber: string;
-  status: SaleStatus;
-  saleDate?: string | null;
-  customerId: string;
-  customerName: string;
-  cashierUserId?: string | null;
-  cashierName?: string | null;
-  subTotal: number;
-  taxRate: number;
-  taxAmount: number;
-  discountAmount: number;
-  grandTotal: number;
-  note?: string | null;
-  items: SaleItemDto[];
-  createdAt: string;
-}
-
-export interface SaleItemDto {
-  id: string;
-  productId: string;
-  productName: string;
-  productSku: string;
-  quantity: number;
-  unitPrice: number;
-  discountAmount: number;
-  lineTotal: number;
-}
-
-export interface SaleItemInput {
-  productId: string;
-  quantity: number;
-  unitPrice: number;
-  discountAmount: number;
-}
-
-export interface SaleCreateDto {
-  customerId: string;
-  saleDate?: string | null;
-  taxRate: number;
-  discountAmount: number;
-  note?: string | null;
-  items: SaleItemInput[];
-}
-
-export interface SaleStatusUpdateDto {
-  status: SaleStatus;
-}
-
-// ── Dashboard ──────────────────────────────────────────
-export interface DashboardSummaryDto {
-  totalProducts: number;
-  lowStockProducts: number;
-  nearExpiryProducts: number;
-  totalCustomers: number;
-  totalSuppliers: number;
-  todaySalesAmount: number;
-  todaySalesCount: number;
-  monthSalesAmount: number;
-  monthSalesCount: number;
-  yearSalesAmount: number;
-}
-
-export interface SalesTrendPoint {
-  date: string;
-  amount: number;
-  count: number;
-}
-
-export interface TopProductDto {
-  productId: string;
-  productName: string;
-  productSku: string;
-  quantitySold: number;
-  revenue: number;
-}
-
-export interface DashboardTrendDto {
-  last14Days: SalesTrendPoint[];
-  top5ProductsThisMonth: TopProductDto[];
+export interface PagedResult<T> {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
 }

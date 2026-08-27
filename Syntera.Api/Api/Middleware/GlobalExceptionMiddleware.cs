@@ -53,6 +53,8 @@ public sealed class GlobalExceptionMiddleware
     {
         if (ex is NotFoundException) return HttpStatusCode.NotFound;
         if (ex is BusinessRuleException) return HttpStatusCode.Conflict;
+        if (ex is AuthenticationException) return HttpStatusCode.Unauthorized;
+        if (ex is AuthorizationException) return HttpStatusCode.Forbidden;
         return HttpStatusCode.BadRequest;
     }
 

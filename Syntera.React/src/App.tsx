@@ -1,60 +1,79 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 import { useEffect } from "react";
-import { AdminLayout, type MenuItem } from "./components/layout";
-import {
-  LayoutDashboard,
-  Package,
-  Tags,
-  Truck,
-  Boxes,
-  ShoppingCart,
-  Users,
-  Settings,
-} from "lucide-react";
+import { LayoutDashboard, Settings, Building2, Shield, Users, ScrollText, KeyRound } from "lucide-react";
 
-import { RequireAuth, RequireRole } from "./routes/guards";
+import { RequireAuth, RequirePlatformAdmin, RequireSiteAdmin } from "./routes/guards";
 import { useAuthStore } from "./store/authStore";
 import { useThemeStore } from "./store/themeStore";
+import { AdminLayout, type MenuItem } from "./components/layout";
+
 import LoginPage from "./pages/auth/LoginPage";
 import DashboardPage from "./pages/dashboard/DashboardPage";
-import ProductsPage from "./pages/catalog/ProductsPage";
-import CategoriesPage from "./pages/catalog/CategoriesPage";
-import SuppliersPage from "./pages/parties/SuppliersPage";
-import InventoryPage from "./pages/inventory/InventoryPage";
-import SalesPage from "./pages/sales/SalesPage";
-import CustomersPage from "./pages/parties/CustomersPage";
+import SitesPage from "./pages/platform/SitesPage";
+import RoleTemplatesPage from "./pages/platform/RoleTemplatesPage";
+import UsersPage from "./pages/site/UsersPage";
+import AuditLogsPage from "./pages/audit/AuditLogsPage";
 import SettingsPage from "./pages/settings/SettingsPage";
 
-const menu: MenuItem[] = [
-  { label: "Dashboard", path: "/dashboard", icon: <LayoutDashboard size={18} /> },
-  { label: "Produk", path: "/products", icon: <Package size={18} /> },
-  { label: "Kategori", path: "/categories", icon: <Tags size={18} /> },
-  { label: "Pemasok", path: "/suppliers", icon: <Truck size={18} /> },
-  { label: "Persediaan", path: "/inventory", icon: <Boxes size={18} /> },
-  { label: "Penjualan", path: "/sales", icon: <ShoppingCart size={18} /> },
-  { label: "Pelanggan", path: "/customers", icon: <Users size={18} /> },
-  { label: "Pengaturan", path: "/settings", icon: <Settings size={18} /> },
-];
-
 /**
- * ThemeApplier — runs at the App root so the brand palette + dark
- * mode are applied even on routes that don't mount <AdminLayout>
- * (e.g. /login). One effect, one source of truth.
+ * ThemeApplier — applies the brand palette from the authenticated user's
+ * site theme (loaded by AuthService into authStore.theme) plus the user's
+ * light/dark preference (themeStore.isDark). Runs at the App root so the
+ * theme is applied even on /login route (which uses platform-default).
  */
 function ThemeApplier() {
-  const brand = useThemeStore((s) => s.brand);
+  const theme = useAuthStore((s) => s.theme);
   const isDark = useThemeStore((s) => s.isDark);
+
   useEffect(() => {
     const root = document.documentElement;
-    root.setAttribute("data-theme", brand);
+
+    if (theme) {
+      const palette = isDark ? theme.dark : theme.light;
+      root.style.setProperty("--color-primary", palette.primary);
+      root.style.setProperty("--color-accent", palette.accent);
+      root.style.setProperty("--color-background", palette.background);
+      root.style.setProperty("--color-surface", palette.surface);
+      root.style.setProperty("--color-text", palette.text);
+      root.style.setProperty("--color-muted", palette.muted);
+      root.style.setProperty("--color-border", palette.border);
+      root.style.setProperty("--color-success", palette.success);
+      root.style.setProperty("--color-warning", palette.warning);
+      root.style.setProperty("--color-danger", palette.danger);
+      root.setAttribute("data-theme", theme.themeKey);
+    }
+
     root.classList.toggle("dark", isDark);
-  }, [brand, isDark]);
+  }, [theme, isDark]);
+
   return null;
+}
+
+function buildMenu(isPlatformAdmin: boolean, isSiteAdmin: boolean): MenuItem[] {
+  const items: MenuItem[] = [{ label: "Dashboard", path: "/dashboard", icon: <LayoutDashboard size={18} /> }];
+
+  if (isPlatformAdmin) {
+    items.push({ label: "Sites", path: "/platform/sites", icon: <Building2 size={18} /> });
+    items.push({ label: "Role Templates", path: "/platform/role-templates", icon: <KeyRound size={18} /> });
+    items.push({ label: "Audit Logs", path: "/audit/logs", icon: <ScrollText size={18} /> });
+  }
+
+  if (isSiteAdmin) {
+    items.push({ label: "Users", path: "/site/users", icon: <Users size={18} /> });
+    items.push({ label: "Site Audit", path: "/site/audit", icon: <Shield size={18} /> });
+  }
+
+  items.push({ label: "Settings", path: "/settings", icon: <Settings size={18} /> });
+  return items;
 }
 
 export default function App() {
   const profile = useAuthStore((s) => s.profile);
   const logout = useAuthStore((s) => s.logout);
+
+  const isPlatform = profile?.roles.includes("platform-admin") ?? false;
+  const isSiteAdmin = profile?.roles.includes("site-business-admin") ?? false;
+  const menu = buildMenu(isPlatform, isSiteAdmin);
 
   return (
     <>
@@ -67,12 +86,12 @@ export default function App() {
           element={
             <RequireAuth>
               <AdminLayout
-                title="Syntera"
+                title="Syntera IAM"
                 menuItems={menu}
                 user={
                   profile
                     ? {
-                        name: profile.fullName ?? profile.email,
+                        name: profile.displayName,
                         email: profile.email,
                         role: profile.roles.join(", "),
                       }
@@ -87,19 +106,39 @@ export default function App() {
           }
         >
           <Route path="/dashboard" element={<DashboardPage />} />
+
+          {/* Platform Admin routes */}
           <Route
-            path="/products"
+            path="/platform/sites"
             element={
-              <RequireRole roles={["Admin", "Pharmacist"]}>
-                <ProductsPage />
-              </RequireRole>
+              <RequirePlatformAdmin>
+                <SitesPage />
+              </RequirePlatformAdmin>
             }
           />
-          <Route path="/categories" element={<CategoriesPage />} />
-          <Route path="/suppliers" element={<SuppliersPage />} />
-          <Route path="/inventory" element={<InventoryPage />} />
-          <Route path="/sales" element={<SalesPage />} />
-          <Route path="/customers" element={<CustomersPage />} />
+          <Route
+            path="/platform/role-templates"
+            element={
+              <RequirePlatformAdmin>
+                <RoleTemplatesPage />
+              </RequirePlatformAdmin>
+            }
+          />
+
+          {/* Site Admin routes */}
+          <Route
+            path="/site/users"
+            element={
+              <RequireSiteAdmin>
+                <UsersPage />
+              </RequireSiteAdmin>
+            }
+          />
+
+          {/* Audit Logs (both platform and site admins) */}
+          <Route path="/audit/logs" element={<AuditLogsPage />} />
+          <Route path="/site/audit" element={<AuditLogsPage />} />
+
           <Route path="/settings" element={<SettingsPage />} />
         </Route>
 

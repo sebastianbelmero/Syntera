@@ -1,160 +1,88 @@
 import { useAuthStore } from "../../store/authStore";
-import {
-  useThemeStore,
-  THEME_BRANDS,
-  THEME_LABELS,
-  THEME_SWATCH,
-  type ThemeBrand,
-} from "../../store/themeStore";
-import { User, Moon, Sun, Shield, Activity, Palette, Check } from "lucide-react";
-import { cn } from "../../lib/cn";
+import { useThemeStore } from "../../store/themeStore";
+import { User, Moon, Sun, Shield } from "lucide-react";
 
 export default function SettingsPage() {
   const profile = useAuthStore((s) => s.profile);
-  const logout = useAuthStore((s) => s.logout);
-  const { brand, isDark, setBrand, toggleMode } = useThemeStore();
+  const theme = useAuthStore((s) => s.theme);
+  const { isDark, toggleMode } = useThemeStore();
+
+  if (!profile) return null;
 
   return (
-    <div className="flex flex-col gap-6">
-      <header>
-        <h2 className="text-2xl font-bold tracking-tight">Pengaturan</h2>
-        <p className="text-sm text-[var(--muted-foreground)]">
-          Profil pengguna, preferensi tampilan, dan sesi login.
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold">Settings</h1>
+        <p className="text-sm" style={{ color: "var(--color-muted)" }}>
+          User profile, theme preferences, and session info.
         </p>
-      </header>
+      </div>
 
-      <section className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6">
+      {/* Profile */}
+      <section className="rounded-xl p-6"
+        style={{ backgroundColor: "var(--color-surface)", border: "1px solid var(--color-border)" }}>
         <h3 className="mb-4 flex items-center gap-2 text-lg font-semibold">
-          <User size={18} /> Profil
+          <User size={18} /> Profile
         </h3>
-        <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div>
-            <dt className="text-xs font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
-              Nama
-            </dt>
-            <dd className="mt-1 text-sm font-medium">
-              {profile?.fullName?.trim()
-                ? profile.fullName
-                : profile?.email
-                  ? profile.email.split("@")[0]
-                  : "—"}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
-              Email
-            </dt>
-            <dd className="mt-1 text-sm font-medium">{profile?.email ?? "—"}</dd>
-          </div>
-          <div>
-            <dt className="text-xs font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
-              User ID
-            </dt>
-            <dd className="mt-1 text-sm font-mono">{profile?.id ?? "—"}</dd>
-          </div>
-          <div>
-            <dt className="text-xs font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
-              Peran
-            </dt>
-            <dd className="mt-1 flex flex-wrap gap-1">
-              {profile?.roles.map((r) => (
-                <span
-                  key={r}
-                  className="rounded-full bg-[var(--primary)]/15 px-2 py-1 text-xs font-medium text-[var(--primary)]"
-                >
-                  <Shield size={11} className="mr-1 inline" />
-                  {r}
-                </span>
-              ))}
-            </dd>
-          </div>
+        <dl className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="Display Name" value={profile.displayName} />
+          <Field label="Email" value={profile.email} />
+          <Field label="Scope" value={profile.scope === "platform" ? "Platform Admin" : (profile.siteCode ?? "Site User")} />
+          {profile.siteDisplayName && <Field label="Site" value={profile.siteDisplayName} />}
+          <Field label="Roles" value={profile.roles.join(", ") || "—"} />
+          <Field label="Permissions" value={`${profile.permissions.length} keys`} />
         </dl>
       </section>
 
-      <section className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6">
+      {/* Theme */}
+      <section className="rounded-xl p-6"
+        style={{ backgroundColor: "var(--color-surface)", border: "1px solid var(--color-border)" }}>
         <h3 className="mb-4 flex items-center gap-2 text-lg font-semibold">
-          <Palette size={18} /> Palet Merek
-        </h3>
-        <p className="mb-4 text-xs text-[var(--muted-foreground)]">
-          Pilih palet warna merek yang diturunkan dari studi logo:
-          Syntera · Kalbe · Dankos · Hexpharm · Fima · GOF · Kalventis.
-          Setiap palet bekerja dalam mode terang maupun gelap.
-        </p>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
-          {THEME_BRANDS.map((b: ThemeBrand) => {
-            const active = brand === b;
-            return (
-              <button
-                key={b}
-                type="button"
-                onClick={() => setBrand(b)}
-                className={cn(
-                  "group relative flex flex-col items-center gap-2 rounded-xl border p-3 transition-all",
-                  active
-                    ? "border-[var(--primary)] bg-[var(--primary)]/5 ring-2 ring-[var(--primary)]/30"
-                    : "border-[var(--border)] hover:border-[var(--input-hover)] hover:bg-[var(--surface)]",
-                )}
-                aria-pressed={active}
-                aria-label={`Pilih tema ${THEME_LABELS[b]}`}
-              >
-                <span
-                  className="size-10 rounded-full border border-black/10 shadow-sm"
-                  style={{ background: THEME_SWATCH[b] }}
-                />
-                <span className="text-xs font-medium">{THEME_LABELS[b]}</span>
-                {active && (
-                  <span className="absolute right-1.5 top-1.5 flex size-5 items-center justify-center rounded-full bg-[var(--primary)] text-[var(--primary-foreground)]">
-                    <Check size={12} />
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-      </section>
-
-      <section className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6">
-        <h3 className="mb-4 flex items-center gap-2 text-lg font-semibold">
-          <Activity size={18} /> Mode Tampilan
+          <Sun size={18} /> Appearance
         </h3>
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-sm font-medium">Mode Gelap</p>
-            <p className="text-xs text-[var(--muted-foreground)]">
-              Saklar untuk konsistensi di sore/malam hari. Preferensi OS
-              digunakan saat pertama kali membuka aplikasi.
-            </p>
+            <div className="text-sm font-medium flex items-center gap-2">
+              {isDark ? <Moon size={14} /> : <Sun size={14} />}
+              {isDark ? "Dark Mode" : "Light Mode"}
+            </div>
+            <div className="text-xs mt-0.5" style={{ color: "var(--color-muted)" }}>
+              {theme ? `Brand palette: ${theme.themeKey}` : "Default palette"}
+            </div>
           </div>
-          <button
-            type="button"
-            onClick={toggleMode}
-            className="flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm transition hover:bg-[var(--surface)]"
-            aria-pressed={isDark}
-          >
-            {isDark ? <Moon size={16} /> : <Sun size={16} />}
-            {isDark ? "Gelap" : "Terang"}
+          <button onClick={toggleMode} className="px-3 py-2 rounded-md text-sm"
+            style={{ border: "1px solid var(--color-border)" }}>
+            Switch to {isDark ? "Light" : "Dark"}
           </button>
         </div>
+        <p className="text-xs mt-3" style={{ color: "var(--color-muted)" }}>
+          The brand palette is determined by your site (set by the Platform Admin).
+          You can override light/dark mode here — preference is saved per-browser.
+        </p>
       </section>
 
-      <section className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6">
-        <h3 className="mb-4 text-lg font-semibold">Sesi</h3>
-        <button
-          type="button"
-          onClick={() => {
-            logout();
-            window.location.href = "/login";
-          }}
-          className="rounded-lg bg-[var(--danger)] px-4 py-2 text-sm font-semibold text-[var(--danger-foreground)] transition hover:bg-[var(--danger-hover)]"
-        >
-          Keluar
-        </button>
+      {/* Session */}
+      <section className="rounded-xl p-6"
+        style={{ backgroundColor: "var(--color-surface)", border: "1px solid var(--color-border)" }}>
+        <h3 className="mb-4 flex items-center gap-2 text-lg font-semibold">
+          <Shield size={18} /> Session
+        </h3>
+        <p className="text-sm" style={{ color: "var(--color-muted)" }}>
+          Your session is managed by a short-lived JWT (15 minutes) backed by a rotating
+          refresh token (24 hours). All authentication events are recorded in the audit log.
+        </p>
       </section>
+    </div>
+  );
+}
 
-      <footer className="text-xs text-[var(--muted-foreground)]">
-        Syntera v1.0.0 — Connecting Engineering. Unifying Excellence. —
-        One Platform. One Standard. One Direction. — © 2026
-      </footer>
+function Field({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="text-xs font-medium uppercase tracking-wide" style={{ color: "var(--color-muted)" }}>
+        {label}
+      </dt>
+      <dd className="mt-1 text-sm font-medium">{value}</dd>
     </div>
   );
 }

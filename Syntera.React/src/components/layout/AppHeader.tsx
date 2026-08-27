@@ -1,21 +1,8 @@
 import * as React from "react";
 import { useNavigate } from "react-router-dom";
-import {
-  MenuIcon,
-  MoonIcon,
-  SunIcon,
-  LogOutIcon,
-  UserIcon,
-  PaletteIcon,
-  CheckIcon,
-} from "lucide-react";
-import {
-  useThemeStore,
-  THEME_BRANDS,
-  THEME_LABELS,
-  THEME_SWATCH,
-  type ThemeBrand,
-} from "../../store/themeStore";
+import { MenuIcon, MoonIcon, SunIcon, LogOutIcon, UserIcon } from "lucide-react";
+import { useThemeStore } from "../../store/themeStore";
+import { useAuthStore } from "../../store/authStore";
 import {
   Avatar,
   AvatarFallback,
@@ -27,7 +14,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "../ui";
-import { cn } from "../../lib/cn";
 
 export interface AppHeaderProps {
   title?: string;
@@ -39,9 +25,6 @@ export interface AppHeaderProps {
     avatarUrl?: string;
   };
   onLogout?: () => void;
-  /** Logo is owned by <AppSidebar /> — header shows only the title
-   *  text + page title to avoid a duplicated brand mark adjacent to
-   *  the sidebar's logo header. */
   logo?: React.ReactNode;
 }
 
@@ -56,138 +39,86 @@ const getInitials = (name: string): string =>
 export const AppHeader: React.FC<AppHeaderProps> = ({
   title,
   toggleSidebar,
-  user = { name: "Administrator", role: "User" },
+  user = { name: "User", role: "User" },
   onLogout,
   logo,
 }) => {
-  const { brand, isDark, setBrand, toggleMode } = useThemeStore();
+  const { isDark, toggleMode } = useThemeStore();
+  const theme = useAuthStore((s) => s.theme);
   const navigate = useNavigate();
 
   return (
-    <header className="z-20 flex h-[60px] items-center justify-between border-b border-border bg-card px-3 sm:px-4">
+    <header
+      className="z-20 flex h-[60px] items-center justify-between px-3 sm:px-4"
+      style={{
+        borderBottom: "1px solid var(--color-border)",
+        backgroundColor: "var(--color-surface)",
+      }}
+    >
       <div className="flex min-w-0 items-center gap-3 sm:gap-4">
         <button
           type="button"
           onClick={toggleSidebar}
-          className="rounded-lg border-none bg-transparent p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className="rounded-lg border-none bg-transparent p-1 transition-colors hover:opacity-80"
+          style={{ color: "var(--color-muted)" }}
           aria-label="Toggle sidebar"
         >
           <MenuIcon className="size-5" />
         </button>
 
-        {/* Brand block — header shows ONLY the title text. The
-            sidebar already owns the brand logo + wordmark, so
-            duplicating the logo chip here would visually double-up
-            the brand mark on every page. Keep header clean and
-            text-only; if a caller passes an explicit `logo` prop
-            we honor it (escape hatch). */}
         {logo ? (
           <div className="flex min-w-0 items-center gap-2.5">{logo}</div>
         ) : (
-          <span className="truncate text-[1.05rem] font-semibold tracking-tight text-foreground sm:text-[1.15rem]">
+          <span
+            className="truncate text-[1.05rem] font-semibold tracking-tight sm:text-[1.15rem]"
+            style={{ color: "var(--color-text)" }}
+          >
             {title}
           </span>
         )}
       </div>
 
       <div className="flex items-center gap-2 sm:gap-3">
-        {/* Theme + Mode Dropdown */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              className="flex items-center gap-2 rounded-lg border border-border bg-transparent px-2 py-1.5 text-sm transition-colors hover:bg-muted"
-              aria-label="Pilih tema"
-              title={`Tema: ${THEME_LABELS[brand]} — ${isDark ? "Gelap" : "Terang"}`}
-            >
-              <PaletteIcon className="size-4 text-muted-foreground" />
-              <span
-                className="size-4 rounded-full border border-black/10"
-                style={{ background: THEME_SWATCH[brand] }}
-              />
-              <span className="hidden text-xs font-medium sm:inline">
-                {THEME_LABELS[brand]}
-              </span>
-              {isDark ? (
-                <MoonIcon className="size-3.5 text-amber-500" />
-              ) : (
-                <SunIcon className="size-3.5 text-amber-500" />
-              )}
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-[240px]">
-            <DropdownMenuLabel className="text-xs uppercase tracking-wide text-muted-foreground">
-              Palet merek
-            </DropdownMenuLabel>
-            {THEME_BRANDS.map((b: ThemeBrand) => (
-              <DropdownMenuItem
-                key={b}
-                onClick={() => setBrand(b)}
-                className="flex items-center justify-between gap-2"
-              >
-                <span className="flex items-center gap-2">
-                  <span
-                    className="size-4 rounded-full border border-black/10"
-                    style={{ background: THEME_SWATCH[b] }}
-                  />
-                  <span className="text-sm">{THEME_LABELS[b]}</span>
-                </span>
-                {brand === b && <CheckIcon className="size-4 text-primary" />}
-              </DropdownMenuItem>
-            ))}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onClick={toggleMode}
-              className="flex items-center justify-between"
-            >
-              <span className="flex items-center gap-2">
-                {isDark ? (
-                  <MoonIcon className="size-4 text-amber-500" />
-                ) : (
-                  <SunIcon className="size-4 text-amber-500" />
-                )}
-                <span className="text-sm">
-                  Mode {isDark ? "Gelap" : "Terang"}
-                </span>
-              </span>
-              <span
-                className={cn(
-                  "relative flex h-5 w-9 items-center rounded-full px-0.5 transition-colors",
-                  isDark ? "bg-slate-700" : "bg-slate-300",
-                )}
-              >
-                <span
-                  className={cn(
-                    "absolute size-4 rounded-full bg-white transition-all",
-                    isDark ? "left-[calc(100%-1.125rem)]" : "left-0.5",
-                  )}
-                />
-              </span>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {/* Theme mode toggle (light/dark) */}
+        <button
+          type="button"
+          onClick={toggleMode}
+          className="rounded-lg p-2 transition-colors hover:opacity-80"
+          style={{
+            border: "1px solid var(--color-border)",
+            color: "var(--color-text)",
+          }}
+          aria-label="Toggle dark mode"
+          title={isDark ? "Switch to light mode" : "Switch to dark mode"}
+        >
+          {isDark ? <SunIcon className="size-4" /> : <MoonIcon className="size-4" />}
+        </button>
 
-        {/* User Menu via DropdownMenu primitive */}
+        {/* User menu */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              className="flex items-center gap-2.5 rounded-lg border-none bg-transparent px-2 py-1.5 transition-colors hover:bg-muted"
-              aria-label="Menu pengguna"
+              className="flex items-center gap-2.5 rounded-lg border-none bg-transparent px-2 py-1.5 transition-colors hover:opacity-80"
+              aria-label="User menu"
             >
-              <Avatar className="size-[34px] rounded-full border-2 border-primary sm:size-[38px]">
+              <Avatar className="size-[34px] rounded-full sm:size-[38px]"
+                style={{ border: `2px solid var(--color-primary)` }}>
                 {user.avatarUrl ? (
                   <AvatarImage src={user.avatarUrl} alt={user.name} />
                 ) : null}
-                <AvatarFallback className="rounded-full bg-gradient-to-br from-primary to-purple-600 text-sm font-bold text-primary-foreground">
+                <AvatarFallback
+                  className="rounded-full text-sm font-bold text-white"
+                  style={{ backgroundColor: "var(--color-primary)" }}
+                >
                   {getInitials(user.name)}
                 </AvatarFallback>
               </Avatar>
               <div className="hidden flex-col items-start md:flex">
-                <span className="text-sm font-medium leading-tight text-foreground">
+                <span className="text-sm font-medium leading-tight" style={{ color: "var(--color-text)" }}>
                   {user.name}
                 </span>
-                <span className="text-xs leading-tight text-muted-foreground">
+                <span className="text-xs leading-tight" style={{ color: "var(--color-muted)" }}>
                   {user.role}
                 </span>
               </div>
@@ -195,36 +126,26 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-[220px]">
             <DropdownMenuLabel className="p-0 font-normal">
-              <div className="border-b border-border px-4 py-3">
-                <p className="text-sm font-medium text-foreground">{user.name}</p>
+              <div className="px-4 py-3" style={{ borderBottom: "1px solid var(--color-border)" }}>
+                <p className="text-sm font-medium" style={{ color: "var(--color-text)" }}>{user.name}</p>
                 {user.email && (
-                  <p className="text-xs text-muted-foreground">{user.email}</p>
+                  <p className="text-xs" style={{ color: "var(--color-muted)" }}>{user.email}</p>
+                )}
+                {theme && (
+                  <p className="text-xs mt-1" style={{ color: "var(--color-muted)" }}>
+                    Theme: {theme.themeKey}
+                  </p>
                 )}
               </div>
             </DropdownMenuLabel>
-            <DropdownMenuItem
-              onClick={() => {
-                /* SPA navigation to the Settings page, which hosts
-                   the full profile card (name, email, user id,
-                   roles). Settings is wrapped by RequireAuth, so
-                   the menu item only renders when authed anyway. */
-                navigate("/settings");
-              }}
-            >
-              <UserIcon className="size-4 text-muted-foreground" />
+            <DropdownMenuItem onClick={() => navigate("/settings")}>
+              <UserIcon className="size-4" />
               Profile
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
               variant="destructive"
-              onClick={onLogout ?? (() => {
-                // Defensive default — should never fire because App.tsx
-                // always passes onLogout. If it ever does, at least
-                // fail loudly with a toast rather than silently
-                // swallowing the click.
-                console.error("AppHeader: onLogout not wired — redirecting to /login as fallback.");
-                window.location.assign("/login");
-              })}
+              onClick={onLogout ?? (() => { window.location.assign("/login"); })}
             >
               <LogOutIcon className="size-4" />
               Logout

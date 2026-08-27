@@ -1214,3 +1214,34 @@ body {
 }
 
 } /* end @layer components */
+
+/* ============================================
+   IAM UI utilities — added for v2 (IAM platform)
+   Simple form controls that read CSS vars set by ThemeApplier.
+   ============================================ */
+
+.input {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--color-border, var(--border, #e2e8f0));
+  background-color: var(--color-background, var(--background, #fff));
+  color: var(--color-text, var(--foreground, #243447));
+  font-size: 0.875rem;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.input:focus {
+  border-color: var(--color-primary, var(--primary, #4C6EF5));
+  box-shadow: 0 0 0 3px rgba(76, 110, 245, 0.15);
+}
+
+.input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.dark .input {
+  background-color: var(--color-surface, #1E293B);
+}

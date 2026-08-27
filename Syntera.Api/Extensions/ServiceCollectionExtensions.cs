@@ -1,193 +1,42 @@
-using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
-using Syntera.Application.Interfaces;
 using Syntera.Application.Interfaces.Services;
 using Syntera.Application.Services;
-using Syntera.Application.Validators;
 using Syntera.Infrastructure.Data;
 using Syntera.Infrastructure.Identity;
-using Syntera.Infrastructure.Repositories;
 using System.Text;
 using System.Text.Json.Serialization;
 
 namespace Syntera.Api.Extensions;
 
 /// <summary>
-/// All cross-cutting DI registrations. Splitting by concern keeps
-/// Program.cs tiny and the wiring auditable. Each method maps to
-/// a logical layer (Persistence, Identity, Application, OpenAPI,
-/// Security) and is idempotent.
+/// All cross-cutting DI registrations. Split by concern: MVC, OpenAPI,
+/// Security (CORS + rate limit + JWT). Persistence, Identity, and
+/// Application services are now registered directly in Program.cs
+/// because the registration graph is small enough to read in one place.
 /// </summary>
 public static class ServiceCollectionExtensions
 {
-    // ─── MVC / Controllers ───────────────────────────────────────
-    /// <summary>
-    /// Registers controller services. In .NET 8+, AddControllers()
-    /// must be called explicitly before app.MapControllers() or
-    /// the runtime throws "Unable to find the required services"
-    /// at startup (the framework no longer auto-registers them
-    /// behind the scenes as a side effect of WebApplication.Create).
-    /// </summary>
     public static IServiceCollection AddSynteraMvc(this IServiceCollection services)
     {
         services.AddControllers()
             .ConfigureApiBehaviorOptions(options =>
             {
-                // Suppress the default 400 ProblemDetails response so our
-                // ApiResponse envelope stays consistent. The [ApiController]
-                // pipeline still validates model state; we just take over the
-                // formatting in ApiControllerBase.Invalid(...).
                 options.SuppressModelStateInvalidFilter = false;
             })
             .AddJsonOptions(options =>
             {
-                // DevExtreme grid endpoints return EF entities with navigation
-                // properties (Product.Category, Sale.Items, etc.). Without
-                // IgnoreCycles, System.Text.Json would infinite-loop on
-                // bidirectional refs (Customer.Sales[0].Customer.Sales[0]...).
-                // IgnoreCycles silently drops the back-reference — exactly what
-                // grids need (forward refs only).
                 options.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
                 options.JsonSerializerOptions.WriteIndented = false;
-                // Camel-case to match the JS client expectations
-                // (devextreme-aspnet-data-nojquery expects "data" + "totalCount"
-                // and existing React code uses camelCase keys already).
-                options.JsonSerializerOptions.PropertyNamingPolicy =
-                    System.Text.Json.JsonNamingPolicy.CamelCase;
-                // Enums as strings, both directions. The React client models
-                // drugClass / status / type as string unions ("OverTheCounter",
-                // "Paid", "StockIn"...) and its lookup dropdowns submit those
-                // same strings — numeric enums would break label lookups on
-                // display and 400 on upsert binding.
+                options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
                 options.JsonSerializerOptions.Converters.Add(
                     new System.Text.Json.Serialization.JsonStringEnumConverter());
             });
         return services;
     }
 
-    // ─── Persistence ─────────────────────────────────────────────
-    public static IServiceCollection AddSynteraPersistence(
-        this IServiceCollection services, IConfiguration cfg)
-    {
-        var conn = cfg.GetConnectionString("Default")
-            ?? throw new InvalidOperationException("ConnectionStrings:Default missing.");
-
-        services.AddDbContext<AppDbContext>(options =>
-        {
-            options.UseSqlServer(conn, sql =>
-            {
-                sql.EnableRetryOnFailure(
-                    maxRetryCount: 5,
-                    maxRetryDelay: TimeSpan.FromSeconds(8),
-                    errorNumbersToAdd: null);
-                sql.MigrationsAssembly(typeof(AppDbContext).Assembly.FullName);
-            });
-            options.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
-            if (cfg.GetValue("EFCore:EnableSensitiveDataLogging", false))
-                options.EnableSensitiveDataLogging();
-        });
-
-        services.AddScoped<IUnitOfWork, UnitOfWork>();
-        services.AddScoped<ICategoryRepository, CategoryRepository>();
-        services.AddScoped<ISupplierRepository, SupplierRepository>();
-        services.AddScoped<IProductRepository, ProductRepository>();
-        services.AddScoped<IInventoryRepository, InventoryRepository>();
-        services.AddScoped<ICustomerRepository, CustomerRepository>();
-        services.AddScoped<ISaleRepository, SaleRepository>();
-
-        return services;
-    }
-
-    // ─── Identity + JWT ──────────────────────────────────────────
-    public static IServiceCollection AddSynteraIdentity(
-        this IServiceCollection services, IConfiguration cfg)
-    {
-        services.AddIdentity<IdentityUser, IdentityRole>(options =>
-        {
-            options.Password.RequiredLength = 8;
-            options.Password.RequireDigit = true;
-            options.Password.RequireUppercase = true;
-            options.Password.RequireNonAlphanumeric = true;
-            options.User.RequireUniqueEmail = true;
-            options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
-            options.Lockout.MaxFailedAccessAttempts = 5;
-        })
-        .AddEntityFrameworkStores<AppDbContext>()
-        .AddDefaultTokenProviders();
-
-        // In .NET 8+, AddIdentity<TUser, TRole>() does NOT auto-register
-        // AuthorizationOptions / IAuthorizationService / DefaultPolicy.
-        // We need AddAuthorization() or app.UseAuthorization() throws
-        // "Unable to find the required services" at startup.
-        // Default policy = require authenticated user; role checks
-        // are applied per-controller via [Authorize(Roles = "...")].
-        services.AddAuthorization(options =>
-        {
-            // Default policy: any authenticated user.
-            options.DefaultPolicy = new Microsoft.AspNetCore.Authorization
-                .AuthorizationPolicyBuilder()
-                .RequireAuthenticatedUser()
-                .Build();
-        });
-
-        var jwtKey = cfg["Jwt:SigningKey"]
-            ?? throw new InvalidOperationException(
-                "Jwt:SigningKey missing. Configure via User Secrets (dev) or env var (prod).");
-        if (jwtKey.Length < 32)
-            throw new InvalidOperationException("Jwt:SigningKey must be ≥ 32 chars (HS256).");
-
-        services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-            .AddJwtBearer(options =>
-            {
-                options.RequireHttpsMetadata = !cfg.GetValue("DevMode", false);
-                options.SaveToken = true;
-                options.MapInboundClaims = false;
-                options.TokenValidationParameters = new()
-                {
-                    ValidateIssuer = true,
-                    ValidIssuer = cfg["Jwt:Issuer"],
-                    ValidateAudience = true,
-                    ValidAudience = cfg["Jwt:Audience"],
-                    ValidateLifetime = true,
-                    ValidateIssuerSigningKey = true,
-                    IssuerSigningKey = new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(
-                        Encoding.UTF8.GetBytes(jwtKey)),
-                    ClockSkew = TimeSpan.FromSeconds(30),
-                };
-            });
-
-        services.AddScoped<ICurrentUserService, CurrentUserService>();
-        return services;
-    }
-
-    // ─── Application services ───────────────────────────────────
-    public static IServiceCollection AddSynteraApplication(this IServiceCollection services)
-    {
-        services.AddScoped<IAuthService, AuthService>();
-        services.AddScoped<ICategoryService, CategoryService>();
-        services.AddScoped<ISupplierService, SupplierService>();
-        services.AddScoped<IProductService, ProductService>();
-        services.AddScoped<IInventoryService, InventoryService>();
-        services.AddScoped<ICustomerService, CustomerService>();
-        services.AddScoped<ISaleService, SaleService>();
-        services.AddScoped<IDashboardService, DashboardService>();
-
-        services.AddScoped<LoginRequestValidator>();
-        services.AddScoped<CategoryUpsertValidator>();
-        services.AddScoped<SupplierUpsertValidator>();
-        services.AddScoped<CustomerUpsertValidator>();
-        services.AddScoped<ProductUpsertValidator>();
-        services.AddScoped<SaleCreateValidator>();
-
-        services.AddValidatorsFromAssemblyContaining<LoginRequestValidator>();
-        return services;
-    }
-
-    // ─── OpenAPI / Swagger ───────────────────────────────────────
     public static IServiceCollection AddSynteraOpenApi(this IServiceCollection services)
     {
         services.AddEndpointsApiExplorer();
@@ -195,9 +44,9 @@ public static class ServiceCollectionExtensions
         {
             options.SwaggerDoc("v1", new()
             {
-                Title = "Syntera Pharmaceutical API",
+                Title = "Syntera IAM API",
                 Version = "v1",
-                Description = "Kalbe-affiliated pharmaceutical commerce + inventory API built on .NET 10.",
+                Description = "Multi-tenant Identity & Access Management platform for Syntera-affiliated pharmaceutical sites.",
             });
             options.AddSecurityDefinition("Bearer", new()
             {
@@ -219,31 +68,47 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
-    // ─── Security: CORS + Rate Limiting ──────────────────────────
     public static IServiceCollection AddSynteraSecurity(this IServiceCollection services, IConfiguration cfg)
     {
+        // CORS — fail-closed: if no origins configured, REJECT all cross-origin requests.
+        // The original code allowed AllowAnyOrigin() as fallback, which is unsafe.
         services.AddCors(o => o.AddDefaultPolicy(p =>
         {
-            var origins = cfg.GetSection("Cors:Origins").Get<string[]>() ?? [];
-            if (origins.Length == 0)
-                p.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
+            var origins = cfg.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
+            var devOrigins = cfg.GetSection("Cors:DevOrigins").Get<string[]>() ?? [];
+            var allOrigins = origins.Concat(devOrigins).Distinct().ToArray();
+            if (allOrigins.Length == 0)
+            {
+                // No origins → block all CORS in Production. In Development, allow localhost.
+                if (cfg["ASPNETCORE_ENVIRONMENT"] == "Development")
+                {
+                    p.SetIsOriginAllowed(s => s.StartsWith("http://localhost", StringComparison.OrdinalIgnoreCase))
+                     .AllowAnyHeader().AllowAnyMethod().AllowCredentials();
+                }
+                else
+                {
+                    // Empty policy — no origin will match.
+                    p.SetIsOriginAllowed(_ => false)
+                     .AllowAnyHeader().AllowAnyMethod();
+                }
+            }
             else
-                p.WithOrigins(origins).AllowAnyHeader().AllowAnyMethod().AllowCredentials();
+            {
+                p.WithOrigins(allOrigins).AllowAnyHeader().AllowAnyMethod().AllowCredentials();
+            }
         }));
 
+        // Rate limit: default 500/min; login endpoint gets stricter limit.
         services.AddRateLimiter(o =>
         {
-            // Default per-process limit: 500 req/min total. The handler below
-            // emits a uniform JSON envelope so the React client can react
-            // consistently to 429s.
             o.AddFixedWindowLimiter("default", opt =>
             {
                 opt.PermitLimit = 500;
                 opt.Window = TimeSpan.FromMinutes(1);
             });
-            o.AddFixedWindowLimiter("strict", opt =>
+            o.AddFixedWindowLimiter("auth", opt =>
             {
-                opt.PermitLimit = 60;
+                opt.PermitLimit = 20; // 20 attempts per minute per IP
                 opt.Window = TimeSpan.FromMinutes(1);
             });
             o.OnRejected = async (ctx, ct) =>
@@ -257,6 +122,41 @@ public static class ServiceCollectionExtensions
                     message = "Too many requests. Please slow down.",
                 }, ct);
             };
+        });
+
+        // JWT authentication.
+        var jwtKey = cfg["Jwt:SigningKey"];
+        if (string.IsNullOrWhiteSpace(jwtKey))
+            throw new InvalidOperationException("Jwt:SigningKey is required.");
+        if (jwtKey.Length < 32)
+            throw new InvalidOperationException("Jwt:SigningKey must be ≥ 32 chars.");
+
+        services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+            .AddJwtBearer(options =>
+            {
+                options.RequireHttpsMetadata = cfg["ASPNETCORE_ENVIRONMENT"] != "Development";
+                options.SaveToken = false;
+                options.MapInboundClaims = false;
+                options.TokenValidationParameters = new()
+                {
+                    ValidateIssuer = true,
+                    ValidIssuer = "syntera",
+                    ValidateAudience = true,
+                    ValidAudience = "syntera-api",
+                    ValidateLifetime = true,
+                    ValidateIssuerSigningKey = true,
+                    IssuerSigningKey = new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(
+                        Encoding.UTF8.GetBytes(jwtKey)),
+                    ClockSkew = TimeSpan.FromSeconds(30),
+                };
+            });
+
+        services.AddAuthorization(options =>
+        {
+            options.DefaultPolicy = new Microsoft.AspNetCore.Authorization
+                .AuthorizationPolicyBuilder()
+                .RequireAuthenticatedUser()
+                .Build();
         });
 
         return services;

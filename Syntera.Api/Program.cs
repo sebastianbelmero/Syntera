@@ -1,16 +1,19 @@
-using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using Serilog;
 using Syntera.Api.Extensions;
 using Syntera.Api.Middleware;
+using Syntera.Application.Interfaces.Services;
+using Syntera.Application.Services;
 using Syntera.Infrastructure.Data;
+using Syntera.Infrastructure.Identity;
+using Syntera.Infrastructure.Ldap;
+using Syntera.Infrastructure.Security;
 using Syntera.Infrastructure.Seed;
 using System.Globalization;
 
 // ─── Bootstrap Serilog (early-stage logs go to console) ─────────────
-// InvariantCulture is passed as the IFormatProvider so log timestamps
-// and numeric values render the same regardless of the server's
-// locale settings — important for log aggregation across regions.
 Log.Logger = new LoggerConfiguration()
     .Enrich.FromLogContext()
     .Enrich.WithEnvironmentName()
@@ -24,7 +27,6 @@ try
 {
     var builder = WebApplication.CreateBuilder(args);
 
-    // Replace the default ASP.NET Core logging with Serilog
     builder.Host.UseSerilog((ctx, services, lc) => lc
         .ReadFrom.Configuration(ctx.Configuration)
         .Enrich.FromLogContext()
@@ -37,18 +39,65 @@ try
         .AddUserSecrets<Program>(optional: true, reloadOnChange: true)
         .AddEnvironmentVariables(prefix: "SYNTERA_");
 
-    // Layered DI registration — each extension owns its slice.
-    builder.Services.AddSynteraMvc();          // controllers + API behavior
-    builder.Services.AddSynteraPersistence(builder.Configuration);
-    builder.Services.AddSynteraIdentity(builder.Configuration);
-    builder.Services.AddSynteraApplication();
+    // ─── Fail-fast: refuse to start in Production with insecure defaults ─
+    if (builder.Environment.IsProduction())
+    {
+        var signingKey = builder.Configuration["Jwt:SigningKey"];
+        if (string.IsNullOrWhiteSpace(signingKey) || signingKey.Length < 32)
+            throw new InvalidOperationException("Jwt:SigningKey must be set (≥32 chars) in Production.");
+
+        var allowedHosts = builder.Configuration["Cors:AllowedOrigins"];
+        if (string.IsNullOrWhiteSpace(allowedHosts))
+            throw new InvalidOperationException("Cors:AllowedOrigins must be set in Production.");
+
+        if (builder.Configuration["Ldap:AllowPlain"] == "true")
+            throw new InvalidOperationException("Ldap:AllowPlain=true is forbidden in Production.");
+    }
+
+    // ─── DI: framework ──────────────────────────────────────────────
+    builder.Services.AddHttpContextAccessor();
+    builder.Services.AddMemoryCache();
+    builder.Services.AddSynteraMvc();
     builder.Services.AddSynteraOpenApi();
     builder.Services.AddSynteraSecurity(builder.Configuration);
-    builder.Services.AddHttpContextAccessor();
+
+    // ─── DI: Data Protection (for LDAP credential encryption) ──────
+    var dpBuilder = builder.Services.AddDataProtection()
+        .SetApplicationName("Syntera")
+        .PersistKeysToFileSystem(new DirectoryInfo(
+            builder.Configuration["DataProtection:KeyPath"] ?? "/var/lib/syntera/keys"));
+    dpBuilder.SetDefaultKeyLifetime(TimeSpan.FromDays(90));
+
+    // ─── DI: DbContexts ─────────────────────────────────────────────
+    builder.Services.AddDbContext<PlatformDbContext>(opt =>
+        opt.UseSqlServer(builder.Configuration.GetConnectionString("Platform")
+            ?? throw new InvalidOperationException("ConnectionStrings:Platform is required.")));
+
+    builder.Services.AddScoped<ISiteDbContextFactory, SiteDbContextFactory>();
+
+    // ─── DI: Identity & current user ────────────────────────────────
+    builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
+
+    // ─── DI: LDAP ───────────────────────────────────────────────────
+    builder.Services.AddSingleton<ILdapClient, NovellLdapClient>();
+    builder.Services.AddScoped<ILdapConfigProtector, LdapConfigProtector>();
+
+    // ─── DI: Application services ───────────────────────────────────
+    builder.Services.AddScoped<ITokenService, JwtTokenService>();
+    builder.Services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
+    builder.Services.AddScoped<IAuthService, AuthService>();
+    builder.Services.AddScoped<IPermissionService, PermissionService>();
+    builder.Services.AddScoped<IAuditService, AuditService>();
+    builder.Services.AddScoped<IThemeService, ThemeService>();
+    builder.Services.AddScoped<ISiteManagementService, SiteManagementService>();
+    builder.Services.AddScoped<IUserManagementService, UserManagementService>();
+    builder.Services.AddScoped<IRoleTemplateService, RoleTemplateService>();
+
+    // ─── Health checks ──────────────────────────────────────────────
     builder.Services.AddHealthChecks()
         .AddSqlServer(
-            connectionString: builder.Configuration.GetConnectionString("Default")!,
-            name: "sqlserver",
+            connectionString: builder.Configuration.GetConnectionString("Platform")!,
+            name: "platform-db",
             tags: HealthCheckTags);
 
     var app = builder.Build();
@@ -58,11 +107,16 @@ try
     {
         app.UseDeveloperExceptionPage();
         app.UseSwagger();
-        app.UseSwaggerUI(options =>
+        app.UseSwaggerUI(o =>
         {
-            options.SwaggerEndpoint("/swagger/v1/swagger.json", "Syntera API v1");
-            options.RoutePrefix = "docs";
+            o.SwaggerEndpoint("/swagger/v1/swagger.json", "Syntera API v1");
+            o.RoutePrefix = "docs";
         });
+    }
+    else
+    {
+        app.UseHsts();
+        app.UseHttpsRedirection();
     }
 
     app.UseMiddleware<GlobalExceptionMiddleware>();
@@ -74,23 +128,16 @@ try
     app.MapControllers();
 
     app.MapHealthChecks("/health");
-    app.MapHealthChecks("/health/ready", new()
-    {
-        Predicate = h => h.Tags.Contains("db"),
-    });
 
-    // ─── Seed on startup ────────────────────────────────────────
+    // ─── Database init (NO automatic migration in production — apply via CLI) ─
     using (var scope = app.Services.CreateScope())
     {
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var users = scope.ServiceProvider.GetRequiredService<UserManager<Microsoft.AspNetCore.Identity.IdentityUser>>();
-        var roles = scope.ServiceProvider.GetRequiredService<RoleManager<Microsoft.AspNetCore.Identity.IdentityRole>>();
-
-        var seedSample = app.Configuration.GetValue("SEED_SAMPLE_DATA", defaultValue: false);
-        var adminEmail = app.Configuration["Seed:AdminEmail"] ?? "admin@syntera.local";
-        var adminPassword = app.Configuration["Seed:AdminPassword"] ?? "ChangeMe!Strong#1";
-
-        await DbSeeder.SeedAsync(db, users, roles, seedSample, adminEmail, adminPassword);
+        var platformDb = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+        if (app.Environment.IsDevelopment())
+        {
+            await platformDb.Database.EnsureCreatedAsync();
+            await DbSeeder.SeedPlatformAsync(platformDb);
+        }
     }
 
     app.Run();
@@ -105,11 +152,7 @@ finally
     Log.CloseAndFlush();
 }
 
-// Marker so Program.cs can be referenced from the tests project.
-// Also hosts static readonly fields to satisfy CA1861 — constant array
-// arguments passed to a method get re-allocated on every call otherwise;
-// pulling them up to a static field allocates them exactly once at class load.
 public partial class Program
 {
-    internal static readonly string[] HealthCheckTags = { "db", "sqlserver" };
+    internal static readonly string[] HealthCheckTags = { "db", "platform" };
 }

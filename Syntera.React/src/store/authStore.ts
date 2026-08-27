@@ -1,45 +1,47 @@
 /**
- * Auth store (Zustand + persist) — holds tokens + profile in memory
- * AND mirrors them to localStorage so a page reload doesn't log
- * the user out.
+ * Auth store (Zustand + persist) — holds tokens, profile, and theme bundle.
  *
- * Security trade-off:
- *   Storing access tokens in localStorage is more XSS-exposed than
+ * Security trade-off (acknowledged):
+ *   Storing access/refresh tokens in localStorage is more XSS-exposed than
  *   httpOnly cookies, but for an internal B2B pharmaceutical suite
- *   (no third-party scripts, CSP enforced, no user-generated HTML)
- *   the convenience of not bouncing users to /login on every F5
- *   wins. The refresh-token rotation on the backend limits the
- *   blast radius of a stolen access token (short-lived).
+ *   (no third-party scripts, CSP enforced, no user-generated HTML) the
+ *   convenience of not bouncing users to /login on every F5 wins.
+ *   The refresh-token rotation on the backend limits the blast radius
+ *   of a stolen access token (short-lived, 15 min).
  *
- * The store exposes:
- *   - state: accessToken, refreshToken, expiresAt, profile
- *   - actions: login(payload), setTokens(payload), logout(), clear()
- *   - selectors: isAuthenticated(), hasRole(role)
- *
- * `persist` only serialises the four data fields — actions stay
- * on the prototype and never touch storage.
+ * Theme application:
+ *   After login, the theme bundle (light + dark palettes) is applied to
+ *   CSS variables by the ThemeProvider component. User's preferred mode
+ *   (light/dark) is stored separately in themeStore.ts so the user can
+ *   override the site default.
  */
 
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import type { LoginResponse, UserProfile } from "../types";
+import type { LoginResponse, UserProfile, ThemeBundle } from "../types";
 
 interface AuthState {
   accessToken: string | null;
   refreshToken: string | null;
   expiresAt: string | null;
   profile: UserProfile | null;
+  theme: ThemeBundle | null;
+
   login: (payload: LoginResponse) => void;
   setTokens: (payload: {
     accessToken: string;
     refreshToken: string;
     expiresAt: string;
   }) => void;
+  updateProfile: (profile: UserProfile) => void;
   logout: () => void;
-  /** Hard-clear storage (used by 401-refresh failure path). */
   clear: () => void;
+
   isAuthenticated: () => boolean;
   hasRole: (role: string) => boolean;
+  hasPermission: (perm: string) => boolean;
+  isPlatformAdmin: () => boolean;
+  isSiteBusinessAdmin: () => boolean;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -49,6 +51,7 @@ export const useAuthStore = create<AuthState>()(
       refreshToken: null,
       expiresAt: null,
       profile: null,
+      theme: null,
 
       login(payload) {
         set({
@@ -56,6 +59,7 @@ export const useAuthStore = create<AuthState>()(
           refreshToken: payload.refreshToken,
           expiresAt: payload.expiresAt,
           profile: payload.profile,
+          theme: payload.theme,
         });
       },
 
@@ -67,23 +71,27 @@ export const useAuthStore = create<AuthState>()(
         }));
       },
 
+      updateProfile(profile) {
+        set({ profile });
+      },
+
       logout() {
         set({
           accessToken: null,
           refreshToken: null,
           expiresAt: null,
           profile: null,
+          theme: null,
         });
       },
 
-      // Alias kept for clarity at call sites that mean "storage wipe"
-      // (e.g. after a failed token refresh).
       clear() {
         set({
           accessToken: null,
           refreshToken: null,
           expiresAt: null,
           profile: null,
+          theme: null,
         });
       },
 
@@ -95,16 +103,29 @@ export const useAuthStore = create<AuthState>()(
         const p = get().profile;
         return !!p && p.roles.includes(role);
       },
+
+      hasPermission(perm: string) {
+        const p = get().profile;
+        return !!p && p.permissions.includes(perm);
+      },
+
+      isPlatformAdmin() {
+        return get().hasRole("platform-admin");
+      },
+
+      isSiteBusinessAdmin() {
+        return get().hasRole("site-business-admin");
+      },
     }),
     {
       name: "syntera.auth",
       storage: createJSONStorage(() => localStorage),
-      // Only persist data fields, never the action functions.
       partialize: (state) => ({
         accessToken: state.accessToken,
         refreshToken: state.refreshToken,
         expiresAt: state.expiresAt,
         profile: state.profile,
+        theme: state.theme,
       }),
     },
   ),

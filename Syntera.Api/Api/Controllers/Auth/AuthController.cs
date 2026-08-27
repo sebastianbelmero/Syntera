@@ -3,65 +3,67 @@ using Microsoft.AspNetCore.Mvc;
 using Syntera.Api.Controllers;
 using Syntera.Application.Common;
 using Syntera.Application.DTOs.Auth;
-using Syntera.Application.Logging;
 using Syntera.Application.Services;
-using Syntera.Application.Validators;
 
 namespace Syntera.Api.Controllers.Auth;
 
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/auth")]
 public sealed class AuthController : ApiControllerBase
 {
     private readonly IAuthService _auth;
-    private readonly LoginRequestValidator _loginValidator;
     private readonly ILogger<AuthController> _log;
 
-    public AuthController(
-        IAuthService auth,
-        LoginRequestValidator loginValidator,
-        ILogger<AuthController> log)
+    public AuthController(IAuthService auth, ILogger<AuthController> log)
     {
         _auth = auth;
-        _loginValidator = loginValidator;
         _log = log;
     }
 
-    /// <summary>Authenticate and obtain a JWT + refresh token.</summary>
+    /// <summary>
+    /// Authenticate by email + password. Email domain determines auth method:
+    /// @syntera.com → Platform Admin (local), anything else → site LDAP.
+    /// </summary>
     [HttpPost("login")]
     [AllowAnonymous]
     [ProducesResponseType(typeof(ApiResponse<LoginResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> Login([FromBody] LoginRequest req, CancellationToken ct)
     {
-        var validation = await _loginValidator.ValidateAsync(req, ct);
-        if (!validation.IsValid)
-            return Invalid(validation.Errors.Select(e => new FieldError(e.PropertyName, e.ErrorMessage)));
+        if (string.IsNullOrWhiteSpace(req?.Email) || string.IsNullOrWhiteSpace(req.Password))
+            return BadRequest(ApiResponse<object>.Fail("INVALID_INPUT", "Email and password are required."));
+
+        var ip = HttpContext.Connection.RemoteIpAddress?.ToString();
+        var ua = Request.Headers.UserAgent.ToString();
 
         try
         {
-            var result = await _auth.LoginAsync(req, ct);
+            var result = await _auth.LoginAsync(req, ip, ua, ct);
             return Ok(result);
         }
         catch (Domain.Exceptions.DomainException ex)
         {
-            AuthLogger.LogLoginRejected(_log, ex.Code, ex.Message);
-            return Unauthorized(ApiResponse<object>.Fail(ex.Code, ex.Message));
+            return ex is Domain.Exceptions.AuthenticationException
+                ? Unauthorized(ApiResponse<object>.Fail(ex.Code, ex.Message))
+                : BadRequest(ApiResponse<object>.Fail(ex.Code, ex.Message));
         }
     }
 
-    /// <summary>Exchange a refresh token for a new access token.</summary>
+    /// <summary>Exchange a refresh token for a new access token (platform admin scope).</summary>
     [HttpPost("refresh")]
     [AllowAnonymous]
-    [ProducesResponseType(typeof(ApiResponse<LoginResponse>), StatusCodes.Status200OK)]
     public async Task<IActionResult> Refresh([FromBody] RefreshRequest req, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(req?.RefreshToken))
             return BadRequest(ApiResponse<object>.Fail("EMPTY_TOKEN", "Refresh token is required."));
 
+        var ip = HttpContext.Connection.RemoteIpAddress?.ToString();
+        var ua = Request.Headers.UserAgent.ToString();
+
         try
         {
-            var result = await _auth.RefreshAsync(req.RefreshToken, ct);
+            var result = await _auth.RefreshAsync(req.RefreshToken, ip, ua, ct);
             return Ok(result);
         }
         catch (Domain.Exceptions.DomainException ex)
@@ -69,4 +71,61 @@ public sealed class AuthController : ApiControllerBase
             return Unauthorized(ApiResponse<object>.Fail(ex.Code, ex.Message));
         }
     }
+
+    /// <summary>Exchange a refresh token for a new access token (site user scope).</summary>
+    [HttpPost("refresh-site")]
+    [AllowAnonymous]
+    public async Task<IActionResult> RefreshSite([FromBody] RefreshSiteRequest req, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(req?.RefreshToken))
+            return BadRequest(ApiResponse<object>.Fail("EMPTY_TOKEN", "Refresh token is required."));
+
+        var ip = HttpContext.Connection.RemoteIpAddress?.ToString();
+        var ua = Request.Headers.UserAgent.ToString();
+
+        try
+        {
+            var result = await _auth.RefreshSiteAsync(req.RefreshToken, req.SiteId, ip, ua, ct);
+            return Ok(result);
+        }
+        catch (Domain.Exceptions.DomainException ex)
+        {
+            return Unauthorized(ApiResponse<object>.Fail(ex.Code, ex.Message));
+        }
+    }
+
+    /// <summary>Logout by revoking the refresh token.</summary>
+    [HttpPost("logout")]
+    [Authorize]
+    public async Task<IActionResult> Logout([FromBody] LogoutRequest req, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(req?.RefreshToken))
+            return BadRequest(ApiResponse<object>.Fail("EMPTY_TOKEN", "Refresh token is required."));
+
+        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        var revokedBy = Guid.TryParse(userId, out var g) ? g : (Guid?)null;
+
+        await _auth.LogoutAsync(req.RefreshToken, revokedBy, ct);
+        return Ok(ApiResponse<object>.Ok(null, "Logged out."));
+    }
+
+    /// <summary>Returns the current user's profile (from JWT claims).</summary>
+    [HttpGet("profile")]
+    [Authorize]
+    public IActionResult Profile()
+    {
+        var profile = new UserProfileDto(
+            UserId: Guid.TryParse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, out var uid) ? uid : Guid.Empty,
+            Email: User.FindFirst("email")?.Value ?? "",
+            DisplayName: User.FindFirst("display_name")?.Value ?? "",
+            Scope: User.FindFirst("scope")?.Value ?? "anonymous",
+            SiteId: Guid.TryParse(User.FindFirst("site_id")?.Value, out var sid) ? sid : null,
+            SiteCode: User.FindFirst("site_code")?.Value,
+            SiteDisplayName: null,
+            Roles: User.FindAll(System.Security.Claims.ClaimTypes.Role).Select(c => c.Value).ToList(),
+            Permissions: User.FindAll("perm").Select(c => c.Value).ToList());
+        return Ok(profile);
+    }
 }
+
+public record RefreshSiteRequest(string RefreshToken, Guid SiteId);

@@ -1,18 +1,50 @@
 namespace Syntera.Application.DTOs.Auth;
 
-public sealed record LoginRequest(string Email, string Password);
+public record LoginRequest(string Email, string Password);
 
-public sealed record LoginResponse(
+public record LoginResponse(
     string AccessToken,
-    string TokenType,
     DateTime ExpiresAt,
     string RefreshToken,
-    UserProfile Profile);
+    UserProfileDto Profile,
+    ThemeDto Theme);
 
-public sealed record RefreshRequest(string RefreshToken);
+public record RefreshRequest(string RefreshToken);
 
-public sealed record UserProfile(
-    Guid Id,
+public record RefreshResponse(
+    string AccessToken,
+    DateTime ExpiresAt,
+    string RefreshToken,
+    UserProfileDto Profile,
+    ThemeDto Theme);
+
+public record UserProfileDto(
+    Guid UserId,
     string Email,
-    string? FullName,
-    IReadOnlyList<string> Roles);
+    string DisplayName,
+    string Scope,        // "platform" | "site"
+    Guid? SiteId,
+    string? SiteCode,
+    string? SiteDisplayName,
+    IReadOnlyCollection<string> Roles,
+    IReadOnlyCollection<string> Permissions);
+
+public record ThemeDto(
+    string ThemeKey,
+    ThemePalette Light,
+    ThemePalette Dark,
+    string? LogoUrl);
+
+public record ThemePalette(
+    string Primary,
+    string Accent,
+    string Background,
+    string Surface,
+    string Text,
+    string Muted,
+    string Border,
+    string Success,
+    string Warning,
+    string Danger);
+
+public record LogoutRequest(string RefreshToken);
