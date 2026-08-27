@@ -165,12 +165,6 @@ namespace Syntera.Migrations.Platform
                     Port = table.Column<int>(type: "int", nullable: false),
                     UseStartTls = table.Column<bool>(type: "bit", nullable: false),
                     BaseDn = table.Column<string>(type: "nvarchar(255)", maxLength: 255, nullable: false),
-                    EmailAttribute = table.Column<string>(type: "nvarchar(64)", maxLength: 64, nullable: false),
-                    BindDn = table.Column<string>(type: "nvarchar(255)", maxLength: 255, nullable: true),
-                    BindPasswordEncrypted = table.Column<string>(type: "nvarchar(2048)", maxLength: 2048, nullable: true),
-                    UserFilterTemplate = table.Column<string>(type: "nvarchar(255)", maxLength: 255, nullable: false),
-                    TimeoutSeconds = table.Column<int>(type: "int", nullable: false),
-                    SearchSubtree = table.Column<bool>(type: "bit", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
                 },

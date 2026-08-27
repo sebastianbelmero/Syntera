@@ -70,8 +70,4 @@ public sealed class UsersController : ApiControllerBase
         await _svc.RevokeDirectPermissionAsync(dto, ct);
         return Ok(new { success = true });
     }
-
-    [HttpPost("sync")]
-    public async Task<IActionResult> Sync(CancellationToken ct)
-        => Ok(await _svc.TriggerSyncAsync(_current.UserId ?? Guid.Empty, ct));
 }

@@ -9,11 +9,11 @@ using Syntera.Infrastructure.Data;
 
 #nullable disable
 
-namespace Syntera.Migrations.Platform
+namespace Syntera.Migrations.Site
 {
-    [DbContext(typeof(PlatformDbContext))]
-    [Migration("20260827043156_InitialPlatform")]
-    partial class InitialPlatform
+    [DbContext(typeof(SiteDbContext))]
+    [Migration("20260827082016_InitialSite")]
+    partial class InitialSite
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -97,14 +97,12 @@ namespace Syntera.Migrations.Platform
 
                     b.HasIndex("ActorUserId");
 
-                    b.HasIndex("SiteId");
-
                     b.HasIndex("Timestamp");
 
                     b.ToTable("AuditLogs", (string)null);
                 });
 
-            modelBuilder.Entity("Syntera.Domain.Entities.PlatformUser", b =>
+            modelBuilder.Entity("Syntera.Domain.Entities.Permission", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -118,40 +116,28 @@ namespace Syntera.Migrations.Platform
                         .HasMaxLength(160)
                         .HasColumnType("nvarchar(160)");
 
-                    b.Property<string>("Email")
+                    b.Property<string>("Group")
                         .IsRequired()
-                        .HasMaxLength(160)
-                        .HasColumnType("nvarchar(160)");
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
 
-                    b.Property<int>("FailedLoginCount")
-                        .HasColumnType("int");
-
-                    b.Property<bool>("IsEnabled")
+                    b.Property<bool>("IsPlatformOnly")
                         .HasColumnType("bit");
 
-                    b.Property<DateTime?>("LastFailedLoginAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<DateTime?>("LastLoginAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<DateTime?>("LockedUntil")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("PasswordHash")
+                    b.Property<string>("Key")
                         .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("nvarchar(255)");
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("datetime2");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("Email")
+                    b.HasIndex("Key")
                         .IsUnique();
 
-                    b.ToTable("PlatformUsers", (string)null);
+                    b.ToTable("Permissions", (string)null);
                 });
 
             modelBuilder.Entity("Syntera.Domain.Entities.RefreshToken", b =>
@@ -209,12 +195,10 @@ namespace Syntera.Migrations.Platform
                     b.HasIndex("TokenHash")
                         .IsUnique();
 
-                    b.HasIndex("UserId", "UserScope");
-
                     b.ToTable("RefreshTokens", (string)null);
                 });
 
-            modelBuilder.Entity("Syntera.Domain.Entities.RoleTemplate", b =>
+            modelBuilder.Entity("Syntera.Domain.Entities.Role", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -222,6 +206,12 @@ namespace Syntera.Migrations.Platform
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("Description")
                         .HasMaxLength(500)
@@ -232,7 +222,7 @@ namespace Syntera.Migrations.Platform
                         .HasMaxLength(160)
                         .HasColumnType("nvarchar(160)");
 
-                    b.Property<bool>("IsPublished")
+                    b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
                     b.Property<bool>("IsSiteAdminRole")
@@ -243,21 +233,21 @@ namespace Syntera.Migrations.Platform
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
+                    b.Property<Guid?>("OriginTemplateId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("datetime2");
-
-                    b.Property<int>("Version")
-                        .HasColumnType("int");
 
                     b.HasKey("Id");
 
                     b.HasIndex("Key")
                         .IsUnique();
 
-                    b.ToTable("RoleTemplates", (string)null);
+                    b.ToTable("Roles", (string)null);
                 });
 
-            modelBuilder.Entity("Syntera.Domain.Entities.RoleTemplatePermission", b =>
+            modelBuilder.Entity("Syntera.Domain.Entities.RolePermission", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -266,12 +256,10 @@ namespace Syntera.Migrations.Platform
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<string>("PermissionKey")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
+                    b.Property<Guid>("PermissionId")
+                        .HasColumnType("uniqueidentifier");
 
-                    b.Property<Guid>("RoleTemplateId")
+                    b.Property<Guid>("RoleId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTime>("UpdatedAt")
@@ -279,271 +267,279 @@ namespace Syntera.Migrations.Platform
 
                     b.HasKey("Id");
 
-                    b.HasIndex("RoleTemplateId", "PermissionKey")
+                    b.HasIndex("PermissionId");
+
+                    b.HasIndex("RoleId", "PermissionId")
                         .IsUnique();
 
-                    b.ToTable("RoleTemplatePermissions", (string)null);
+                    b.ToTable("RolePermissions", (string)null);
                 });
 
-            modelBuilder.Entity("Syntera.Domain.Entities.Site", b =>
+            modelBuilder.Entity("Syntera.Domain.Entities.User", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<string>("Code")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("nvarchar(32)");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<string>("DatabaseConnectionString")
-                        .IsRequired()
-                        .HasMaxLength(1024)
-                        .HasColumnType("nvarchar(1024)");
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2");
 
-                    b.Property<string>("DefaultThemeKey")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("DisplayName")
                         .IsRequired()
                         .HasMaxLength(160)
                         .HasColumnType("nvarchar(160)");
 
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)");
+
+                    b.Property<int>("FailedLoginCount")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
                     b.Property<bool>("IsEnabled")
                         .HasColumnType("bit");
 
-                    b.Property<string>("Notes")
-                        .HasMaxLength(2000)
-                        .HasColumnType("nvarchar(2000)");
+                    b.Property<DateTime?>("LastFailedLoginAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("LastLoginAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("LockedUntil")
+                        .HasColumnType("datetime2");
+
+                    b.Property<long>("PermissionsVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("SiteId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("datetime2");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("Code")
+                    b.HasIndex("Email")
                         .IsUnique();
 
-                    b.ToTable("Sites", (string)null);
+                    b.ToTable("Users", (string)null);
                 });
 
-            modelBuilder.Entity("Syntera.Domain.Entities.SiteLdapConfig", b =>
+            modelBuilder.Entity("Syntera.Domain.Entities.UserPermission", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<string>("BaseDn")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("nvarchar(255)");
-
-                    b.Property<string>("BindDn")
-                        .HasMaxLength(255)
-                        .HasColumnType("nvarchar(255)");
-
-                    b.Property<string>("BindPasswordEncrypted")
-                        .HasMaxLength(2048)
-                        .HasColumnType("nvarchar(2048)");
+                    b.Property<Guid>("ApprovedBy")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<string>("EmailAttribute")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("datetime2");
 
-                    b.Property<string>("Host")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("nvarchar(255)");
+                    b.Property<bool>("IsDeny")
+                        .HasColumnType("bit");
 
-                    b.Property<int>("Port")
+                    b.Property<bool>("IsRevoked")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid>("PermissionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime?>("RevokedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("RevokedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpiresAt");
+
+                    b.HasIndex("PermissionId");
+
+                    b.HasIndex("UserId", "PermissionId");
+
+                    b.ToTable("UserPermissions", (string)null);
+                });
+
+            modelBuilder.Entity("Syntera.Domain.Entities.UserRole", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AssignedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("ExpiresAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("RoleId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RoleId");
+
+                    b.HasIndex("UserId", "RoleId")
+                        .IsUnique();
+
+                    b.ToTable("UserRoles", (string)null);
+                });
+
+            modelBuilder.Entity("Syntera.Domain.Entities.UserSyncHistory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Errors")
+                        .HasMaxLength(8000)
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("FinishedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("SiteId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("StartedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<Guid>("TriggeredBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("UsersCreated")
                         .HasColumnType("int");
 
-                    b.Property<bool>("SearchSubtree")
-                        .HasColumnType("bit");
-
-                    b.Property<Guid>("SiteId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<int>("TimeoutSeconds")
+                    b.Property<int>("UsersDisabled")
                         .HasColumnType("int");
 
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("datetime2");
+                    b.Property<int>("UsersFound")
+                        .HasColumnType("int");
 
-                    b.Property<bool>("UseStartTls")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("UserFilterTemplate")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("nvarchar(255)");
+                    b.Property<int>("UsersUpdated")
+                        .HasColumnType("int");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("SiteId")
-                        .IsUnique();
-
-                    b.ToTable("SiteLdapConfigs", (string)null);
+                    b.ToTable("UserSyncHistory", (string)null);
                 });
 
-            modelBuilder.Entity("Syntera.Domain.Entities.SiteLdapDomain", b =>
+            modelBuilder.Entity("Syntera.Domain.Entities.RolePermission", b =>
                 {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                    b.HasOne("Syntera.Domain.Entities.Permission", "Permission")
+                        .WithMany()
+                        .HasForeignKey("PermissionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
 
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("Domain")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("bit");
-
-                    b.Property<Guid>("SiteId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Domain")
-                        .IsUnique();
-
-                    b.HasIndex("SiteId");
-
-                    b.ToTable("SiteLdapDomains", (string)null);
-                });
-
-            modelBuilder.Entity("Syntera.Domain.Entities.SiteTheme", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("DarkPaletteJson")
-                        .IsRequired()
-                        .HasMaxLength(4096)
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("LightPaletteJson")
-                        .IsRequired()
-                        .HasMaxLength(4096)
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("LogoUrl")
-                        .HasMaxLength(512)
-                        .HasColumnType("nvarchar(512)");
-
-                    b.Property<Guid>("SiteId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("ThemeKey")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("SiteId")
-                        .IsUnique();
-
-                    b.ToTable("SiteThemes", (string)null);
-                });
-
-            modelBuilder.Entity("Syntera.Infrastructure.Data.PlatformSetting", b =>
-                {
-                    b.Property<string>("Key")
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<string>("Description")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("Value")
-                        .HasMaxLength(2000)
-                        .HasColumnType("nvarchar(2000)");
-
-                    b.HasKey("Key");
-
-                    b.ToTable("PlatformSettings", (string)null);
-                });
-
-            modelBuilder.Entity("Syntera.Domain.Entities.RoleTemplatePermission", b =>
-                {
-                    b.HasOne("Syntera.Domain.Entities.RoleTemplate", "RoleTemplate")
+                    b.HasOne("Syntera.Domain.Entities.Role", "Role")
                         .WithMany("Permissions")
-                        .HasForeignKey("RoleTemplateId")
+                        .HasForeignKey("RoleId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.Navigation("RoleTemplate");
+                    b.Navigation("Permission");
+
+                    b.Navigation("Role");
                 });
 
-            modelBuilder.Entity("Syntera.Domain.Entities.SiteLdapConfig", b =>
+            modelBuilder.Entity("Syntera.Domain.Entities.UserPermission", b =>
                 {
-                    b.HasOne("Syntera.Domain.Entities.Site", "Site")
-                        .WithOne("LdapConfig")
-                        .HasForeignKey("Syntera.Domain.Entities.SiteLdapConfig", "SiteId")
+                    b.HasOne("Syntera.Domain.Entities.Permission", "Permission")
+                        .WithMany()
+                        .HasForeignKey("PermissionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Syntera.Domain.Entities.User", "User")
+                        .WithMany("DirectPermissions")
+                        .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.Navigation("Site");
+                    b.Navigation("Permission");
+
+                    b.Navigation("User");
                 });
 
-            modelBuilder.Entity("Syntera.Domain.Entities.SiteLdapDomain", b =>
+            modelBuilder.Entity("Syntera.Domain.Entities.UserRole", b =>
                 {
-                    b.HasOne("Syntera.Domain.Entities.Site", "Site")
-                        .WithMany("LdapDomains")
-                        .HasForeignKey("SiteId")
+                    b.HasOne("Syntera.Domain.Entities.Role", "Role")
+                        .WithMany("UserAssignments")
+                        .HasForeignKey("RoleId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Syntera.Domain.Entities.User", "User")
+                        .WithMany("UserRoles")
+                        .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.Navigation("Site");
+                    b.Navigation("Role");
+
+                    b.Navigation("User");
                 });
 
-            modelBuilder.Entity("Syntera.Domain.Entities.SiteTheme", b =>
-                {
-                    b.HasOne("Syntera.Domain.Entities.Site", "Site")
-                        .WithOne("Theme")
-                        .HasForeignKey("Syntera.Domain.Entities.SiteTheme", "SiteId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Site");
-                });
-
-            modelBuilder.Entity("Syntera.Domain.Entities.RoleTemplate", b =>
+            modelBuilder.Entity("Syntera.Domain.Entities.Role", b =>
                 {
                     b.Navigation("Permissions");
+
+                    b.Navigation("UserAssignments");
                 });
 
-            modelBuilder.Entity("Syntera.Domain.Entities.Site", b =>
+            modelBuilder.Entity("Syntera.Domain.Entities.User", b =>
                 {
-                    b.Navigation("LdapConfig");
+                    b.Navigation("DirectPermissions");
 
-                    b.Navigation("LdapDomains");
-
-                    b.Navigation("Theme");
+                    b.Navigation("UserRoles");
                 });
 #pragma warning restore 612, 618
         }

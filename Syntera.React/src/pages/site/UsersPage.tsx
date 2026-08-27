@@ -1,25 +1,21 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Plus, RefreshCw, Power, Key, Shield, Clock } from "lucide-react";
+import { Plus, Power, Key, Shield, Clock } from "lucide-react";
 import { usersApi, extractRoles } from "../../api/site";
 import { roleTemplatesApi } from "../../api/platform";
 import { ApiError } from "../../api/client";
-import type { UserDto, UserUpsertDto, RoleDto, AssignRoleDto, GrantDirectPermissionDto, PermissionCatalogDto, UserSyncResultDto } from "../../types";
+import type { UserDto, UserUpsertDto, RoleDto, AssignRoleDto, GrantDirectPermissionDto, PermissionCatalogDto } from "../../types";
 
 const USERS_KEY = ["site-users"] as const;
 
 export default function UsersPage() {
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<UserDto | null>(null);
-  const [syncing, setSyncing] = useState(false);
 
   const { data: users = [], isLoading: loading } = useQuery<UserDto[]>({
     queryKey: USERS_KEY,
-    queryFn: async () => {
-      const data = await usersApi.list();
-      return data;
-    },
+    queryFn: () => usersApi.list(),
   });
 
   const roles: RoleDto[] = extractRoles(users);
@@ -30,19 +26,6 @@ export default function UsersPage() {
     retry: false,
   });
 
-  const sync = async () => {
-    if (!confirm("Trigger LDAP sync? This will create users found in LDAP and disable users no longer in LDAP.")) return;
-    setSyncing(true);
-    try {
-      const result: UserSyncResultDto = await usersApi.sync();
-      toast.success(`Sync ${result.status}: ${result.usersFound} found, ${result.usersCreated} created, ${result.usersUpdated} updated, ${result.usersDisabled} disabled`);
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Sync failed");
-    } finally {
-      setSyncing(false);
-    }
-  };
-
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -50,18 +33,13 @@ export default function UsersPage() {
           <h1 className="text-2xl font-bold">Users</h1>
           <p className="text-sm" style={{ color: "var(--color-muted)" }}>
             Manage users, assign roles, grant direct permissions.
+            Users must be created here before they can log in via LDAP.
           </p>
         </div>
-        <div className="flex gap-2">
-          <button onClick={sync} disabled={syncing} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm"
-            style={{ border: "1px solid var(--color-border)" }}>
-            <RefreshCw size={16} className={syncing ? "animate-spin" : ""} /> Sync LDAP
-          </button>
-          <button onClick={() => setCreating(true)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium"
-            style={{ backgroundColor: "var(--color-primary)", color: "white" }}>
-            <Plus size={16} /> New User
-          </button>
-        </div>
+        <button onClick={() => setCreating(true)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium"
+          style={{ backgroundColor: "var(--color-primary)", color: "white" }}>
+          <Plus size={16} /> New User
+        </button>
       </div>
 
       {loading ? (

@@ -1,12 +1,15 @@
 /**
  * Platform Admin API — site management, LDAP config, theme, role templates.
  * All endpoints require platform-admin JWT claim.
+ *
+ * Sites are PRE-DEFINED in backend config. Only DisplayName, LdapDomains,
+ * LDAP config, and Theme are editable. Code & ConnectionString are locked.
  */
 
 import { get, post, put } from "./client";
 import type {
   SiteDto,
-  SiteUpsertDto,
+  SiteUpdateDto,
   LdapConfigDto,
   LdapConfigUpsertDto,
   LdapTestRequest,
@@ -24,9 +27,7 @@ const BASE = "/platform";
 export const sitesApi = {
   list: () => get<SiteDto[]>(`${BASE}/sites`),
   get: (id: string) => get<SiteDto>(`${BASE}/sites/${id}`),
-  create: (dto: SiteUpsertDto) => post<SiteDto>(`${BASE}/sites`, dto),
-  update: (id: string, dto: SiteUpsertDto) => put<SiteDto>(`${BASE}/sites/${id}`, dto),
-  disable: (id: string) => post<{ success: boolean }>(`${BASE}/sites/${id}/disable`),
+  update: (id: string, dto: SiteUpdateDto) => put<SiteDto>(`${BASE}/sites/${id}`, dto),
 
   getLdapConfig: (siteId: string) => get<LdapConfigDto>(`${BASE}/sites/${siteId}/ldap-config`),
   upsertLdapConfig: (siteId: string, dto: LdapConfigUpsertDto) =>

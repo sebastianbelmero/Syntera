@@ -51,10 +51,13 @@ public class SiteLdapDomain : BaseEntity
 }
 
 /// <summary>
-/// LDAP server configuration for a <see cref="Site"/>. The bind credential
-/// (BindDn + BindPassword) is encrypted via ASP.NET Core Data Protection (DPAPI)
-/// before being persisted — see <c>LdapConfigProtector</c>. We NEVER store
-/// bind passwords in plain text.
+/// LDAP server configuration for a <see cref="Site"/>. Simplified to match
+/// the actual Kalventis-style AD setup: just host/port/baseDn/StartTLS.
+///
+/// Authentication uses <b>direct bind</b> — the user's own email + password
+/// is used to bind to LDAP. No service account, no BindDn/BindPassword.
+/// This matches the pattern in the reference JS implementation
+/// (ldap-get-user.js) the customer provided.
 /// </summary>
 public class SiteLdapConfig : BaseEntity
 {
@@ -64,32 +67,14 @@ public class SiteLdapConfig : BaseEntity
     /// <summary>LDAP server host, e.g., "10.131.220.11" or "ldap.kalventis.dom".</summary>
     public string Host { get; set; } = string.Empty;
 
-    /// <summary>Port. Must be 636 (LDAPS) or 389 with <see cref="UseStartTls"/> = true. Plain 389 without TLS is rejected at save time.</summary>
-    public int Port { get; set; } = 636;
+    /// <summary>Port. Typically 389 (plain or StartTLS) or 636 (LDAPS). Plain 389 is allowed.</summary>
+    public int Port { get; set; } = 389;
 
-    /// <summary>If true, connection upgrades to TLS after initial bind on port 389 (StartTLS).</summary>
+    /// <summary>If true, connection upgrades to TLS after initial connect on port 389 (StartTLS).</summary>
     public bool UseStartTls { get; set; }
 
-    /// <summary>Base DN for user search, e.g., "DC=KALVENTIS,DC=DOM".</summary>
+    /// <summary>Base DN for the LDAP directory, e.g., "DC=KALVENTIS,DC=DOM".</summary>
     public string BaseDn { get; set; } = string.Empty;
-
-    /// <summary>LDAP attribute that holds the user's email (used for bind DN lookup).</summary>
-    public string EmailAttribute { get; set; } = "userPrincipalName";
-
-    /// <summary>Optional service account DN for pre-provisioning / sync. If null, sync is disabled for this site.</summary>
-    public string? BindDn { get; set; }
-
-    /// <summary>Encrypted bind password. Decrypted only in-memory at sync time.</summary>
-    public string? BindPasswordEncrypted { get; set; }
-
-    /// <summary>User filter template. {0} is replaced with the escaped email.</summary>
-    public string UserFilterTemplate { get; set; } = "({emailAttribute}={email})";
-
-    /// <summary>Connection timeout in seconds.</summary>
-    public int TimeoutSeconds { get; set; } = 10;
-
-    /// <summary>If true, search scope is subtree; otherwise one-level.</summary>
-    public bool SearchSubtree { get; set; } = true;
 }
 
 /// <summary>

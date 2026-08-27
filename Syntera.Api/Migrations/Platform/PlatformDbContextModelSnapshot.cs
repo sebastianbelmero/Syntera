@@ -340,21 +340,8 @@ namespace Syntera.Migrations.Platform
                         .HasMaxLength(255)
                         .HasColumnType("nvarchar(255)");
 
-                    b.Property<string>("BindDn")
-                        .HasMaxLength(255)
-                        .HasColumnType("nvarchar(255)");
-
-                    b.Property<string>("BindPasswordEncrypted")
-                        .HasMaxLength(2048)
-                        .HasColumnType("nvarchar(2048)");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
-
-                    b.Property<string>("EmailAttribute")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("nvarchar(64)");
 
                     b.Property<string>("Host")
                         .IsRequired()
@@ -364,25 +351,14 @@ namespace Syntera.Migrations.Platform
                     b.Property<int>("Port")
                         .HasColumnType("int");
 
-                    b.Property<bool>("SearchSubtree")
-                        .HasColumnType("bit");
-
                     b.Property<Guid>("SiteId")
                         .HasColumnType("uniqueidentifier");
-
-                    b.Property<int>("TimeoutSeconds")
-                        .HasColumnType("int");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("datetime2");
 
                     b.Property<bool>("UseStartTls")
                         .HasColumnType("bit");
-
-                    b.Property<string>("UserFilterTemplate")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("nvarchar(255)");
 
                     b.HasKey("Id");
 

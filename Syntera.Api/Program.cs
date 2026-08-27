@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -10,7 +9,6 @@ using Syntera.Application.Services;
 using Syntera.Infrastructure.Data;
 using Syntera.Infrastructure.Identity;
 using Syntera.Infrastructure.Ldap;
-using Syntera.Infrastructure.Security;
 using Syntera.Infrastructure.Seed;
 using System.Globalization;
 
@@ -62,13 +60,6 @@ try
     builder.Services.AddSynteraOpenApi();
     builder.Services.AddSynteraSecurity(builder.Configuration);
 
-    // ─── DI: Data Protection (for LDAP credential encryption) ──────
-    var dpBuilder = builder.Services.AddDataProtection()
-        .SetApplicationName("Syntera")
-        .PersistKeysToFileSystem(new DirectoryInfo(
-            builder.Configuration["DataProtection:KeyPath"] ?? "/var/lib/syntera/keys"));
-    dpBuilder.SetDefaultKeyLifetime(TimeSpan.FromDays(90));
-
     // ─── DI: DbContexts ─────────────────────────────────────────────
     builder.Services.AddDbContext<PlatformDbContext>(opt =>
         opt.UseSqlServer(
@@ -83,7 +74,6 @@ try
 
     // ─── DI: LDAP ───────────────────────────────────────────────────
     builder.Services.AddSingleton<ILdapClient, NovellLdapClient>();
-    builder.Services.AddScoped<ILdapConfigProtector, LdapConfigProtector>();
 
     // ─── DI: Application services ───────────────────────────────────
     builder.Services.AddScoped<ITokenService, JwtTokenService>();

@@ -4,8 +4,6 @@ using Syntera.Application.Interfaces.Services;
 using Syntera.Domain.Entities;
 using Syntera.Domain.Exceptions;
 using Syntera.Infrastructure.Data;
-using Syntera.Infrastructure.Ldap;
-using Syntera.Infrastructure.Security;
 
 namespace Syntera.Application.Services;
 
@@ -27,22 +25,15 @@ public interface IUserManagementService
 
     Task<UserDto> GrantDirectPermissionAsync(GrantDirectPermissionDto dto, Guid approvedBy, CancellationToken ct = default);
     Task RevokeDirectPermissionAsync(RevokeDirectPermissionDto dto, CancellationToken ct = default);
-
-    Task<UserSyncResultDto> TriggerSyncAsync(Guid triggeredBy, CancellationToken ct = default);
 }
 
-public sealed partial class UserManagementService : IUserManagementService
+public sealed class UserManagementService : IUserManagementService
 {
     private readonly PlatformDbContext _platformDb;
     private readonly ISiteDbContextFactory _siteDbFactory;
     private readonly ICurrentUserService _current;
     private readonly IAuditService _audit;
-    private readonly ILdapClient _ldap;
-    private readonly ILdapConfigProtector _protector;
     private readonly ILogger<UserManagementService> _log;
-
-    [LoggerMessage(Level = LogLevel.Error, Message = "LDAP sync failed for site {SiteId}")]
-    private partial void LogLdapSyncFailure(Exception exception, Guid siteId);
 
     private const int MaxDirectPermissionDays = 90;
 
@@ -51,16 +42,12 @@ public sealed partial class UserManagementService : IUserManagementService
         ISiteDbContextFactory siteDbFactory,
         ICurrentUserService current,
         IAuditService audit,
-        ILdapClient ldap,
-        ILdapConfigProtector protector,
         ILogger<UserManagementService> log)
     {
         _platformDb = platformDb;
         _siteDbFactory = siteDbFactory;
         _current = current;
         _audit = audit;
-        _ldap = ldap;
-        _protector = protector;
         _log = log;
     }
 
@@ -246,124 +233,6 @@ public sealed partial class UserManagementService : IUserManagementService
         if (user is not null) user.PermissionsVersion++;
 
         await db.SaveChangesAsync(ct);
-    }
-
-    public async Task<UserSyncResultDto> TriggerSyncAsync(Guid triggeredBy, CancellationToken ct = default)
-    {
-        var siteId = _current.SiteId
-            ?? throw new AuthorizationException("NO_SITE", "Sync requires site context.");
-
-        var ldapConfig = await _platformDb.LdapConfigs
-            .FirstOrDefaultAsync(c => c.SiteId == siteId, ct)
-            ?? throw new BusinessRuleException("LDAP_NOT_CONFIGURED",
-                "Site has no LDAP config. Platform Admin must configure LDAP first.");
-
-        if (string.IsNullOrEmpty(ldapConfig.BindDn) || string.IsNullOrEmpty(ldapConfig.BindPasswordEncrypted))
-            throw new BusinessRuleException("LDAP_NO_BIND_CRED",
-                "LDAP sync requires a service account (BindDn + BindPassword). Ask Platform Admin to configure one.");
-
-        var bindPassword = _protector.Unprotect(ldapConfig.BindPasswordEncrypted);
-        var endpoint = new LdapEndpoint(
-            Host: ldapConfig.Host, Port: ldapConfig.Port, UseStartTls: ldapConfig.UseStartTls,
-            BaseDn: ldapConfig.BaseDn, EmailAttribute: ldapConfig.EmailAttribute,
-            UserFilterTemplate: ldapConfig.UserFilterTemplate,
-            TimeoutSeconds: ldapConfig.TimeoutSeconds, SearchSubtree: ldapConfig.SearchSubtree);
-        var creds = new LdapCredentials(ldapConfig.BindDn, bindPassword);
-
-        var db = await _siteDbFactory.ResolveAsync(ct);
-        var history = new UserSyncHistory
-        {
-            SiteId = siteId,
-            TriggeredBy = triggeredBy,
-            StartedAt = DateTime.UtcNow,
-            Status = "running",
-        };
-        db.UserSyncHistory.Add(history);
-        await db.SaveChangesAsync(ct);
-
-        var found = 0; var created = 0; var updated = 0; var disabled = 0;
-        var errors = new List<string>();
-
-        try
-        {
-            var existingEmails = await db.Users.AsNoTracking().Select(u => u.Email).ToListAsync(ct);
-            var existingSet = new HashSet<string>(existingEmails, StringComparer.OrdinalIgnoreCase);
-            var seenEmails = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-            await foreach (var entry in _ldap.SearchUsersAsync(endpoint, creds, ct).ConfigureAwait(false))
-            {
-                found++;
-                seenEmails.Add(entry.Email.ToLowerInvariant());
-
-                if (existingSet.Contains(entry.Email))
-                {
-                    var u = await db.Users.FirstOrDefaultAsync(x => x.Email == entry.Email, ct);
-                    if (u is not null && u.DisplayName != entry.DisplayName)
-                    {
-                        u.DisplayName = entry.DisplayName;
-                        updated++;
-                    }
-                }
-                else
-                {
-                    db.Users.Add(new User
-                    {
-                        Email = entry.Email.ToLowerInvariant(),
-                        DisplayName = entry.DisplayName,
-                        IsEnabled = entry.IsActive,
-                        SiteId = siteId,
-                        PermissionsVersion = 1,
-                    });
-                    created++;
-                }
-            }
-
-            // Disable users in site DB that no longer exist in LDAP.
-            foreach (var existingEmail in existingSet)
-            {
-                if (!seenEmails.Contains(existingEmail))
-                {
-                    var u = await db.Users.FirstOrDefaultAsync(x => x.Email == existingEmail, ct);
-                    if (u is not null && u.IsEnabled)
-                    {
-                        u.IsEnabled = false;
-                        u.PermissionsVersion++;
-                        disabled++;
-                    }
-                }
-            }
-
-            await db.SaveChangesAsync(ct);
-            history.Status = errors.Count > 0 ? "partial" : "success";
-        }
-        catch (Exception ex)
-        {
-            LogLdapSyncFailure(ex, siteId);
-            history.Status = "failed";
-            errors.Add(ex.Message);
-        }
-
-        history.FinishedAt = DateTime.UtcNow;
-        history.UsersFound = found;
-        history.UsersCreated = created;
-        history.UsersUpdated = updated;
-        history.UsersDisabled = disabled;
-        history.Errors = errors.Count > 0 ? string.Join("\n", errors) : null;
-        await db.SaveChangesAsync(ct);
-
-        await _audit.LogAsync(new AuditEntry(
-            SiteId: siteId, ActorUserId: triggeredBy, ActorEmail: _current.Email,
-            ActorIp: null, ActorUserAgent: null,
-            Action: "user.sync", TargetType: "Site", TargetId: siteId.ToString(),
-            Outcome: history.Status == "failed" ? "failure" : "success",
-            ErrorMessage: history.Errors), ct);
-
-        return new UserSyncResultDto(
-            SyncHistoryId: history.Id,
-            Status: history.Status,
-            UsersFound: found, UsersCreated: created,
-            UsersUpdated: updated, UsersDisabled: disabled,
-            Errors: history.Errors);
     }
 
     private static UserDto Map(User u) => new(

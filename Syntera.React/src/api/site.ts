@@ -1,6 +1,9 @@
 /**
- * Site Admin API — user management, role assignment, permission grants, sync.
+ * Site Admin API — user management, role assignment, permission grants.
  * All endpoints require site-business-admin JWT claim and route to the user's site.
+ *
+ * Note: LDAP sync is NOT available (no service account). Business Admin must
+ * create user rows manually before users can log in.
  */
 
 import { get, post, put } from "./client";
@@ -11,7 +14,6 @@ import type {
   RevokeRoleDto,
   GrantDirectPermissionDto,
   RevokeDirectPermissionDto,
-  UserSyncResultDto,
   RoleDto,
 } from "../types";
 
@@ -31,8 +33,6 @@ export const usersApi = {
     post<UserDto>(`${BASE}/users/grant-permission`, dto),
   revokePermission: (dto: RevokeDirectPermissionDto) =>
     post<{ success: boolean }>(`${BASE}/users/revoke-permission`, dto),
-
-  sync: () => post<UserSyncResultDto>(`${BASE}/users/sync`),
 };
 
 // Helper: extract roles from a user's role assignments (for dropdown source).

@@ -6,7 +6,6 @@ using Syntera.Domain.Entities;
 using Syntera.Domain.Exceptions;
 using Syntera.Infrastructure.Data;
 using Syntera.Infrastructure.Ldap;
-using Syntera.Infrastructure.Security;
 using System.Security.Cryptography;
 
 namespace Syntera.Application.Services;
@@ -36,7 +35,6 @@ public sealed class AuthService : IAuthService
     private readonly PlatformDbContext _platformDb;
     private readonly ISiteDbContextFactory _siteDbFactory;
     private readonly ILdapClient _ldap;
-    private readonly ILdapConfigProtector _protector;
     private readonly ITokenService _tokens;
     private readonly IPasswordHasher _hasher;
     private readonly IAuditService _audit;
@@ -52,7 +50,6 @@ public sealed class AuthService : IAuthService
         PlatformDbContext platformDb,
         ISiteDbContextFactory siteDbFactory,
         ILdapClient ldap,
-        ILdapConfigProtector protector,
         ITokenService tokens,
         IPasswordHasher hasher,
         IAuditService audit,
@@ -64,7 +61,6 @@ public sealed class AuthService : IAuthService
         _platformDb = platformDb;
         _siteDbFactory = siteDbFactory;
         _ldap = ldap;
-        _protector = protector;
         _tokens = tokens;
         _hasher = hasher;
         _audit = audit;
@@ -195,25 +191,10 @@ public sealed class AuthService : IAuthService
             Host: ldapConfig.Host,
             Port: ldapConfig.Port,
             UseStartTls: ldapConfig.UseStartTls,
-            BaseDn: ldapConfig.BaseDn,
-            EmailAttribute: ldapConfig.EmailAttribute,
-            UserFilterTemplate: ldapConfig.UserFilterTemplate,
-            TimeoutSeconds: ldapConfig.TimeoutSeconds,
-            SearchSubtree: ldapConfig.SearchSubtree);
+            BaseDn: ldapConfig.BaseDn);
 
-        LdapCredentials bindCreds;
-        if (!string.IsNullOrEmpty(ldapConfig.BindDn) && !string.IsNullOrEmpty(ldapConfig.BindPasswordEncrypted))
-        {
-            bindCreds = new LdapCredentials(ldapConfig.BindDn, _protector.Unprotect(ldapConfig.BindPasswordEncrypted));
-        }
-        else
-        {
-            // No service account — we can still attempt user bind directly if filter supports it.
-            bindCreds = new LdapCredentials(null, null);
-        }
-
-        // ── Authenticate via LDAP ─────────────────────────────────────
-        var result = await _ldap.AuthenticateAsync(endpoint, bindCreds, email, password, ct);
+        // ── Authenticate via LDAP (direct bind: user's own email + password) ──
+        var result = await _ldap.AuthenticateAsync(endpoint, email, password, ct);
         if (!result.IsSuccess)
         {
             BumpFail(rateKey);

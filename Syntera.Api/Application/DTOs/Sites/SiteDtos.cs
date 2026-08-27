@@ -11,12 +11,13 @@ public record SiteDto(
     DateTime CreatedAt,
     DateTime UpdatedAt);
 
-public record SiteUpsertDto(
-    string Code,
+/// <summary>
+/// Editable fields for a site. <c>Code</c> is locked (used in JWT claim and config).
+/// <c>DatabaseConnectionString</c> is locked (managed via backend config).
+/// Only <c>DisplayName</c> and <c>LdapDomains</c> are editable from the frontend.
+/// </summary>
+public record SiteUpdateDto(
     string DisplayName,
-    string DefaultThemeKey,
-    string DatabaseConnectionString,
-    string? Notes,
     List<string> LdapDomains);
 
 public record LdapConfigDto(
@@ -24,38 +25,21 @@ public record LdapConfigDto(
     string Host,
     int Port,
     bool UseStartTls,
-    string BaseDn,
-    string EmailAttribute,
-    string? BindDn,
-    string UserFilterTemplate,
-    int TimeoutSeconds,
-    bool SearchSubtree,
-    bool HasBindPassword);
+    string BaseDn);
 
 public record LdapConfigUpsertDto(
     string Host,
     int Port,
     bool UseStartTls,
-    string BaseDn,
-    string EmailAttribute,
-    string? BindDn,
-    string? BindPassword,
-    string UserFilterTemplate,
-    int TimeoutSeconds,
-    bool SearchSubtree);
+    string BaseDn);
 
 public record LdapTestRequest(
     string Host,
     int Port,
     bool UseStartTls,
     string BaseDn,
-    string EmailAttribute,
-    string? BindDn,
-    string? BindPassword,
-    string UserFilterTemplate,
-    int TimeoutSeconds,
-    bool SearchSubtree,
-    string TestEmail);
+    string TestEmail,
+    string TestPassword);
 
 public record LdapTestResult(
     bool Success,

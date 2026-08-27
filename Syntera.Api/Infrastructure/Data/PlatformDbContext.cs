@@ -61,10 +61,6 @@ public sealed class PlatformDbContext : DbContext
             e.HasKey(x => x.Id);
             e.Property(x => x.Host).HasMaxLength(255).IsRequired();
             e.Property(x => x.BaseDn).HasMaxLength(255).IsRequired();
-            e.Property(x => x.EmailAttribute).HasMaxLength(64).IsRequired();
-            e.Property(x => x.BindDn).HasMaxLength(255);
-            e.Property(x => x.BindPasswordEncrypted).HasMaxLength(2048);
-            e.Property(x => x.UserFilterTemplate).HasMaxLength(255).IsRequired();
             e.HasOne(x => x.Site)
                 .WithOne(s => s.LdapConfig)
                 .HasForeignKey<SiteLdapConfig>(x => x.SiteId)

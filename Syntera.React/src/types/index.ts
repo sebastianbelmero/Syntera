@@ -83,12 +83,9 @@ export interface SiteDto {
   updatedAt: string;
 }
 
-export interface SiteUpsertDto {
-  code: string;
+/** Editable fields for a site. Code & ConnectionString are locked. */
+export interface SiteUpdateDto {
   displayName: string;
-  defaultThemeKey: string;
-  databaseConnectionString: string;
-  notes?: string | null;
   ldapDomains: string[];
 }
 
@@ -98,12 +95,6 @@ export interface LdapConfigDto {
   port: number;
   useStartTls: boolean;
   baseDn: string;
-  emailAttribute: string;
-  bindDn: string | null;
-  userFilterTemplate: string;
-  timeoutSeconds: number;
-  searchSubtree: boolean;
-  hasBindPassword: boolean;
 }
 
 export interface LdapConfigUpsertDto {
@@ -111,12 +102,6 @@ export interface LdapConfigUpsertDto {
   port: number;
   useStartTls: boolean;
   baseDn: string;
-  emailAttribute: string;
-  bindDn?: string | null;
-  bindPassword?: string | null;
-  userFilterTemplate: string;
-  timeoutSeconds: number;
-  searchSubtree: boolean;
 }
 
 export interface LdapTestRequest {
@@ -124,13 +109,8 @@ export interface LdapTestRequest {
   port: number;
   useStartTls: boolean;
   baseDn: string;
-  emailAttribute: string;
-  bindDn?: string | null;
-  bindPassword?: string | null;
-  userFilterTemplate: string;
-  timeoutSeconds: number;
-  searchSubtree: boolean;
   testEmail: string;
+  testPassword: string;
 }
 
 export interface LdapTestResult {
