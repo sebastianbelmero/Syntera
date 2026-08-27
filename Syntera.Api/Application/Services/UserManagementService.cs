@@ -25,6 +25,14 @@ public interface IUserManagementService
 
     Task<UserDto> GrantDirectPermissionAsync(GrantDirectPermissionDto dto, Guid approvedBy, CancellationToken ct = default);
     Task RevokeDirectPermissionAsync(RevokeDirectPermissionDto dto, CancellationToken ct = default);
+
+    /// <summary>
+    /// Platform Admin only — bootstrap the first Site Business Admin for a site.
+    /// Creates the user (if not exists) and assigns the site-business-admin role.
+    /// Used to break the chicken-and-egg problem: a site needs at least one
+    /// business admin before any user management can happen via /api/site/users.
+    /// </summary>
+    Task<UserDto> AssignBusinessAdminAsync(Guid siteId, string email, string displayName, Guid assignedBy, CancellationToken ct = default);
 }
 
 public sealed class UserManagementService : IUserManagementService
@@ -233,6 +241,83 @@ public sealed class UserManagementService : IUserManagementService
         if (user is not null) user.PermissionsVersion++;
 
         await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// Platform Admin → bootstrap the first Site Business Admin for a site.
+    /// 1. Resolve the target site DB by siteId (NOT from JWT claim).
+    /// 2. Find or create the user row by email.
+    /// 3. Find the site-business-admin role (must be published first by Platform Admin).
+    /// 4. Assign the role to the user (idempotent — skips if already assigned).
+    /// </summary>
+    public async Task<UserDto> AssignBusinessAdminAsync(
+        Guid siteId, string email, string displayName, Guid assignedBy, CancellationToken ct = default)
+    {
+        email = email.Trim().ToLowerInvariant();
+        if (string.IsNullOrEmpty(email) || !email.Contains('@'))
+            throw new BusinessRuleException("INVALID_EMAIL", "A valid email is required.");
+
+        // Resolve the target site DB explicitly (Platform Admin has no site_id in JWT).
+        var db = await _siteDbFactory.ResolveForSiteAsync(siteId, ct);
+
+        // 1. Find or create the user.
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Email == email, ct);
+        if (user is null)
+        {
+            user = new User
+            {
+                Email = email,
+                DisplayName = string.IsNullOrWhiteSpace(displayName) ? email : displayName,
+                IsEnabled = true,
+                SiteId = siteId,
+                PermissionsVersion = 1,
+            };
+            db.Users.Add(user);
+            await _audit.LogAsync(new AuditEntry(
+                SiteId: siteId, ActorUserId: assignedBy, ActorEmail: _current.Email,
+                ActorIp: null, ActorUserAgent: null,
+                Action: "user.create", TargetType: "User", TargetId: email,
+                Outcome: "success",
+                AfterJson: System.Text.Json.JsonSerializer.Serialize(new { email, displayName })), ct);
+        }
+
+        // 2. Find the site-business-admin role (cloned from template during publish).
+        var role = await db.Roles.FirstOrDefaultAsync(r => r.Key == "site-business-admin", ct)
+            ?? throw new BusinessRuleException("ROLE_NOT_PUBLISHED",
+                "The 'site-business-admin' role template has not been published yet. " +
+                "Go to Role Templates page and publish it first.");
+
+        // 3. Assign role if not already assigned (idempotent).
+        var existingAssignment = await db.UserRoles
+            .FirstOrDefaultAsync(ur => ur.UserId == user.Id && ur.RoleId == role.Id, ct);
+
+        if (existingAssignment is null)
+        {
+            db.UserRoles.Add(new UserRole
+            {
+                UserId = user.Id,
+                RoleId = role.Id,
+                AssignedBy = assignedBy,
+                ExpiresAt = null, // permanent
+            });
+            user.PermissionsVersion++;
+
+            await _audit.LogAsync(new AuditEntry(
+                SiteId: siteId, ActorUserId: assignedBy, ActorEmail: _current.Email,
+                ActorIp: null, ActorUserAgent: null,
+                Action: "business_admin.assign", TargetType: "User", TargetId: user.Id.ToString(),
+                Outcome: "success",
+                AfterJson: System.Text.Json.JsonSerializer.Serialize(new { email, role.Key })), ct);
+        }
+
+        await db.SaveChangesAsync(ct);
+
+        // Return fresh user DTO with roles + permissions.
+        var fresh = await db.Users.AsNoTracking()
+            .Include(u => u.UserRoles).ThenInclude(ur => ur.Role)
+            .Include(u => u.DirectPermissions).ThenInclude(up => up.Permission)
+            .FirstOrDefaultAsync(u => u.Id == user.Id, ct);
+        return Map(fresh!);
     }
 
     private static UserDto Map(User u) => new(

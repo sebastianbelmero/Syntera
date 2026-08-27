@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Pencil, KeyRound, Palette } from "lucide-react";
+import { Pencil, KeyRound, Palette, UserPlus } from "lucide-react";
 import { sitesApi } from "../../api/platform";
 import { ApiError } from "../../api/client";
 import type {
@@ -27,6 +27,7 @@ export default function SitesPage() {
   const [editSite, setEditSite] = useState<SiteDto | null>(null);
   const [ldapSite, setLdapSite] = useState<SiteDto | null>(null);
   const [themeSite, setThemeSite] = useState<SiteDto | null>(null);
+  const [adminSite, setAdminSite] = useState<SiteDto | null>(null);
 
   const { data: sites = [], isLoading: loading } = useQuery<SiteDto[]>({
     queryKey: SITES_KEY,
@@ -38,7 +39,7 @@ export default function SitesPage() {
       <div>
         <h1 className="text-2xl font-bold">Sites</h1>
         <p className="text-sm" style={{ color: "var(--color-muted)" }}>
-          6 fixed sites — edit name, email domains, LDAP config, and theme.
+          6 fixed sites — edit name, email domains, LDAP config, theme, and assign business admin.
           Database connection and code are managed via backend config.
         </p>
       </div>
@@ -54,6 +55,7 @@ export default function SitesPage() {
               onEdit={() => setEditSite(s)}
               onConfigureLdap={() => setLdapSite(s)}
               onEditTheme={() => setThemeSite(s)}
+              onAssignAdmin={() => setAdminSite(s)}
             />
           ))}
         </div>
@@ -62,15 +64,17 @@ export default function SitesPage() {
       {editSite && <SiteEditDrawer site={editSite} onClose={() => setEditSite(null)} />}
       {ldapSite && <LdapDrawer site={ldapSite} onClose={() => setLdapSite(null)} />}
       {themeSite && <ThemeDrawer site={themeSite} onClose={() => setThemeSite(null)} />}
+      {adminSite && <AdminDrawer site={adminSite} onClose={() => setAdminSite(null)} />}
     </div>
   );
 }
 
-function SiteCard({ site, onEdit, onConfigureLdap, onEditTheme }: {
+function SiteCard({ site, onEdit, onConfigureLdap, onEditTheme, onAssignAdmin }: {
   site: SiteDto;
   onEdit: () => void;
   onConfigureLdap: () => void;
   onEditTheme: () => void;
+  onAssignAdmin: () => void;
 }) {
   const swatch = site.code;
   const swatchColor = THEME_SWATCH[swatch] ?? "#0B3D6F";
@@ -96,11 +100,16 @@ function SiteCard({ site, onEdit, onConfigureLdap, onEditTheme }: {
         <div><strong>Theme:</strong> {site.defaultThemeKey}</div>
       </div>
 
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-2 gap-2">
         <button onClick={onEdit}
           className="flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-xs"
           style={{ border: "1px solid var(--color-border)" }}>
-          <Pencil size={12} /> Edit
+          <Pencil size={12} /> Edit Name
+        </button>
+        <button onClick={onAssignAdmin}
+          className="flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-xs"
+          style={{ backgroundColor: "var(--color-accent)", color: "white" }}>
+          <UserPlus size={12} /> Business Admin
         </button>
         <button onClick={onConfigureLdap}
           className="flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-xs"
@@ -452,6 +461,70 @@ const DEFAULT_DARK: ThemePalette = {
   text: "#F1F5F9", muted: "#94A3B8", border: "#334155",
   success: "#34D399", warning: "#FBBF24", danger: "#F87171",
 };
+
+// ─── Assign Business Admin (Platform Admin bootstrap) ───────────────
+
+function AdminDrawer({ site, onClose }: { site: SiteDto; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const [email, setEmail] = useState("");
+  const [displayName, setDisplayName] = useState("");
+
+  // Prefill email domain hint from site's first registered domain.
+  const domainHint = site.ldapDomains[0] ?? "example.com";
+
+  const assignMutation = useMutation({
+    mutationFn: () => sitesApi.assignBusinessAdmin(site.id, email, displayName || undefined),
+    onSuccess: (user) => {
+      toast.success(`Assigned business admin: ${user.email}`);
+      void queryClient.invalidateQueries({ queryKey: SITES_KEY });
+      onClose();
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed"),
+  });
+
+  return (
+    <Drawer title={`Business Admin — ${site.displayName}`} onClose={onClose}>
+      <div className="space-y-3">
+        <div className="p-3 rounded-md text-xs" style={{ backgroundColor: "var(--color-background)" }}>
+          <strong>Site:</strong> {site.displayName} ({site.code})<br />
+          <strong>Domains:</strong> {site.ldapDomains.join(", ")}
+        </div>
+
+        <div className="p-3 rounded-md text-xs" style={{ backgroundColor: "var(--color-warning)", color: "white", opacity: 0.9 }}>
+          This creates the user (if not exists) and assigns the
+          <code> site-business-admin</code> role. The user must already exist
+          in the site's LDAP directory — they will set their password via LDAP,
+          not via this app.
+        </div>
+
+        <Field label="Email (must match LDAP userPrincipalName)">
+          <input className="input" type="email" value={email}
+            onChange={(e) => setEmail(e.target.value.toLowerCase())}
+            placeholder={`admin.user@${domainHint}`} />
+        </Field>
+
+        <Field label="Display Name (optional — will fetch from LDAP on first login)">
+          <input className="input" value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            placeholder="Budi Santoso" />
+        </Field>
+
+        <div className="flex justify-end gap-2 pt-4">
+          <button onClick={onClose} className="px-4 py-2 rounded-md text-sm"
+            style={{ border: "1px solid var(--color-border)" }}>Cancel</button>
+          <button
+            onClick={() => assignMutation.mutate()}
+            disabled={assignMutation.isPending || !email}
+            className="px-4 py-2 rounded-md text-sm disabled:opacity-50"
+            style={{ backgroundColor: "var(--color-primary)", color: "white" }}
+          >
+            {assignMutation.isPending ? "Assigning..." : "Assign Business Admin"}
+          </button>
+        </div>
+      </div>
+    </Drawer>
+  );
+}
 
 // ─── Helpers ────────────────────────────────────────────────────────
 

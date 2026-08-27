@@ -19,6 +19,7 @@ import type {
   RoleTemplateDto,
   RoleTemplateUpsertDto,
   PermissionCatalogDto,
+  UserDto,
 } from "../types";
 
 const BASE = "/platform";
@@ -28,6 +29,10 @@ export const sitesApi = {
   list: () => get<SiteDto[]>(`${BASE}/sites`),
   get: (id: string) => get<SiteDto>(`${BASE}/sites/${id}`),
   update: (id: string, dto: SiteUpdateDto) => put<SiteDto>(`${BASE}/sites/${id}`, dto),
+
+  /** Platform Admin → bootstrap first business admin for a site (chicken-and-egg fix). */
+  assignBusinessAdmin: (siteId: string, email: string, displayName?: string) =>
+    post<UserDto>(`${BASE}/sites/${siteId}/business-admin`, { email, displayName }),
 
   getLdapConfig: (siteId: string) => get<LdapConfigDto>(`${BASE}/sites/${siteId}/ldap-config`),
   upsertLdapConfig: (siteId: string, dto: LdapConfigUpsertDto) =>

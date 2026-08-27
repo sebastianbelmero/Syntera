@@ -17,10 +17,17 @@ namespace Syntera.Infrastructure.Data;
 public interface ISiteDbContextFactory
 {
     /// <summary>
-    /// Returns the SiteDbContext for the current request's site.
+    /// Returns the SiteDbContext for the current request's site (from JWT claim).
     /// Throws if the request has no site_id claim (i.e., Platform Admin).
     /// </summary>
     Task<SiteDbContext> ResolveAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns the SiteDbContext for an EXPLICIT siteId. Used by Platform Admin
+    /// endpoints that need to manage data in a specific site (e.g., bootstrap
+    /// the first site-business-admin). Throws if the site is not found or disabled.
+    /// </summary>
+    Task<SiteDbContext> ResolveForSiteAsync(Guid siteId, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -48,7 +55,14 @@ public sealed class SiteDbContextFactory : ISiteDbContextFactory, IDisposable, I
         var siteId = _currentUser.SiteId
             ?? throw new InvalidOperationException(
                 "Cannot resolve SiteDbContext: current request has no site_id claim. " +
-                "Platform Admin requests must not access site-scoped data.");
+                "Platform Admin requests must use ResolveForSiteAsync(siteId) instead.");
+
+        return await ResolveForSiteAsync(siteId, ct);
+    }
+
+    public async Task<SiteDbContext> ResolveForSiteAsync(Guid siteId, CancellationToken ct = default)
+    {
+        if (_resolved is not null) return _resolved;
 
         // Fetch connection string from Platform DB.
         using var scope = _services.CreateScope();

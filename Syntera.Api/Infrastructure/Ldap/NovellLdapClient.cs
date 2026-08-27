@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Novell.Directory.Ldap;
 
 namespace Syntera.Infrastructure.Ldap;
@@ -68,70 +69,86 @@ public sealed class NovellLdapClient : ILdapClient
     private const int LdapV3 = 3;
     private const int DefaultTimeoutMs = 20_000;
 
+    private readonly ILogger<NovellLdapClient>? _logger;
+
+    public NovellLdapClient(ILogger<NovellLdapClient>? logger = null)
+    {
+        _logger = logger;
+    }
+
     public async Task<LdapAuthResult> AuthenticateAsync(
         LdapEndpoint endpoint, string email, string password, CancellationToken ct = default)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
+        LogInfo("LDAP auth starting for {Email} via {Host}:{Port} (StartTLS={StartTLS}, BaseDn={BaseDn})",
+            email, endpoint.Host, endpoint.Port, endpoint.UseStartTls, endpoint.BaseDn);
+
         try
         {
             // Email must be sanitized for LDAP filter safety (RFC 4515).
             var escaped = EscapeLdapFilter(email);
 
             using var conn = CreateConnection(endpoint);
+            LogInfo("Connecting to {Host}:{Port}...", endpoint.Host, endpoint.Port);
             await conn.ConnectAsync(endpoint.Host, endpoint.Port, ct).ConfigureAwait(false);
+            LogInfo("Connected to {Host}:{Port}.", endpoint.Host, endpoint.Port);
 
             // Optional StartTLS upgrade on plain 389.
             if (endpoint.UseStartTls && endpoint.Port != 636)
             {
+                LogInfo("Starting TLS upgrade...");
                 await conn.StartTlsAsync().ConfigureAwait(false);
+                LogInfo("TLS established.");
             }
 
             // Direct bind: user's own email + password.
             // Active Directory accepts userPrincipalName (email format) as bind identity.
+            LogInfo("Binding as {Email}...", email);
             try
             {
                 await conn.BindAsync(email, password).ConfigureAwait(false);
+                LogInfo("Bind result: Bound={Bound}", conn.Bound);
                 if (!conn.Bound)
                 {
-                    return new LdapAuthResult(false, null, email, null,
-                        "Invalid credentials (LDAP bind failed).",
-                        (int)sw.Elapsed.TotalMilliseconds);
+                    return Fail(email, "Invalid email or password (bind returned false).", sw);
                 }
             }
             catch (LdapException ex)
             {
+                LogError(ex, "Bind failed. ResultCode={Code} ({CodeName})", ex.ResultCode, ex.Message);
                 // 49 = LDAP_INVALID_CREDENTIALS (wrong password / unknown user)
-                return new LdapAuthResult(false, null, email, null,
-                    ex.ResultCode == 49 ? "Invalid email or password." : $"LDAP bind failed: {ex.Message}",
-                    (int)sw.Elapsed.TotalMilliseconds);
+                if (ex.ResultCode == 49)
+                    return Fail(email, "Invalid email or password.", sw);
+                return Fail(email, $"LDAP bind failed (code {ex.ResultCode}): {ex.Message}", sw);
             }
 
             // Bind succeeded — search for the user's own entry to fetch details.
             // We use the bound connection (user's own credentials) for the search.
             var filter = BuildUserFilter(escaped);
+            LogInfo("Searching for user. BaseDn={BaseDn}, Filter={Filter}", endpoint.BaseDn, filter);
+
             var searchResults = await conn.SearchAsync(
                 endpoint.BaseDn, LdapConnection.ScopeSub, filter,
                 new[] { AttrEmail, AttrDisplayName, AttrAccountControl, AttrMail }, false, ct).ConfigureAwait(false);
 
             LdapEntry? userEntry = null;
+            int matchCount = 0;
             await foreach (var entry in searchResults.WithCancellation(ct).ConfigureAwait(false))
             {
+                matchCount++;
+                LogInfo("Search returned entry: {Dn}", entry.Dn);
                 if (userEntry is not null)
                 {
                     // Ambiguous — multiple entries match. Refuse to authenticate.
-                    return new LdapAuthResult(false, null, email, null,
-                        $"Multiple LDAP entries match email '{email}'. Refusing to authenticate.",
-                        (int)sw.Elapsed.TotalMilliseconds);
+                    return Fail(email, $"Multiple LDAP entries match email '{email}'. Refusing to authenticate.", sw);
                 }
                 userEntry = entry;
             }
 
             if (userEntry is null)
             {
-                // Bind worked but search returned nothing — unusual. Treat as auth failure.
-                return new LdapAuthResult(false, null, email, null,
-                    "Bind succeeded but user entry not found in directory.",
-                    (int)sw.Elapsed.TotalMilliseconds);
+                LogError("Bind succeeded but search returned 0 matches. Filter={Filter}", filter);
+                return Fail(email, "Bind succeeded but user entry not found in directory. Check BaseDn and filter.", sw);
             }
 
             // Extract display name and account status.
@@ -146,26 +163,28 @@ public sealed class NovellLdapClient : ILdapClient
             if (attrSet.ContainsKey(AttrAccountControl))
             {
                 var uacStr = attrSet[AttrAccountControl].StringValue;
+                LogInfo("userAccountControl={Uac}", uacStr);
                 if (int.TryParse(uacStr, out var uac) && (uac & UF_ACCOUNTDISABLE) != 0)
                 {
-                    return new LdapAuthResult(false, userEntry.Dn, mail, displayName,
-                        "LDAP account is disabled (userAccountControl has ACCOUNTDISABLE bit).",
-                        (int)sw.Elapsed.TotalMilliseconds);
+                    return Fail(email, "LDAP account is disabled (userAccountControl has ACCOUNTDISABLE bit).", sw);
                 }
             }
 
             displayName ??= email;
+            LogInfo("LDAP auth SUCCESS: {Email} → {Dn} ({Name})", email, userEntry.Dn, displayName);
             return new LdapAuthResult(true, userEntry.Dn, mail, displayName, null,
                 (int)sw.Elapsed.TotalMilliseconds);
         }
         catch (LdapException ex)
         {
+            LogError(ex, "LDAP server error: {Message} (code={Code})", ex.Message, ex.ResultCode);
             return new LdapAuthResult(false, null, null, null,
                 $"LDAP server error: {ex.Message} (code={ex.ResultCode})",
                 (int)sw.Elapsed.TotalMilliseconds);
         }
         catch (Exception ex)
         {
+            LogError(ex, "LDAP connection failed: {Message}", ex.Message);
             return new LdapAuthResult(false, null, null, null,
                 $"LDAP connection failed: {ex.Message}",
                 (int)sw.Elapsed.TotalMilliseconds);
@@ -175,6 +194,12 @@ public sealed class NovellLdapClient : ILdapClient
     public Task<LdapAuthResult> TestConnectionAsync(
         LdapEndpoint endpoint, string testEmail, string testPassword, CancellationToken ct = default)
         => AuthenticateAsync(endpoint, testEmail, testPassword, ct);
+
+    private LdapAuthResult Fail(string email, string message, System.Diagnostics.Stopwatch sw)
+    {
+        LogWarning("LDAP auth FAILED for {Email}: {Message}", email, message);
+        return new LdapAuthResult(false, null, email, null, message, (int)sw.Elapsed.TotalMilliseconds);
+    }
 
     /// <summary>
     /// Escape characters that have special meaning in LDAP filter syntax (RFC 4515).
@@ -238,4 +263,10 @@ public sealed class NovellLdapClient : ILdapClient
         };
         return conn;
     }
+
+    private void LogInfo(string msg, params object[] args) => _logger?.LogInformation(msg, args);
+    private void LogWarning(string msg, params object[] args) => _logger?.LogWarning(msg, args);
+    private void LogError(string msg, params object[] args) => _logger?.LogError(msg, args);
+    private void LogError(Exception ex, string msg, params object[] args) => _logger?.LogError(ex, msg, args);
 }
+

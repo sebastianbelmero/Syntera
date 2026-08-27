@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Syntera.Api.Controllers;
 using Syntera.Application.Common;
 using Syntera.Application.DTOs.Sites;
+using Syntera.Application.DTOs.Users;
 using Syntera.Application.Interfaces.Services;
 using Syntera.Application.Services;
 using Syntera.Infrastructure.Authorization;
@@ -21,11 +22,13 @@ namespace Syntera.Api.Controllers.Platform;
 public sealed class SitesController : ApiControllerBase
 {
     private readonly ISiteManagementService _sites;
+    private readonly IUserManagementService _users;
     private readonly ICurrentUserService _current;
 
-    public SitesController(ISiteManagementService sites, ICurrentUserService current)
+    public SitesController(ISiteManagementService sites, IUserManagementService users, ICurrentUserService current)
     {
         _sites = sites;
+        _users = users;
         _current = current;
     }
 
@@ -41,6 +44,15 @@ public sealed class SitesController : ApiControllerBase
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] SiteUpdateDto dto, CancellationToken ct)
         => Ok(await _sites.UpdateAsync(id, dto, _current.UserId ?? Guid.Empty, ct));
+
+    /// <summary>
+    /// Bootstrap the first Site Business Admin for a site. Creates the user
+    /// (if not exists) and assigns the site-business-admin role. Used to
+    /// break the chicken-and-egg problem.
+    /// </summary>
+    [HttpPost("{siteId:guid}/business-admin")]
+    public async Task<IActionResult> AssignBusinessAdmin(Guid siteId, [FromBody] AssignBusinessAdminRequest req, CancellationToken ct)
+        => Ok(await _users.AssignBusinessAdminAsync(siteId, req.Email, req.DisplayName ?? "", _current.UserId ?? Guid.Empty, ct));
 
     // ─── LDAP Config ──────────────────────────────────────────────────
 
@@ -66,3 +78,7 @@ public sealed class SitesController : ApiControllerBase
     public async Task<IActionResult> UpsertTheme(Guid siteId, [FromBody] ThemeUpsertDto dto, CancellationToken ct)
         => Ok(await _sites.UpsertThemeAsync(siteId, dto, _current.UserId ?? Guid.Empty, ct));
 }
+
+/// <summary>Request body for assigning a business admin.</summary>
+public sealed record AssignBusinessAdminRequest(string Email, string? DisplayName);
+
