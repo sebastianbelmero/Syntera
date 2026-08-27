@@ -1,19 +1,26 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Plus, Pencil, Power, KeyRound, Palette } from "lucide-react";
+import { KeyRound, Server } from "lucide-react";
 import { sitesApi } from "../../api/platform";
 import { ApiError } from "../../api/client";
-import type { SiteDto, SiteUpsertDto, LdapConfigDto, LdapConfigUpsertDto, LdapTestRequest, LdapTestResult } from "../../types";
+import type { SiteDto, LdapConfigDto, LdapConfigUpsertDto, LdapTestRequest, LdapTestResult } from "../../types";
 
 const SITES_KEY = ["sites"] as const;
 
 /**
  * Platform Admin → Site Management.
- * Lists all sites, allows create/update/disable, and manage LDAP config + theme per site.
+ *
+ * The 6 sites (Kalventis, Kalbe, Fima, GOF, Dankos, Hexpharm) are
+ * PRE-DEFINED in backend configuration (appsettings.json → Sites[]).
+ * They cannot be created, disabled, or deleted from the frontend.
+ *
+ * The only thing editable from the frontend is the LDAP configuration
+ * per site. Themes are also pre-seeded from config and not editable
+ * via UI.
  */
 export default function SitesPage() {
-  const [selected, setSelected] = useState<SiteDto | null>(null);
+  const [ldapSite, setLdapSite] = useState<SiteDto | null>(null);
 
   const { data: sites = [], isLoading: loading } = useQuery<SiteDto[]>({
     queryKey: SITES_KEY,
@@ -22,201 +29,91 @@ export default function SitesPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Sites</h1>
-          <p className="text-sm" style={{ color: "var(--color-muted)" }}>
-            Manage registered sites, LDAP configurations, and themes.
-          </p>
-        </div>
-        <button
-          onClick={() => setSelected({} as SiteDto)}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium"
-          style={{ backgroundColor: "var(--color-primary)", color: "white" }}
-        >
-          <Plus size={16} /> New Site
-        </button>
+      <div>
+        <h1 className="text-2xl font-bold">Sites</h1>
+        <p className="text-sm" style={{ color: "var(--color-muted)" }}>
+          6 fixed sites — configure LDAP for each. Database connection and theme
+          are managed via backend configuration (appsettings.json).
+        </p>
       </div>
 
       {loading ? (
         <div className="text-center py-8" style={{ color: "var(--color-muted)" }}>Loading...</div>
       ) : sites.length === 0 ? (
-        <div className="text-center py-8" style={{ color: "var(--color-muted)" }}>No sites registered yet.</div>
+        <div className="rounded-xl p-6 text-center"
+          style={{ backgroundColor: "var(--color-surface)", border: "1px solid var(--color-border)" }}>
+          <Server className="mx-auto mb-2 opacity-50" size={32} />
+          <p className="text-sm" style={{ color: "var(--color-muted)" }}>
+            No sites found. Run <code>dotnet run</code> in Development mode to
+            trigger automatic seeding of the 6 predefined sites.
+          </p>
+        </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {sites.map((s) => (
-            <SiteCard key={s.id} site={s} onEdit={() => setSelected(s)} />
+            <SiteCard key={s.id} site={s} onConfigureLdap={() => setLdapSite(s)} />
           ))}
         </div>
       )}
 
-      {selected && (
-        <SiteDrawer site={selected} onClose={() => setSelected(null)} />
+      {ldapSite && (
+        <LdapDrawer site={ldapSite} onClose={() => setLdapSite(null)} />
       )}
     </div>
   );
 }
 
-function SiteCard({ site, onEdit }: { site: SiteDto; onEdit: () => void }) {
-  const queryClient = useQueryClient();
-  const [showLdap, setShowLdap] = useState(false);
-  const [showTheme, setShowTheme] = useState(false);
-
-  const disableMutation = useMutation({
-    mutationFn: () => sitesApi.disable(site.id),
-    onSuccess: () => {
-      toast.success("Site disabled");
-      void queryClient.invalidateQueries({ queryKey: SITES_KEY });
-    },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed"),
-  });
-
-  const handleDisable = () => {
-    if (!confirm(`Disable site ${site.code}? Users from this site will not be able to log in.`)) return;
-    disableMutation.mutate();
-  };
+function SiteCard({ site, onConfigureLdap }: { site: SiteDto; onConfigureLdap: () => void }) {
+  const swatch = site.defaultThemeKey.split("-")[0] ?? "syntera";
+  const swatchColor = THEME_SWATCH[swatch] ?? "#0B3D6F";
 
   return (
     <div
       className="rounded-xl p-5"
       style={{ backgroundColor: "var(--color-surface)", border: "1px solid var(--color-border)" }}
     >
-      <div className="flex items-start justify-between mb-3">
-        <div>
+      <div className="flex items-start gap-3 mb-3">
+        <div
+          className="w-10 h-10 rounded-lg flex-shrink-0"
+          style={{ backgroundColor: swatchColor }}
+        />
+        <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <h3 className="font-semibold text-lg">{site.displayName}</h3>
+            <h3 className="font-semibold text-lg truncate">{site.displayName}</h3>
             {!site.isEnabled && (
-              <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: "var(--color-danger)", color: "white" }}>
+              <span className="text-xs px-2 py-0.5 rounded-full flex-shrink-0"
+                style={{ backgroundColor: "var(--color-danger)", color: "white" }}>
                 Disabled
               </span>
             )}
           </div>
-          <div className="text-xs mt-0.5 font-mono" style={{ color: "var(--color-muted)" }}>{site.code}</div>
+          <div className="text-xs mt-0.5 font-mono" style={{ color: "var(--color-muted)" }}>
+            {site.code}
+          </div>
         </div>
       </div>
 
       <div className="text-xs space-y-1 mb-4">
-        <div><strong>Domains:</strong> {site.ldapDomains.join(", ") || "—"}</div>
+        <div>
+          <strong>Email domains:</strong>{" "}
+          {site.ldapDomains.length > 0 ? site.ldapDomains.join(", ") : "—"}
+        </div>
         <div><strong>Theme:</strong> {site.defaultThemeKey}</div>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        <button onClick={onEdit} className="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs" style={{ border: "1px solid var(--color-border)" }}>
-          <Pencil size={12} /> Edit
-        </button>
-        <button onClick={() => setShowLdap(true)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs" style={{ border: "1px solid var(--color-border)" }}>
-          <KeyRound size={12} /> LDAP
-        </button>
-        <button onClick={() => setShowTheme(true)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs" style={{ border: "1px solid var(--color-border)" }}>
-          <Palette size={12} /> Theme
-        </button>
-        {site.isEnabled && (
-          <button onClick={handleDisable} disabled={disableMutation.isPending}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs disabled:opacity-50"
-            style={{ color: "var(--color-danger)", border: "1px solid var(--color-danger)" }}>
-            <Power size={12} /> Disable
-          </button>
-        )}
-      </div>
-
-      {showLdap && (
-        <LdapDrawer siteId={site.id} onClose={() => setShowLdap(false)} />
-      )}
-      {showTheme && (
-        <ThemeDrawer siteId={site.id} onClose={() => setShowTheme(false)} />
-      )}
+      <button
+        onClick={onConfigureLdap}
+        className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition hover:opacity-90"
+        style={{ backgroundColor: "var(--color-primary)", color: "white" }}
+      >
+        <KeyRound size={16} />
+        Configure LDAP
+      </button>
     </div>
   );
 }
 
-function SiteDrawer({ site, onClose }: { site: SiteDto; onClose: () => void }) {
-  const queryClient = useQueryClient();
-  const isNew = !site.id;
-  const [form, setForm] = useState<SiteUpsertDto>({
-    code: site.code ?? "",
-    displayName: site.displayName ?? "",
-    defaultThemeKey: site.defaultThemeKey ?? "syntera-default",
-    databaseConnectionString: "",
-    notes: site.notes,
-    ldapDomains: site.ldapDomains ?? [],
-  });
-  const [domainInput, setDomainInput] = useState("");
-
-  const saveMutation = useMutation({
-    mutationFn: async () => {
-      if (isNew) return sitesApi.create(form);
-      return sitesApi.update(site.id, form);
-    },
-    onSuccess: () => {
-      toast.success("Site saved");
-      void queryClient.invalidateQueries({ queryKey: SITES_KEY });
-      onClose();
-    },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed"),
-  });
-
-  return (
-    <Drawer title={isNew ? "New Site" : `Edit ${site.displayName}`} onClose={onClose}>
-      <div className="space-y-4">
-        <Field label="Code">
-          <input value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })}
-            className="input" placeholder="kalventis" disabled={!isNew} />
-        </Field>
-        <Field label="Display Name">
-          <input value={form.displayName} onChange={(e) => setForm({ ...form, displayName: e.target.value })}
-            className="input" placeholder="PT Kalventis Surya Pratama" />
-        </Field>
-        <Field label="Database Connection String">
-          <textarea value={form.databaseConnectionString} onChange={(e) => setForm({ ...form, databaseConnectionString: e.target.value })}
-            className="input" rows={3} placeholder="Server=...;Database=syntera_kalventis;..." />
-        </Field>
-        <Field label="Default Theme Key">
-          <input value={form.defaultThemeKey} onChange={(e) => setForm({ ...form, defaultThemeKey: e.target.value })}
-            className="input" placeholder="kalventis-navy" />
-        </Field>
-        <Field label="Email Domains">
-          <div className="flex flex-wrap gap-2 mb-2">
-            {form.ldapDomains.map((d, i) => (
-              <span key={i} className="px-2 py-1 rounded-md text-xs flex items-center gap-1"
-                style={{ backgroundColor: "var(--color-background)", border: "1px solid var(--color-border)" }}>
-                {d}
-                <button onClick={() => setForm({ ...form, ldapDomains: form.ldapDomains.filter((_, j) => j !== i) })}>×</button>
-              </span>
-            ))}
-          </div>
-          <div className="flex gap-2">
-            <input value={domainInput} onChange={(e) => setDomainInput(e.target.value)}
-              className="input" placeholder="kalventis.com" />
-            <button onClick={() => {
-              if (domainInput && !form.ldapDomains.includes(domainInput)) {
-                setForm({ ...form, ldapDomains: [...form.ldapDomains, domainInput.toLowerCase()] });
-                setDomainInput("");
-              }
-            }} className="px-3 py-2 rounded-md text-sm" style={{ backgroundColor: "var(--color-primary)", color: "white" }}>
-              Add
-            </button>
-          </div>
-        </Field>
-        <Field label="Notes">
-          <textarea value={form.notes ?? ""} onChange={(e) => setForm({ ...form, notes: e.target.value })}
-            className="input" rows={2} />
-        </Field>
-
-        <div className="flex justify-end gap-2 pt-4">
-          <button onClick={onClose} className="px-4 py-2 rounded-md text-sm" style={{ border: "1px solid var(--color-border)" }}>
-            Cancel
-          </button>
-          <button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending} className="px-4 py-2 rounded-md text-sm"
-            style={{ backgroundColor: "var(--color-primary)", color: "white" }}>
-            {saveMutation.isPending ? "Saving..." : "Save"}
-          </button>
-        </div>
-      </div>
-    </Drawer>
-  );
-}
-
-function LdapDrawer({ siteId, onClose }: { siteId: string; onClose: () => void }) {
+function LdapDrawer({ site, onClose }: { site: SiteDto; onClose: () => void }) {
   const queryClient = useQueryClient();
   const [cfg, setCfg] = useState<LdapConfigUpsertDto>({
     host: "", port: 636, useStartTls: false, baseDn: "", emailAttribute: "userPrincipalName",
@@ -229,25 +126,32 @@ function LdapDrawer({ siteId, onClose }: { siteId: string; onClose: () => void }
 
   // Load existing LDAP config (silent fail if not configured yet).
   const { data: existing, isLoading: loading } = useQuery<LdapConfigDto>({
-    queryKey: ["ldap-config", siteId],
-    queryFn: () => sitesApi.getLdapConfig(siteId),
-    enabled: !!siteId,
+    queryKey: ["ldap-config", site.id],
+    queryFn: () => sitesApi.getLdapConfig(site.id),
+    enabled: !!site.id,
     retry: false,
   });
 
-  // Sync loaded config into local form state.
-  useEffectSyncToState(existing, (c) => {
-    if (!c) return;
+  // Sync loaded config into local form state when data arrives.
+  // Using a ref to track the last-seen config id so we only setState when
+  // the query actually returns new data (avoids redundant renders).
+  const lastConfigRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!existing) return;
+    const sig = `${existing.host}|${existing.port}|${existing.baseDn}`;
+    if (lastConfigRef.current === sig) return;
+    lastConfigRef.current = sig;
     setCfg({
-      host: c.host, port: c.port, useStartTls: c.useStartTls, baseDn: c.baseDn,
-      emailAttribute: c.emailAttribute, bindDn: c.bindDn, bindPassword: null,
-      userFilterTemplate: c.userFilterTemplate, timeoutSeconds: c.timeoutSeconds,
-      searchSubtree: c.searchSubtree,
+      host: existing.host, port: existing.port, useStartTls: existing.useStartTls,
+      baseDn: existing.baseDn, emailAttribute: existing.emailAttribute,
+      bindDn: existing.bindDn, bindPassword: null,
+      userFilterTemplate: existing.userFilterTemplate,
+      timeoutSeconds: existing.timeoutSeconds, searchSubtree: existing.searchSubtree,
     });
-  });
+  }, [existing]);
 
   const saveMutation = useMutation({
-    mutationFn: () => sitesApi.upsertLdapConfig(siteId, cfg),
+    mutationFn: () => sitesApi.upsertLdapConfig(site.id, cfg),
     onSuccess: () => {
       toast.success("LDAP config saved");
       void queryClient.invalidateQueries({ queryKey: SITES_KEY });
@@ -273,12 +177,20 @@ function LdapDrawer({ siteId, onClose }: { siteId: string; onClose: () => void }
     }
   };
 
-  if (loading) return <Drawer title="LDAP Configuration" onClose={onClose}><div>Loading...</div></Drawer>;
+  if (loading) return <Drawer title={`LDAP Configuration — ${site.displayName}`} onClose={onClose}><div>Loading...</div></Drawer>;
 
   return (
-    <Drawer title="LDAP Configuration" onClose={onClose}>
+    <Drawer title={`LDAP Configuration — ${site.displayName}`} onClose={onClose}>
       <div className="space-y-3">
-        <Field label="Host"><input className="input" value={cfg.host} onChange={(e) => setCfg({ ...cfg, host: e.target.value })} placeholder="10.131.220.11" /></Field>
+        <div className="p-3 rounded-md text-xs" style={{ backgroundColor: "var(--color-background)" }}>
+          <strong>Site:</strong> {site.displayName} ({site.code})<br />
+          <strong>Email domain:</strong> {site.ldapDomains.join(", ")}
+        </div>
+
+        <Field label="Host">
+          <input className="input" value={cfg.host} onChange={(e) => setCfg({ ...cfg, host: e.target.value })}
+            placeholder="10.131.220.11" />
+        </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Port">
             <select className="input" value={cfg.port} onChange={(e) => setCfg({ ...cfg, port: parseInt(e.target.value) })}>
@@ -287,21 +199,41 @@ function LdapDrawer({ siteId, onClose }: { siteId: string; onClose: () => void }
             </select>
           </Field>
           <Field label="Use StartTLS">
-            <select className="input" value={cfg.useStartTls ? "1" : "0"} onChange={(e) => setCfg({ ...cfg, useStartTls: e.target.value === "1" })}>
+            <select className="input" value={cfg.useStartTls ? "1" : "0"}
+              onChange={(e) => setCfg({ ...cfg, useStartTls: e.target.value === "1" })}>
               <option value="0">No</option>
               <option value="1">Yes</option>
             </select>
           </Field>
         </div>
-        <Field label="Base DN"><input className="input" value={cfg.baseDn} onChange={(e) => setCfg({ ...cfg, baseDn: e.target.value })} placeholder="DC=KALVENTIS,DC=DOM" /></Field>
-        <Field label="Email Attribute"><input className="input" value={cfg.emailAttribute} onChange={(e) => setCfg({ ...cfg, emailAttribute: e.target.value })} /></Field>
-        <Field label="Bind DN (service account, optional)"><input className="input" value={cfg.bindDn ?? ""} onChange={(e) => setCfg({ ...cfg, bindDn: e.target.value || null })} /></Field>
-        <Field label="Bind Password (leave empty to keep existing)"><input type="password" className="input" value={cfg.bindPassword ?? ""} onChange={(e) => setCfg({ ...cfg, bindPassword: e.target.value || null })} /></Field>
-        <Field label="User Filter Template"><input className="input" value={cfg.userFilterTemplate} onChange={(e) => setCfg({ ...cfg, userFilterTemplate: e.target.value })} /></Field>
+        <Field label="Base DN">
+          <input className="input" value={cfg.baseDn} onChange={(e) => setCfg({ ...cfg, baseDn: e.target.value })}
+            placeholder="DC=KALVENTIS,DC=DOM" />
+        </Field>
+        <Field label="Email Attribute">
+          <input className="input" value={cfg.emailAttribute}
+            onChange={(e) => setCfg({ ...cfg, emailAttribute: e.target.value })} />
+        </Field>
+        <Field label="Bind DN (service account, optional)">
+          <input className="input" value={cfg.bindDn ?? ""}
+            onChange={(e) => setCfg({ ...cfg, bindDn: e.target.value || null })} />
+        </Field>
+        <Field label="Bind Password (leave empty to keep existing)">
+          <input type="password" className="input" value={cfg.bindPassword ?? ""}
+            onChange={(e) => setCfg({ ...cfg, bindPassword: e.target.value || null })} />
+        </Field>
+        <Field label="User Filter Template">
+          <input className="input" value={cfg.userFilterTemplate}
+            onChange={(e) => setCfg({ ...cfg, userFilterTemplate: e.target.value })} />
+        </Field>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Timeout (sec)"><input type="number" className="input" value={cfg.timeoutSeconds} onChange={(e) => setCfg({ ...cfg, timeoutSeconds: parseInt(e.target.value) })} /></Field>
+          <Field label="Timeout (sec)">
+            <input type="number" className="input" value={cfg.timeoutSeconds}
+              onChange={(e) => setCfg({ ...cfg, timeoutSeconds: parseInt(e.target.value) })} />
+          </Field>
           <Field label="Search Scope">
-            <select className="input" value={cfg.searchSubtree ? "1" : "0"} onChange={(e) => setCfg({ ...cfg, searchSubtree: e.target.value === "1" })}>
+            <select className="input" value={cfg.searchSubtree ? "1" : "0"}
+              onChange={(e) => setCfg({ ...cfg, searchSubtree: e.target.value === "1" })}>
               <option value="1">Subtree</option>
               <option value="0">One Level</option>
             </select>
@@ -311,8 +243,11 @@ function LdapDrawer({ siteId, onClose }: { siteId: string; onClose: () => void }
         <div className="pt-4 border-t" style={{ borderColor: "var(--color-border)" }}>
           <h4 className="text-sm font-semibold mb-2">Test Connection</h4>
           <div className="flex gap-2">
-            <input className="input" value={testEmail} onChange={(e) => setTestEmail(e.target.value)} placeholder="test.user@kalventis.com" />
-            <button onClick={test} disabled={testing} className="px-3 py-2 rounded-md text-sm whitespace-nowrap"
+            <input className="input" value={testEmail}
+              onChange={(e) => setTestEmail(e.target.value)}
+              placeholder={`test.user@${site.ldapDomains[0] ?? "example.com"}`} />
+            <button onClick={test} disabled={testing}
+              className="px-3 py-2 rounded-md text-sm whitespace-nowrap disabled:opacity-50"
               style={{ border: "1px solid var(--color-border)" }}>
               {testing ? "Testing..." : "Test"}
             </button>
@@ -329,9 +264,13 @@ function LdapDrawer({ siteId, onClose }: { siteId: string; onClose: () => void }
         </div>
 
         <div className="flex justify-end gap-2 pt-4">
-          <button onClick={onClose} className="px-4 py-2 rounded-md text-sm" style={{ border: "1px solid var(--color-border)" }}>Cancel</button>
+          <button onClick={onClose} className="px-4 py-2 rounded-md text-sm"
+            style={{ border: "1px solid var(--color-border)" }}>
+            Cancel
+          </button>
           <button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}
-            className="px-4 py-2 rounded-md text-sm" style={{ backgroundColor: "var(--color-primary)", color: "white" }}>
+            className="px-4 py-2 rounded-md text-sm disabled:opacity-50"
+            style={{ backgroundColor: "var(--color-primary)", color: "white" }}>
             {saveMutation.isPending ? "Saving..." : "Save"}
           </button>
         </div>
@@ -340,24 +279,18 @@ function LdapDrawer({ siteId, onClose }: { siteId: string; onClose: () => void }
   );
 }
 
-function ThemeDrawer({ siteId, onClose }: { siteId: string; onClose: () => void }) {
-  return (
-    <Drawer title="Theme Configuration" onClose={onClose}>
-      <div className="text-sm" style={{ color: "var(--color-muted)" }}>
-        <p>Theme palette management UI is available via API at <code>PUT /api/platform/sites/{siteId}/theme</code>.</p>
-        <p className="mt-2">The palette is stored as JSON in the platform database and cached in-memory on the backend.</p>
-        <p className="mt-2">Future UI work: visual color picker that writes to <code>LightPaletteJson</code> and <code>DarkPaletteJson</code>.</p>
-      </div>
-    </Drawer>
-  );
-}
+// ─── Theme swatches (matches backend seed palettes) ────────────────
+const THEME_SWATCH: Record<string, string> = {
+  kalventis: "#007A4D",
+  kalbe: "#E2231A",
+  fima: "#6B46C1",
+  gof: "#C2410C",
+  dankos: "#0054A6",
+  hexpharm: "#00796B",
+  syntera: "#0B3D6F",
+};
 
-// Unused import removed to keep linter happy.
-
-/** Syncs a TanStack Query result into local state when the data changes. */
-function useEffectSyncToState<T>(data: T | undefined, cb: (data: T | undefined) => void) {
-  useEffect(() => { cb(data); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [data]);
-}
+// ─── Helpers ────────────────────────────────────────────────────────
 
 function Drawer({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (

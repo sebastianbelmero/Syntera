@@ -143,16 +143,14 @@ try
     using (var scope = app.Services.CreateScope())
     {
         var platformDb = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+        var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
 
         if (app.Environment.IsDevelopment())
         {
-            var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
             await DatabaseInitializer.MigrateOrBaselineAsync(platformDb, logger);
         }
 
-        var adminEmail = app.Configuration["Seed:PlatformAdminEmail"] ?? "admin@syntera.com";
-        var adminPassword = app.Configuration["Seed:PlatformAdminPassword"];
-        await DbSeeder.SeedPlatformAsync(platformDb, adminEmail, adminPassword);
+        await DbSeeder.SeedPlatformAsync(platformDb, app.Configuration, logger);
     }
 
     app.Run();

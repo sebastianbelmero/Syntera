@@ -9,33 +9,21 @@ namespace Syntera.Infrastructure.Seed;
 /// - The default Platform Admin user (admin@syntera.com) — password from configuration
 /// - Default platform settings (audit retention, token lifetimes)
 /// - Default role templates: viewer, site-business-admin
+/// - 6 fixed sites (Kalventis, Kalbe, Fima, GOF, Dankos, Hexpharm) with their
+///   connection strings, themes, and LDAP domains — read from configuration.
 ///
-/// This is idempotent — running it twice is safe. In Development only;
-/// Production must seed via CLI (syntera-seed tool, not yet implemented).
+/// This is idempotent — running it twice is safe.
 /// </summary>
 public static class DbSeeder
 {
-    // Hoisted per CA1861: SeedPlatformAsync runs on every boot — avoid re-allocating
-    // these arrays on each call.
-    private static readonly string[] ViewerPermissions =
-        { "dashboard.read", "audit.read", "profile.read" };
-
-    private static readonly string[] SiteBusinessAdminPermissions =
-    {
-        "user.read", "user.write", "user.disable", "user.sync",
-        "role.read", "user_role.assign", "user_role.revoke",
-        "permission.read", "permission.grant", "permission.revoke",
-        "audit.read", "report.read",
-    };
-
     /// <param name="db">Platform DB context.</param>
-    /// <param name="adminEmail">Email for the platform admin (default: admin@syntera.com).</param>
-    /// <param name="adminPassword">Plain-text password to hash with bcrypt. MUST come from
-    /// user-secrets / env-var, never hardcoded.</param>
-    public static async Task SeedPlatformAsync(PlatformDbContext db, string? adminEmail = null, string? adminPassword = null)
+    /// <param name="config">App configuration (for site connection strings &amp; admin creds).</param>
+    /// <param name="logger">Optional logger.</param>
+    public static async Task SeedPlatformAsync(
+        PlatformDbContext db,
+        IConfiguration config,
+        ILogger? logger = null)
     {
-        adminEmail = string.IsNullOrWhiteSpace(adminEmail) ? "admin@syntera.com" : adminEmail.ToLowerInvariant();
-
         // ── Default platform settings ──────────────────────────────────
         await EnsureSetting(db, "AuditRetentionYears", "10", "Audit log retention period in years (compliance).");
         await EnsureSetting(db, "TokenAccessTokenMinutes", "15", "JWT access token lifetime in minutes.");
@@ -46,14 +34,25 @@ public static class DbSeeder
         // ── Default role templates ─────────────────────────────────────
         await EnsureRoleTemplate(db, "viewer", "Viewer", "Read-only access to dashboards and own profile.",
             isSiteAdminRole: false,
-            permissions: ViewerPermissions);
+            permissions: new[] { "dashboard.read", "audit.read", "profile.read" });
 
         await EnsureRoleTemplate(db, "site-business-admin", "Site Business Admin",
             "Manages users, roles, and permissions within own site.",
             isSiteAdminRole: true,
-            permissions: SiteBusinessAdminPermissions);
+            permissions: new[]
+            {
+                "user.read", "user.write", "user.disable", "user.sync",
+                "role.read", "user_role.assign", "user_role.revoke",
+                "permission.read", "permission.grant", "permission.revoke",
+                "audit.read", "report.read",
+            });
+
+        // ── 6 fixed sites ──────────────────────────────────────────────
+        await EnsureSitesAsync(db, config, logger);
 
         // ── Default Platform Admin user ────────────────────────────────
+        var adminEmail = config["Seed:PlatformAdminEmail"] ?? "admin@syntera.com";
+        var adminPassword = config["Seed:PlatformAdminPassword"];
         await EnsurePlatformAdminAsync(db, adminEmail, adminPassword);
 
         await db.SaveChangesAsync();
@@ -86,22 +85,99 @@ public static class DbSeeder
     }
 
     /// <summary>
+    /// Seeds the 6 fixed sites from configuration. Each site's connection
+    /// string is read from <c>ConnectionStrings:Sites:{code}</c>. If a site
+    /// already exists (by code), its connection string and theme are
+    /// updated to match config — this lets operators change DB passwords
+    /// via config without touching the DB.
+    /// </summary>
+    private static async Task EnsureSitesAsync(PlatformDbContext db, IConfiguration config, ILogger? logger)
+    {
+        var siteConfigs = config.GetSection("Sites").Get<SiteSeedConfig[]>() ?? Array.Empty<SiteSeedConfig>();
+
+        foreach (var sc in siteConfigs)
+        {
+            var connStr = config[$"ConnectionStrings:Sites:{sc.Code}"];
+            if (string.IsNullOrWhiteSpace(connStr))
+            {
+                logger?.LogWarning("No connection string found for site '{Code}' (ConnectionStrings:Sites:{Code}). Site will be disabled.", sc.Code, sc.Code);
+            }
+
+            var site = await db.Sites
+                .Include(s => s.LdapDomains)
+                .Include(s => s.Theme)
+                .FirstOrDefaultAsync(s => s.Code == sc.Code);
+
+            if (site is null)
+            {
+                site = new Site
+                {
+                    Code = sc.Code,
+                    DisplayName = sc.DisplayName,
+                    DatabaseConnectionString = connStr ?? "",
+                    DefaultThemeKey = $"{sc.Code}-default",
+                    IsEnabled = !string.IsNullOrWhiteSpace(connStr),
+                    Notes = $"Pre-seeded site ({sc.Code}).",
+                };
+
+                // Add the primary email domain.
+                site.LdapDomains.Add(new SiteLdapDomain
+                {
+                    Domain = sc.EmailDomain.ToLowerInvariant(),
+                    IsActive = true,
+                });
+
+                db.Sites.Add(site);
+                logger?.LogInformation("Seeded site '{Code}' ({DisplayName}).", sc.Code, sc.DisplayName);
+            }
+            else
+            {
+                // Update connection string from config (allows password rotation).
+                site.DatabaseConnectionString = connStr ?? site.DatabaseConnectionString;
+                site.DisplayName = sc.DisplayName;
+                site.DefaultThemeKey = $"{sc.Code}-default";
+
+                // Ensure the primary email domain exists.
+                if (!site.LdapDomains.Any(d => d.Domain == sc.EmailDomain.ToLowerInvariant()))
+                {
+                    site.LdapDomains.Add(new SiteLdapDomain
+                    {
+                        Domain = sc.EmailDomain.ToLowerInvariant(),
+                        IsActive = true,
+                    });
+                }
+            }
+
+            // Upsert theme for this site.
+            await EnsureSiteThemeAsync(db, site, sc);
+        }
+    }
+
+    private static async Task EnsureSiteThemeAsync(PlatformDbContext db, Site site, SiteSeedConfig sc)
+    {
+        var theme = site.Theme;
+        var isNew = theme is null;
+        theme ??= new SiteTheme { SiteId = site.Id };
+
+        theme.ThemeKey = $"{sc.Code}-default";
+        theme.LightPaletteJson = System.Text.Json.JsonSerializer.Serialize(sc.LightPalette);
+        theme.DarkPaletteJson = System.Text.Json.JsonSerializer.Serialize(sc.DarkPalette);
+
+        if (isNew) db.Themes.Add(theme);
+        await Task.CompletedTask;
+    }
+
+    /// <summary>
     /// Creates the Platform Admin user if it doesn't exist. The password
-    /// is hashed with bcrypt (work factor 12) before storage. If the user
-    /// already exists, no change is made — to reset the password, use the
-    /// dedicated CLI command (future work) or update directly in DB.
+    /// is hashed with bcrypt (work factor 12) before storage.
     /// </summary>
     private static async Task EnsurePlatformAdminAsync(PlatformDbContext db, string email, string? password)
     {
+        email = string.IsNullOrWhiteSpace(email) ? "admin@syntera.com" : email.ToLowerInvariant();
         if (await db.PlatformUsers.AnyAsync(u => u.Email == email)) return;
 
         if (string.IsNullOrWhiteSpace(password))
-        {
-            // In dev, fall back to a known weak password that the user MUST change.
-            // In production, this branch is never hit because Program.cs fails-fast
-            // when Seed:PlatformAdminPassword is missing.
             password = "ChangeMe!Strong#1";
-        }
 
         var hash = BCrypt.Net.BCrypt.HashPassword(password, workFactor: 12);
 
@@ -113,4 +189,28 @@ public static class DbSeeder
             IsEnabled = true,
         });
     }
+}
+
+/// <summary>Seed configuration for a single site (from appsettings Sites section).</summary>
+public sealed class SiteSeedConfig
+{
+    public string Code { get; set; } = "";
+    public string DisplayName { get; set; } = "";
+    public string EmailDomain { get; set; } = "";
+    public ThemePaletteConfig LightPalette { get; set; } = new();
+    public ThemePaletteConfig DarkPalette { get; set; } = new();
+}
+
+public sealed class ThemePaletteConfig
+{
+    public string Primary { get; set; } = "#0B3D6F";
+    public string Accent { get; set; } = "#00A7B5";
+    public string Background { get; set; } = "#F8FAFC";
+    public string Surface { get; set; } = "#FFFFFF";
+    public string Text { get; set; } = "#243447";
+    public string Muted { get; set; } = "#64748B";
+    public string Border { get; set; } = "#E2E8F0";
+    public string Success { get; set; } = "#10B981";
+    public string Warning { get; set; } = "#F59E0B";
+    public string Danger { get; set; } = "#EF4444";
 }
