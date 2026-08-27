@@ -1,4 +1,4 @@
-# 🌿 Syntera — Pharmaceutical Commerce Suite
+# 🌿 Syntera
 
 > **Vital Science, Vital Commerce.**
 >

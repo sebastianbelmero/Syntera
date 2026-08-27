@@ -67,7 +67,7 @@ export default function App() {
           element={
             <RequireAuth>
               <AdminLayout
-                title="Syntera — Pharmaceutical Commerce Suite"
+                title="Syntera"
                 menuItems={menu}
                 user={
                   profile
