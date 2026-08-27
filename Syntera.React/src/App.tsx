@@ -30,6 +30,11 @@ function ThemeApplier() {
 
     if (theme) {
       const palette = isDark ? theme.dark : theme.light;
+
+      // Set BOTH variable naming conventions so all components work:
+      // 1. --color-* (used by inline styles in new IAM pages)
+      // 2. --background/--foreground/--card/--border/etc (Tailwind-style,
+      //    used by existing components like AdminLayout, AppSidebar, etc)
       root.style.setProperty("--color-primary", palette.primary);
       root.style.setProperty("--color-accent", palette.accent);
       root.style.setProperty("--color-background", palette.background);
@@ -40,6 +45,23 @@ function ThemeApplier() {
       root.style.setProperty("--color-success", palette.success);
       root.style.setProperty("--color-warning", palette.warning);
       root.style.setProperty("--color-danger", palette.danger);
+
+      // Tailwind-style variables (match what index.css defines per brand)
+      root.style.setProperty("--background", palette.background);
+      root.style.setProperty("--foreground", palette.text);
+      root.style.setProperty("--card", palette.surface);
+      root.style.setProperty("--card-foreground", palette.text);
+      root.style.setProperty("--primary", palette.primary);
+      root.style.setProperty("--primary-foreground", "#ffffff");
+      root.style.setProperty("--primary-hover", palette.primary);
+      root.style.setProperty("--accent", palette.accent);
+      root.style.setProperty("--accent-foreground", "#ffffff");
+      root.style.setProperty("--muted", palette.muted);
+      root.style.setProperty("--muted-foreground", palette.muted);
+      root.style.setProperty("--border", palette.border);
+      root.style.setProperty("--input", palette.border);
+      root.style.setProperty("--ring", palette.primary);
+
       root.setAttribute("data-theme", theme.themeKey);
     }
 

@@ -161,16 +161,29 @@ public sealed partial class RoleTemplateService : IRoleTemplateService
 
         // Clone into every enabled site.
         var sites = await _db.Sites.Where(s => s.IsEnabled).ToListAsync(ct);
+        var clonedSites = new List<string>();
+        var failedSites = new List<(string Code, string Error)>();
+
         foreach (var site in sites)
         {
             try
             {
                 await CloneTemplateToSiteAsync(template, site, ct);
+                clonedSites.Add(site.Code);
             }
             catch (Exception ex)
             {
                 LogCloneFailure(ex, template.Key, site.Code);
+                failedSites.Add((site.Code, ex.Message));
             }
+        }
+
+        // If any site failed, throw with details so the user knows.
+        if (failedSites.Count > 0)
+        {
+            var errors = string.Join("; ", failedSites.Select(f => $"{f.Code}: {f.Error}"));
+            throw new BusinessRuleException("PUBLISH_PARTIAL_FAILURE",
+                $"Published to {clonedSites.Count}/{sites.Count} sites. Failures: {errors}");
         }
 
         await _audit.LogAsync(new AuditEntry(
@@ -178,12 +191,15 @@ public sealed partial class RoleTemplateService : IRoleTemplateService
             ActorIp: null, ActorUserAgent: null,
             Action: "role_template.publish", TargetType: "RoleTemplate", TargetId: template.Id.ToString(),
             Outcome: "success",
-            AfterJson: System.Text.Json.JsonSerializer.Serialize(new { template.Key, template.Version, SitesClonedTo = sites.Count })), ct);
+            AfterJson: System.Text.Json.JsonSerializer.Serialize(new { template.Key, template.Version, SitesClonedTo = clonedSites.Count })), ct);
     }
 
     private async Task CloneTemplateToSiteAsync(RoleTemplate template, Site site, CancellationToken ct)
     {
-        var siteDb = await _siteDbFactory.ResolveAsync(ct);
+        // CRITICAL: resolve by explicit siteId, NOT from JWT claim.
+        // PublishAsync is called by Platform Admin who has no site_id claim.
+        var siteDb = await _siteDbFactory.ResolveForSiteAsync(site.Id, ct);
+
         var role = await siteDb.Roles.FirstOrDefaultAsync(r => r.Key == template.Key, ct);
 
         if (role is null)
@@ -197,6 +213,7 @@ public sealed partial class RoleTemplateService : IRoleTemplateService
                 OriginTemplateId = template.Id,
             };
             siteDb.Roles.Add(role);
+            await siteDb.SaveChangesAsync(ct); // Save to get role.Id
         }
         else
         {
@@ -206,19 +223,47 @@ public sealed partial class RoleTemplateService : IRoleTemplateService
             role.OriginTemplateId = template.Id;
         }
 
-        // Sync permissions: load all permission rows matching template keys.
-        var desiredKeys = template.Permissions.Select(p => p.PermissionKey).ToList();
-        var desiredPerms = await siteDb.Permissions
+        // Ensure all permission keys exist in the site's Permissions table.
+        // Permissions are global constants — if a site DB doesn't have them
+        // yet, create them on the fly.
+        var desiredKeys = template.Permissions.Select(p => p.PermissionKey).Distinct().ToList();
+        var existingPerms = await siteDb.Permissions
             .Where(p => desiredKeys.Contains(p.Key))
             .ToListAsync(ct);
+        var existingKeys = existingPerms.Select(p => p.Key).ToHashSet();
+        var catalog = PermissionCatalog.Static;
 
-        // Remove existing role-permission rows.
-        var existingRps = await siteDb.RolePermissions
-            .Where(rp => rp.RoleId == role.Id)
-            .ToListAsync(ct);
-        siteDb.RolePermissions.RemoveRange(existingRps);
+        foreach (var key in desiredKeys)
+        {
+            if (!existingKeys.Contains(key))
+            {
+                // Find display info from static catalog.
+                var catPerm = catalog.Groups
+                    .SelectMany(g => g.Permissions)
+                    .FirstOrDefault(p => p.Key == key);
+                var group = catPerm != null
+                    ? catalog.Groups.First(g => g.Permissions.Contains(catPerm)).Group
+                    : "Custom";
 
-        foreach (var p in desiredPerms)
+                var newPerm = new Permission
+                {
+                    Key = key,
+                    DisplayName = catPerm?.Description ?? key,
+                    Group = group,
+                    IsPlatformOnly = false,
+                };
+                siteDb.Permissions.Add(newPerm);
+                existingPerms.Add(newPerm);
+            }
+        }
+        await siteDb.SaveChangesAsync(ct);
+
+        // Remove existing role-permission rows (use raw SQL to avoid tracking issues).
+        await siteDb.Database.ExecuteSqlInterpolatedAsync($@"
+            DELETE FROM RolePermissions WHERE RoleId = {role.Id}", ct);
+
+        // Insert new role-permission rows.
+        foreach (var p in existingPerms)
         {
             siteDb.RolePermissions.Add(new RolePermission { RoleId = role.Id, PermissionId = p.Id });
         }
