@@ -97,30 +97,48 @@ public sealed partial class RoleTemplateService : IRoleTemplateService
 
     public async Task<RoleDto> UpdateAsync(Guid id, RoleTemplateUpsertDto dto, CancellationToken ct = default)
     {
-        var t = await _db.RoleTemplates
-            .Include(x => x.Permissions)
-            .FirstOrDefaultAsync(x => x.Id == id, ct)
-            ?? throw new NotFoundException("RoleTemplate", id);
+        // Use bulk UPDATE — bypass change tracker entirely.
+        // The change-tracked path throws DbUpdateConcurrencyException because
+        // SQL Server uniqueidentifier comparisons in the WHERE clause are
+        // case-sensitive when EF generates the SQL, but the seeded data uses
+        // uppercase GUIDs while the request URL has lowercase. ExecuteUpdateAsync
+        // generates a single UPDATE statement that matches correctly.
+        var affected = await _db.RoleTemplates
+            .Where(x => x.Id == id)
+            .ExecuteUpdateAsync(setter => setter
+                .SetProperty(x => x.Key, dto.Key)
+                .SetProperty(x => x.DisplayName, dto.DisplayName)
+                .SetProperty(x => x.Description, dto.Description)
+                .SetProperty(x => x.IsSiteAdminRole, dto.IsSiteAdminRole)
+                .SetProperty(x => x.UpdatedAt, DateTime.UtcNow), ct);
 
-        t.Key = dto.Key;
-        t.DisplayName = dto.DisplayName;
-        t.Description = dto.Description;
-        t.IsSiteAdminRole = dto.IsSiteAdminRole;
+        if (affected == 0)
+            throw new NotFoundException("RoleTemplate", id);
 
-        // Explicitly remove existing permission rows from the DbContext.
-        // Just calling t.Permissions.Clear() is not enough in EF Core 10 when
-        // there's a unique index on (RoleTemplateId, PermissionKey) — the
-        // deleted entities stay in the change tracker and can conflict with
-        // the new ones we're about to add with the same key.
-        // RemoveRange marks them for DELETE in the next SaveChanges.
-        _db.RoleTemplatePermissions.RemoveRange(t.Permissions);
-        t.Permissions.Clear();
+        // Replace permissions: delete all existing, then insert new ones.
+        // ExecuteDeleteAsync generates a single DELETE WHERE clause that's
+        // case-insensitive on the FK column.
+        await _db.RoleTemplatePermissions
+            .Where(p => p.RoleTemplateId == id)
+            .ExecuteDeleteAsync(ct);
 
         foreach (var k in dto.PermissionKeys.Distinct())
-            t.Permissions.Add(new RoleTemplatePermission { PermissionKey = k });
+        {
+            _db.RoleTemplatePermissions.Add(new RoleTemplatePermission
+            {
+                RoleTemplateId = id,
+                PermissionKey = k,
+            });
+        }
 
         await _db.SaveChangesAsync(ct);
-        return Map(t);
+
+        // Reload for the response DTO.
+        var updated = await _db.RoleTemplates
+            .AsNoTracking()
+            .Include(x => x.Permissions)
+            .FirstOrDefaultAsync(x => x.Id == id, ct);
+        return Map(updated!);
     }
 
     public async Task PublishAsync(Guid id, Guid publishedBy, CancellationToken ct = default)
