@@ -65,12 +65,15 @@ public sealed record AuditQuery(
     int Skip = 0,
     int Take = 50);
 
-public sealed class AuditService : IAuditService
+public sealed partial class AuditService : IAuditService
 {
     private readonly PlatformDbContext _platformDb;
     private readonly ISiteDbContextFactory _siteDbFactory;
     private readonly ICurrentUserService _current;
     private readonly ILogger<AuditService> _log;
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Failed to write audit log entry: {Action}")]
+    private partial void LogAuditWriteFailure(Exception exception, string action);
 
     public AuditService(
         PlatformDbContext platformDb,
@@ -127,7 +130,7 @@ public sealed class AuditService : IAuditService
         catch (Exception ex)
         {
             // Audit log must NEVER cause a request to fail.
-            _log.LogError(ex, "Failed to write audit log entry: {Action}", entry.Action);
+            LogAuditWriteFailure(ex, entry.Action);
         }
     }
 

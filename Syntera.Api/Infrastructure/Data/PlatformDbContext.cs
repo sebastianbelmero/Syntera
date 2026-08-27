@@ -26,12 +26,12 @@ public sealed class PlatformDbContext : DbContext
     /// <summary>Platform-level key/value settings (e.g., AuditRetentionYears, TokenLifetimeMinutes).</summary>
     public DbSet<PlatformSetting> Settings => Set<PlatformSetting>();
 
-    protected override void OnModelCreating(ModelBuilder b)
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        base.OnModelCreating(b);
+        base.OnModelCreating(modelBuilder);
 
         // ── Site ─────────────────────────────────────────────────────────
-        b.Entity<Site>(e =>
+        modelBuilder.Entity<Site>(e =>
         {
             e.ToTable("Sites");
             e.HasKey(x => x.Id);
@@ -43,7 +43,7 @@ public sealed class PlatformDbContext : DbContext
             e.Property(x => x.Notes).HasMaxLength(2000);
         });
 
-        b.Entity<SiteLdapDomain>(e =>
+        modelBuilder.Entity<SiteLdapDomain>(e =>
         {
             e.ToTable("SiteLdapDomains");
             e.HasKey(x => x.Id);
@@ -55,7 +55,7 @@ public sealed class PlatformDbContext : DbContext
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
-        b.Entity<SiteLdapConfig>(e =>
+        modelBuilder.Entity<SiteLdapConfig>(e =>
         {
             e.ToTable("SiteLdapConfigs");
             e.HasKey(x => x.Id);
@@ -71,7 +71,7 @@ public sealed class PlatformDbContext : DbContext
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
-        b.Entity<SiteTheme>(e =>
+        modelBuilder.Entity<SiteTheme>(e =>
         {
             e.ToTable("SiteThemes");
             e.HasKey(x => x.Id);
@@ -85,7 +85,7 @@ public sealed class PlatformDbContext : DbContext
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
-        b.Entity<RoleTemplate>(e =>
+        modelBuilder.Entity<RoleTemplate>(e =>
         {
             e.ToTable("RoleTemplates");
             e.HasKey(x => x.Id);
@@ -95,7 +95,7 @@ public sealed class PlatformDbContext : DbContext
             e.Property(x => x.Description).HasMaxLength(500);
         });
 
-        b.Entity<RoleTemplatePermission>(e =>
+        modelBuilder.Entity<RoleTemplatePermission>(e =>
         {
             e.ToTable("RoleTemplatePermissions");
             e.HasKey(x => x.Id);
@@ -107,7 +107,7 @@ public sealed class PlatformDbContext : DbContext
             e.HasIndex(x => new { x.RoleTemplateId, x.PermissionKey }).IsUnique();
         });
 
-        b.Entity<PlatformUser>(e =>
+        modelBuilder.Entity<PlatformUser>(e =>
         {
             e.ToTable("PlatformUsers");
             e.HasKey(x => x.Id);
@@ -117,7 +117,7 @@ public sealed class PlatformDbContext : DbContext
             e.Property(x => x.DisplayName).HasMaxLength(160).IsRequired();
         });
 
-        b.Entity<RefreshToken>(e =>
+        modelBuilder.Entity<RefreshToken>(e =>
         {
             e.ToTable("RefreshTokens");
             e.HasKey(x => x.Id);
@@ -127,7 +127,7 @@ public sealed class PlatformDbContext : DbContext
             e.HasIndex(x => new { x.UserId, x.UserScope });
         });
 
-        b.Entity<AuditLog>(e =>
+        modelBuilder.Entity<AuditLog>(e =>
         {
             e.ToTable("AuditLogs");
             e.HasKey(x => x.Id);
@@ -150,7 +150,7 @@ public sealed class PlatformDbContext : DbContext
             // throws if any AuditLog entry is in Modified/Deleted state.
         });
 
-        b.Entity<PlatformSetting>(e =>
+        modelBuilder.Entity<PlatformSetting>(e =>
         {
             e.ToTable("PlatformSettings");
             e.HasKey(x => x.Key);
@@ -166,11 +166,11 @@ public sealed class PlatformDbContext : DbContext
         return base.SaveChanges();
     }
 
-    public override Task<int> SaveChangesAsync(CancellationToken ct = default)
+    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         StampAudit();
         RejectAuditLogMutation();
-        return base.SaveChangesAsync(ct);
+        return base.SaveChangesAsync(cancellationToken);
     }
 
     private void StampAudit()

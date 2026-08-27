@@ -15,6 +15,19 @@ namespace Syntera.Infrastructure.Seed;
 /// </summary>
 public static class DbSeeder
 {
+    // Hoisted per CA1861: SeedPlatformAsync runs on every boot — avoid re-allocating
+    // these arrays on each call.
+    private static readonly string[] ViewerPermissions =
+        { "dashboard.read", "audit.read", "profile.read" };
+
+    private static readonly string[] SiteBusinessAdminPermissions =
+    {
+        "user.read", "user.write", "user.disable", "user.sync",
+        "role.read", "user_role.assign", "user_role.revoke",
+        "permission.read", "permission.grant", "permission.revoke",
+        "audit.read", "report.read",
+    };
+
     /// <param name="db">Platform DB context.</param>
     /// <param name="adminEmail">Email for the platform admin (default: admin@syntera.com).</param>
     /// <param name="adminPassword">Plain-text password to hash with bcrypt. MUST come from
@@ -33,18 +46,12 @@ public static class DbSeeder
         // ── Default role templates ─────────────────────────────────────
         await EnsureRoleTemplate(db, "viewer", "Viewer", "Read-only access to dashboards and own profile.",
             isSiteAdminRole: false,
-            permissions: new[] { "dashboard.read", "audit.read", "profile.read" });
+            permissions: ViewerPermissions);
 
         await EnsureRoleTemplate(db, "site-business-admin", "Site Business Admin",
             "Manages users, roles, and permissions within own site.",
             isSiteAdminRole: true,
-            permissions: new[]
-            {
-                "user.read", "user.write", "user.disable", "user.sync",
-                "role.read", "user_role.assign", "user_role.revoke",
-                "permission.read", "permission.grant", "permission.revoke",
-                "audit.read", "report.read",
-            });
+            permissions: SiteBusinessAdminPermissions);
 
         // ── Default Platform Admin user ────────────────────────────────
         await EnsurePlatformAdminAsync(db, adminEmail, adminPassword);

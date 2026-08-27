@@ -1,5 +1,11 @@
 namespace Syntera.Domain.Entities;
 
+// CA1711 (identifiers should not end in 'Permission'): Permission, RolePermission and
+// UserPermission intentionally keep the suffix — they ARE the permission domain's
+// vocabulary (mirroring "role permission", "user permission" in the requirements),
+// and the table names derive from the DbSet properties, not from these class names.
+#pragma warning disable CA1711
+
 /// <summary>
 /// End user in a Site's database. Users are always authenticated via their
 /// site LDAP — Syntera itself never stores user passwords. A User row is
@@ -28,7 +34,7 @@ public class User : SoftDeletableEntity
     public DateTime? LastFailedLoginAt { get; set; }
 
     /// <summary>Number of consecutive failed logins since last success.</summary>
-    public int FailedLoginCount { get; set; } = 0;
+    public int FailedLoginCount { get; set; }
 
     /// <summary>If set, account is locked until this time (UTC). Auto-unlocks after.</summary>
     public DateTime? LockedUntil { get; set; }
@@ -82,7 +88,7 @@ public class Role : SoftDeletableEntity
     public string? Description { get; set; }
 
     /// <summary>If true, this role grants site-business-admin privileges within its site.</summary>
-    public bool IsSiteAdminRole { get; set; } = false;
+    public bool IsSiteAdminRole { get; set; }
 
     /// <summary>Origin template ID (Platform DB). For audit traceability.</summary>
     public Guid? OriginTemplateId { get; set; }
@@ -108,7 +114,7 @@ public class Permission : BaseEntity
     public string Group { get; set; } = string.Empty;
 
     /// <summary>If true, this permission is reserved for Platform Admin and cannot be granted at site level.</summary>
-    public bool IsPlatformOnly { get; set; } = false;
+    public bool IsPlatformOnly { get; set; }
 }
 
 /// <summary>Many-to-many between Role and Permission within a Site database.</summary>
@@ -144,13 +150,15 @@ public class UserPermission : BaseEntity
     /// <summary>Required: must be ≤ 90 days from <see cref="CreatedAt"/>. Enforced at save time.</summary>
     public DateTime ExpiresAt { get; set; }
 
-    /// <summary>If true, this is an explicit DENY (overrides any grant). Used for紧急 revocation.</summary>
-    public bool IsDeny { get; set; } = false;
+    /// <summary>If true, this is an explicit DENY (overrides any grant). Used for emergency revocation.</summary>
+    public bool IsDeny { get; set; }
 
     /// <summary>If true, grant was auto-revoked by expiry sweeper (no longer effective).</summary>
-    public bool IsRevoked { get; set; } = false;
+    public bool IsRevoked { get; set; }
 
     public DateTime? RevokedAt { get; set; }
 
     public Guid? RevokedBy { get; set; }
 }
+
+#pragma warning restore CA1711

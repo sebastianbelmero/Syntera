@@ -31,7 +31,7 @@ public interface IUserManagementService
     Task<UserSyncResultDto> TriggerSyncAsync(Guid triggeredBy, CancellationToken ct = default);
 }
 
-public sealed class UserManagementService : IUserManagementService
+public sealed partial class UserManagementService : IUserManagementService
 {
     private readonly PlatformDbContext _platformDb;
     private readonly ISiteDbContextFactory _siteDbFactory;
@@ -40,6 +40,9 @@ public sealed class UserManagementService : IUserManagementService
     private readonly ILdapClient _ldap;
     private readonly ILdapConfigProtector _protector;
     private readonly ILogger<UserManagementService> _log;
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "LDAP sync failed for site {SiteId}")]
+    private partial void LogLdapSyncFailure(Exception exception, Guid siteId);
 
     private const int MaxDirectPermissionDays = 90;
 
@@ -335,7 +338,7 @@ public sealed class UserManagementService : IUserManagementService
         }
         catch (Exception ex)
         {
-            _log.LogError(ex, "LDAP sync failed for site {SiteId}", siteId);
+            LogLdapSyncFailure(ex, siteId);
             history.Status = "failed";
             errors.Add(ex.Message);
         }

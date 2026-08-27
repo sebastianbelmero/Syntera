@@ -1,5 +1,8 @@
 namespace Syntera.Domain.Entities;
 
+// CA1711: RoleTemplatePermission keeps the suffix intentionally — see User.cs.
+#pragma warning disable CA1711
+
 /// <summary>
 /// Role template defined at the Platform level by <c>admin@syntera.com</c>.
 /// When a new Site is created, all published role templates are cloned into
@@ -18,10 +21,10 @@ public class RoleTemplate : BaseEntity
     public string? Description { get; set; }
 
     /// <summary>If true, role grants site-business-admin privileges when cloned.</summary>
-    public bool IsSiteAdminRole { get; set; } = false;
+    public bool IsSiteAdminRole { get; set; }
 
     /// <summary>If true, template is published and can be cloned into new sites.</summary>
-    public bool IsPublished { get; set; } = false;
+    public bool IsPublished { get; set; }
 
     /// <summary>Version number; bumped when permissions change. Sites track which version they cloned.</summary>
     public int Version { get; set; } = 1;
@@ -62,7 +65,7 @@ public class PlatformUser : BaseEntity
 
     public DateTime? LastFailedLoginAt { get; set; }
 
-    public int FailedLoginCount { get; set; } = 0;
+    public int FailedLoginCount { get; set; }
 
     public DateTime? LockedUntil { get; set; }
 }
@@ -105,3 +108,5 @@ public class RefreshToken : BaseEntity
 
     public string? CreatedUserAgent { get; set; }
 }
+
+#pragma warning restore CA1711

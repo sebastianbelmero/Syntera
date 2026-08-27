@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
@@ -62,7 +63,7 @@ public sealed class JwtTokenService : ITokenService
             new("email", email),
             new("display_name", displayName),
             new("scope", scope),
-            new("perm_ver", permissionsVersion.ToString()),
+            new("perm_ver", permissionsVersion.ToString(CultureInfo.InvariantCulture)),
         };
 
         if (siteId is not null)

@@ -24,12 +24,16 @@ public interface IRoleTemplateService
     Task<PermissionCatalogDto> GetPermissionCatalogAsync(CancellationToken ct = default);
 }
 
-public sealed class RoleTemplateService : IRoleTemplateService
+public sealed partial class RoleTemplateService : IRoleTemplateService
 {
     private readonly PlatformDbContext _db;
     private readonly ISiteDbContextFactory _siteDbFactory;
     private readonly IAuditService _audit;
     private readonly ILogger<RoleTemplateService> _log;
+
+    [LoggerMessage(Level = LogLevel.Error,
+        Message = "Failed to clone role template {TemplateKey} to site {SiteCode}")]
+    private partial void LogCloneFailure(Exception exception, string templateKey, string siteCode);
 
     public RoleTemplateService(
         PlatformDbContext db,
@@ -132,8 +136,7 @@ public sealed class RoleTemplateService : IRoleTemplateService
             }
             catch (Exception ex)
             {
-                _log.LogError(ex, "Failed to clone role template {TemplateKey} to site {SiteCode}",
-                    template.Key, site.Code);
+                LogCloneFailure(ex, template.Key, site.Code);
             }
         }
 

@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Serilog;
 using Syntera.Api.Extensions;
 using Syntera.Api.Middleware;
@@ -133,6 +134,10 @@ try
 
     // ─── Database init ─────────────────────────────────────────────
     // In Development: auto-migrate + seed so `dotnet run` "just works".
+    // Databases created by the pre-migration IAM builds (EnsureCreated
+    // era) carry the full schema but no migration history — DatabaseInitializer
+    // baselines them instead of replaying the initial migration (which would
+    // crash on the already-existing tables).
     // In Production: migrations must be applied via CLI before startup;
     // we only seed (idempotent — safe to call on every boot).
     using (var scope = app.Services.CreateScope())
@@ -141,7 +146,8 @@ try
 
         if (app.Environment.IsDevelopment())
         {
-            await platformDb.Database.MigrateAsync();
+            var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+            await DatabaseInitializer.MigrateOrBaselineAsync(platformDb, logger);
         }
 
         var adminEmail = app.Configuration["Seed:PlatformAdminEmail"] ?? "admin@syntera.com";

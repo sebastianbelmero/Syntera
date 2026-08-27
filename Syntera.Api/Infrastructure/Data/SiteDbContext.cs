@@ -24,11 +24,11 @@ public sealed class SiteDbContext : DbContext
     public DbSet<UserSyncHistory> UserSyncHistory => Set<UserSyncHistory>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
-    protected override void OnModelCreating(ModelBuilder b)
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        base.OnModelCreating(b);
+        base.OnModelCreating(modelBuilder);
 
-        b.Entity<User>(e =>
+        modelBuilder.Entity<User>(e =>
         {
             e.ToTable("Users");
             e.HasKey(x => x.Id);
@@ -38,7 +38,7 @@ public sealed class SiteDbContext : DbContext
             e.HasQueryFilter(x => !x.IsDeleted);
         });
 
-        b.Entity<Role>(e =>
+        modelBuilder.Entity<Role>(e =>
         {
             e.ToTable("Roles");
             e.HasKey(x => x.Id);
@@ -49,7 +49,7 @@ public sealed class SiteDbContext : DbContext
             e.HasQueryFilter(x => !x.IsDeleted);
         });
 
-        b.Entity<Permission>(e =>
+        modelBuilder.Entity<Permission>(e =>
         {
             e.ToTable("Permissions");
             e.HasKey(x => x.Id);
@@ -59,7 +59,7 @@ public sealed class SiteDbContext : DbContext
             e.Property(x => x.Group).HasMaxLength(64).IsRequired();
         });
 
-        b.Entity<UserRole>(e =>
+        modelBuilder.Entity<UserRole>(e =>
         {
             e.ToTable("UserRoles");
             e.HasKey(x => x.Id);
@@ -74,7 +74,7 @@ public sealed class SiteDbContext : DbContext
             e.HasIndex(x => new { x.UserId, x.RoleId }).IsUnique();
         });
 
-        b.Entity<RolePermission>(e =>
+        modelBuilder.Entity<RolePermission>(e =>
         {
             e.ToTable("RolePermissions");
             e.HasKey(x => x.Id);
@@ -89,7 +89,7 @@ public sealed class SiteDbContext : DbContext
             e.HasIndex(x => new { x.RoleId, x.PermissionId }).IsUnique();
         });
 
-        b.Entity<UserPermission>(e =>
+        modelBuilder.Entity<UserPermission>(e =>
         {
             e.ToTable("UserPermissions");
             e.HasKey(x => x.Id);
@@ -106,7 +106,7 @@ public sealed class SiteDbContext : DbContext
             e.HasIndex(x => x.ExpiresAt);
         });
 
-        b.Entity<AuditLog>(e =>
+        modelBuilder.Entity<AuditLog>(e =>
         {
             e.ToTable("AuditLogs");
             e.HasKey(x => x.Id);
@@ -125,7 +125,7 @@ public sealed class SiteDbContext : DbContext
             e.Property(x => x.PreviousHash).HasMaxLength(128).IsRequired();
         });
 
-        b.Entity<UserSyncHistory>(e =>
+        modelBuilder.Entity<UserSyncHistory>(e =>
         {
             e.ToTable("UserSyncHistory");
             e.HasKey(x => x.Id);
@@ -133,7 +133,7 @@ public sealed class SiteDbContext : DbContext
             e.Property(x => x.Errors).HasMaxLength(8000);
         });
 
-        b.Entity<RefreshToken>(e =>
+        modelBuilder.Entity<RefreshToken>(e =>
         {
             e.ToTable("RefreshTokens");
             e.HasKey(x => x.Id);
@@ -150,11 +150,11 @@ public sealed class SiteDbContext : DbContext
         return base.SaveChanges();
     }
 
-    public override Task<int> SaveChangesAsync(CancellationToken ct = default)
+    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         StampAudit();
         RejectAuditLogMutation();
-        return base.SaveChangesAsync(ct);
+        return base.SaveChangesAsync(cancellationToken);
     }
 
     private void StampAudit()

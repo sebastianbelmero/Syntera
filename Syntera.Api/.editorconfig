@@ -1,0 +1,8 @@
+# Analyzer tuning for the Syntera.Api project.
+#
+# CA1861 (avoid constant array arguments) fires on the `new[] { "ColA", "ColB" }`
+# literals that dotnet-ef generates inside CreateIndex calls. Migrations execute
+# exactly once per database lifetime — the rule's "called repeatedly" premise
+# does not apply to them.
+[Migrations/**]
+dotnet_diagnostic.CA1861.severity = none

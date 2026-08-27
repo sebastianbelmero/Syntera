@@ -68,7 +68,7 @@ public class SiteLdapConfig : BaseEntity
     public int Port { get; set; } = 636;
 
     /// <summary>If true, connection upgrades to TLS after initial bind on port 389 (StartTLS).</summary>
-    public bool UseStartTls { get; set; } = false;
+    public bool UseStartTls { get; set; }
 
     /// <summary>Base DN for user search, e.g., "DC=KALVENTIS,DC=DOM".</summary>
     public string BaseDn { get; set; } = string.Empty;

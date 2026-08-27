@@ -397,6 +397,16 @@ dotnet ef database update --context SiteDbContext --connection "<site-conn-strin
 dotnet ef database drop --context PlatformDbContext --force
 ```
 
+### Catatan: database lama era `EnsureCreated` (baseline otomatis)
+
+Build IAM awal membuat `syntera_master` lewat `EnsureCreated` — skema lengkap
+TANPA migration history, sehingga `MigrateAsync` biasa akan crash
+(`There is already an object named 'AuditLogs' in the database`).
+Sekarang `dotnet run` (Development) mendeteksi kondisi ini lewat
+`DatabaseInitializer` dan otomatis **baseline**: semua migration tercatat sebagai
+sudah diterapkan tanpa replay, data lama (admin, sites, themes, audit) tetap utuh.
+Instalasi baru dan penambahan migration berikutnya tetap lewat jalur normal.
+
 ---
 
 ## Default Credentials (Development)

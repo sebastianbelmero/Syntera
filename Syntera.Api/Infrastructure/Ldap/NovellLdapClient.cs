@@ -1,3 +1,4 @@
+using System.Globalization;
 using Novell.Directory.Ldap;
 
 namespace Syntera.Infrastructure.Ldap;
@@ -71,14 +72,14 @@ public sealed class NovellLdapClient : ILdapClient
             // StartTLS if applicable.
             if (endpoint.UseStartTls && endpoint.Port != 636)
             {
-                await conn.StartTlsAsync().ConfigureAwait(false);
+                await conn.StartTlsAsync(ct).ConfigureAwait(false);
             }
 
             // Bind with service account (if configured) or anonymous to search for the user DN.
             if (!string.IsNullOrEmpty(creds.BindDn) && !string.IsNullOrEmpty(creds.BindPassword))
-                await conn.BindAsync(creds.BindDn, creds.BindPassword).ConfigureAwait(false);
+                await conn.BindAsync(creds.BindDn, creds.BindPassword, ct).ConfigureAwait(false);
             else
-                await conn.BindAsync(string.Empty, string.Empty).ConfigureAwait(false); // anonymous
+                await conn.BindAsync(string.Empty, string.Empty, ct).ConfigureAwait(false); // anonymous
 
             // Search for the user by email.
             var filter = BuildUserFilter(endpoint, escaped);
@@ -110,18 +111,15 @@ public sealed class NovellLdapClient : ILdapClient
             // Check account is active.
             var attrSet = userEntry.GetAttributeSet();
             string? displayName = null;
-            if (attrSet.ContainsKey(AttrDisplayName))
-                displayName = attrSet[AttrDisplayName].StringValue;
+            if (attrSet.TryGetValue(AttrDisplayName, out var displayNameAttr))
+                displayName = displayNameAttr.StringValue;
 
-            if (attrSet.ContainsKey(AttrAccountControl))
+            if (attrSet.TryGetValue(AttrAccountControl, out var uacAttr)
+                && int.TryParse(uacAttr.StringValue, out var uac) && (uac & UF_ACCOUNTDISABLE) != 0)
             {
-                var uacStr = attrSet[AttrAccountControl].StringValue;
-                if (int.TryParse(uacStr, out var uac) && (uac & UF_ACCOUNTDISABLE) != 0)
-                {
-                    return new LdapAuthResult(false, userEntry.Dn, email, displayName,
-                        "LDAP account is disabled (userAccountControl has ACCOUNTDISABLE bit).",
-                        (int)sw.Elapsed.TotalMilliseconds);
-                }
+                return new LdapAuthResult(false, userEntry.Dn, email, displayName,
+                    "LDAP account is disabled (userAccountControl has ACCOUNTDISABLE bit).",
+                    (int)sw.Elapsed.TotalMilliseconds);
             }
 
             displayName ??= email;
@@ -129,7 +127,7 @@ public sealed class NovellLdapClient : ILdapClient
             // Perform the actual user bind.
             try
             {
-                await conn.BindAsync(userEntry.Dn, password).ConfigureAwait(false);
+                await conn.BindAsync(userEntry.Dn, password, ct).ConfigureAwait(false);
                 if (!conn.Bound)
                 {
                     return new LdapAuthResult(false, userEntry.Dn, email, displayName,
@@ -167,10 +165,10 @@ public sealed class NovellLdapClient : ILdapClient
         using var conn = CreateConnection(endpoint);
         await conn.ConnectAsync(endpoint.Host, endpoint.Port, ct).ConfigureAwait(false);
         if (endpoint.UseStartTls && endpoint.Port != 636)
-            await conn.StartTlsAsync().ConfigureAwait(false);
+            await conn.StartTlsAsync(ct).ConfigureAwait(false);
 
         if (!string.IsNullOrEmpty(creds.BindDn) && !string.IsNullOrEmpty(creds.BindPassword))
-            await conn.BindAsync(creds.BindDn, creds.BindPassword).ConfigureAwait(false);
+            await conn.BindAsync(creds.BindDn, creds.BindPassword, ct).ConfigureAwait(false);
         else
             throw new InvalidOperationException("LDAP sync requires a service account (BindDn + BindPassword).");
 
@@ -183,20 +181,19 @@ public sealed class NovellLdapClient : ILdapClient
         await foreach (var entry in searchResults.WithCancellation(ct).ConfigureAwait(false))
         {
             var attrSet = entry.GetAttributeSet();
-            if (!attrSet.ContainsKey(AttrEmail)) continue;
-            var email = attrSet[AttrEmail].StringValue;
+            if (!attrSet.TryGetValue(AttrEmail, out var emailAttr)) continue;
+            var email = emailAttr.StringValue;
             if (string.IsNullOrWhiteSpace(email)) continue;
 
-            var displayName = attrSet.ContainsKey(AttrDisplayName)
-                ? attrSet[AttrDisplayName].StringValue
+            var displayName = attrSet.TryGetValue(AttrDisplayName, out var displayNameAttr)
+                ? displayNameAttr.StringValue
                 : email;
 
             bool isActive = true;
-            if (attrSet.ContainsKey(AttrAccountControl))
+            if (attrSet.TryGetValue(AttrAccountControl, out var uacAttr)
+                && int.TryParse(uacAttr.StringValue, out var uac))
             {
-                var uacStr = attrSet[AttrAccountControl].StringValue;
-                if (int.TryParse(uacStr, out var uac))
-                    isActive = (uac & UF_ACCOUNTDISABLE) == 0;
+                isActive = (uac & UF_ACCOUNTDISABLE) == 0;
             }
 
             yield return new LdapUserEntry(entry.Dn, email, displayName, isActive);
@@ -223,7 +220,7 @@ public sealed class NovellLdapClient : ILdapClient
                 case '\\': sb.Append("\\5c"); break;
                 case '\0': sb.Append("\\00"); break;
                 default:
-                    if (c < 0x20) sb.Append('\\').Append(((int)c).ToString("x2"));
+                    if (c < 0x20) sb.Append('\\').Append(((int)c).ToString("x2", CultureInfo.InvariantCulture));
                     else sb.Append(c);
                     break;
             }
@@ -241,6 +238,9 @@ public sealed class NovellLdapClient : ILdapClient
             .Replace("{email}", escapedEmail);
     }
 
+#pragma warning disable CA5359 // Deliberate dev concession: dev LDAP servers use self-signed
+    // certificates. Production must trust the enterprise CA and drop this override
+    // (tracked as follow-up: config-driven Ldap:ValidateServerCertificate switch).
     private static LdapConnection CreateConnection(LdapEndpoint endpoint)
     {
         var options = new LdapConnectionOptions();
@@ -257,4 +257,5 @@ public sealed class NovellLdapClient : ILdapClient
         };
         return conn;
     }
+#pragma warning restore CA5359
 }
