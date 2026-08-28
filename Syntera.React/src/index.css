@@ -1305,3 +1305,16 @@ body {
     animation: none;
   }
 }
+
+/* ============================================
+   Placeholder + dark mode polish
+   ============================================ */
+
+.input::placeholder {
+  opacity: 0.6;
+  color: var(--color-muted, var(--muted-foreground, #64748B));
+}
+
+.dark .input::placeholder {
+  opacity: 0.75;
+}

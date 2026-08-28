@@ -116,7 +116,7 @@ function SiteCard({ site, onEdit, onConfigureLdap, onEditTheme, onAssignAdmin, o
         </button>
         <button onClick={onAssignAdmin} type="button"
           className="flex items-center justify-center gap-1.5 px-2 py-2.5 rounded-lg text-xs min-h-[44px] transition hover:opacity-80"
-          style={{ backgroundColor: "var(--color-accent)", color: "var(--color-text)" }}>
+          style={{ backgroundColor: "var(--color-accent)", color: "var(--color-accent-foreground)" }}>
           <UserPlus size={16} /> Add Admin
         </button>
         <button onClick={onConfigureLdap} type="button"

@@ -84,11 +84,11 @@ export default function UsersPage() {
                 <div className="flex flex-wrap gap-1 sm:max-w-md">
                   {u.roles.map((r) => (
                     <span key={r.roleId} className="text-xs px-2 py-0.5 rounded"
-                      style={{ backgroundColor: "var(--color-accent)", color: "var(--color-text)" }}>{r.roleDisplayName}</span>
+                      style={{ backgroundColor: "var(--color-accent)", color: "var(--color-accent-foreground)" }}>{r.roleDisplayName}</span>
                   ))}
                   {u.directPermissions.filter(p => !p.isRevoked).length > 0 && (
                     <span className="text-xs px-2 py-0.5 rounded flex items-center gap-1"
-                      style={{ backgroundColor: "var(--color-warning)", color: "var(--color-text)" }}>
+                      style={{ backgroundColor: "var(--color-warning)", color: "var(--color-primary-foreground)" }}>
                       <Clock size={10} /> {u.directPermissions.filter(p => !p.isRevoked).length} direct
                     </span>
                   )}
@@ -276,7 +276,7 @@ function UserDrawer({ user, roles, catalog, isPlatformAdmin, onClose }: {
 
         {/* Scrollable content */}
         <div className="flex-1 overflow-y-auto p-6">
-        <div className="space-y-4">
+        <div className="space-y-3">
           <Field label="Email"><input className="input" value={form.email} disabled={!isNew}
             onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="user@kalventis.com" /></Field>
           <Field label="Display Name"><input className="input" value={form.displayName}

@@ -123,8 +123,8 @@ public sealed class ThemeService : IThemeService
 
     public static DTOs.Auth.ThemePalette DefaultDark() => new(
         Primary: "#60A5FA", Accent: "#22D3EE",
-        Background: "#0F172A", Surface: "#1E293B",
-        Text: "#F1F5F9", Muted: "#94A3B8",
-        Border: "#334155",
+        Background: "#0A0E16", Surface: "#18202E",
+        Text: "#F1F5F9", Muted: "#9CA8B5",
+        Border: "#283246",
         Success: "#34D399", Warning: "#FBBF24", Danger: "#F87171");
 }
