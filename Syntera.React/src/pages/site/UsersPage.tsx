@@ -271,7 +271,7 @@ function UserDrawer({ user, roles, catalog, isPlatformAdmin, onClose }: {
         <div className="flex items-center justify-between px-6 pt-6 pb-3 shrink-0 sticky top-0 z-10"
           style={{ backgroundColor: "var(--color-surface)", borderBottom: "1px solid var(--color-border)" }}>
           <h2 className="text-lg font-semibold">{isNew ? "New User" : `Edit ${user?.displayName ?? ""}`}</h2>
-          <button onClick={onClose} className="text-2xl leading-none p-1 rounded hover:opacity-70" aria-label="Close">×</button>
+          <button onClick={onClose} className="text-2xl leading-none p-2 rounded-lg hover:opacity-70 transition-opacity min-h-[40px] min-w-[40px] flex items-center justify-center" aria-label="Close">×</button>
         </div>
 
         {/* Scrollable content */}
@@ -303,17 +303,19 @@ function UserDrawer({ user, roles, catalog, isPlatformAdmin, onClose }: {
             </div>
           )}
 
-          <div className="flex justify-end gap-2">
+          <div className="flex justify-end gap-2 pt-4 sticky bottom-0" style={{ backgroundColor: "var(--color-surface)" }}>
+            <button type="button" onClick={onClose} className="px-4 py-2.5 rounded-lg text-sm min-h-[44px]"
+              style={{ border: "1px solid var(--color-border)" }}>Cancel</button>
             {!isNew && user?.isEnabled && (
-              <button onClick={handleDisable} disabled={disableMutation.isPending}
-                className="px-3 py-2 rounded-md text-sm flex items-center gap-1 disabled:opacity-50"
+              <button type="button" onClick={handleDisable} disabled={disableMutation.isPending}
+                className="px-3 py-2.5 rounded-lg text-sm flex items-center gap-1 disabled:opacity-50 min-h-[44px]"
                 style={{ color: "var(--color-danger)", border: "1px solid var(--color-danger)" }}>
-                <Power size={14} /> Disable
+                <Power size={16} /> Disable
               </button>
             )}
-            <button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}
-              className="px-4 py-2 rounded-md text-sm disabled:opacity-50"
-              style={{ backgroundColor: "var(--color-primary)", color: "white" }}>
+            <button type="button" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}
+              className="px-4 py-2.5 rounded-lg text-sm disabled:opacity-50 min-h-[44px]"
+              style={{ backgroundColor: "var(--color-primary)", color: "var(--color-primary-foreground)" }}>
               {saveMutation.isPending ? "Saving..." : "Save"}
             </button>
           </div>

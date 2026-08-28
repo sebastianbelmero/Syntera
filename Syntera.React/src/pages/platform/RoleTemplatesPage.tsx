@@ -186,7 +186,7 @@ function TemplateDrawer({ template, catalog, onClose }: {
         <div className="flex items-center justify-between px-6 pt-6 pb-3 shrink-0 sticky top-0 z-10"
           style={{ backgroundColor: "var(--color-surface)", borderBottom: "1px solid var(--color-border)" }}>
           <h2 className="text-lg font-semibold">{isNew ? "New Role Template" : `Edit ${template?.displayName}`}</h2>
-          <button onClick={onClose} className="text-2xl leading-none p-1 rounded hover:opacity-70" aria-label="Close">×</button>
+          <button onClick={onClose} className="text-2xl leading-none p-2 rounded-lg hover:opacity-70 transition-opacity min-h-[40px] min-w-[40px] flex items-center justify-center" aria-label="Close">×</button>
         </div>
 
         {/* Scrollable content */}

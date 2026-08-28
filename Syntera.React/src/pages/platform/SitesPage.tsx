@@ -195,12 +195,12 @@ function SiteEditDrawer({ site, onClose }: { site: SiteDto; onClose: () => void 
           </div>
         </Field>
 
-        <div className="flex justify-end gap-2 pt-4">
-          <button onClick={onClose} className="px-4 py-2 rounded-md text-sm"
+        <div className="flex justify-end gap-2 pt-4 sticky bottom-0" style={{ backgroundColor: "var(--color-surface)" }}>
+          <button type="button" onClick={onClose} className="px-4 py-2.5 rounded-lg text-sm min-h-[44px]"
             style={{ border: "1px solid var(--color-border)" }}>Cancel</button>
-          <button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}
-            className="px-4 py-2 rounded-md text-sm disabled:opacity-50"
-            style={{ backgroundColor: "var(--color-primary)", color: "white" }}>
+          <button type="button" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}
+            className="px-4 py-2.5 rounded-lg text-sm min-h-[44px] disabled:opacity-50"
+            style={{ backgroundColor: "var(--color-primary)", color: "var(--color-primary-foreground)" }}>
             {saveMutation.isPending ? "Saving..." : "Save"}
           </button>
         </div>
@@ -364,12 +364,12 @@ function LdapDrawer({ site, onClose }: { site: SiteDto; onClose: () => void }) {
           )}
         </div>
 
-        <div className="flex justify-end gap-2 pt-4">
-          <button onClick={onClose} className="px-4 py-2 rounded-md text-sm"
+        <div className="flex justify-end gap-2 pt-4 sticky bottom-0" style={{ backgroundColor: "var(--color-surface)" }}>
+          <button type="button" onClick={onClose} className="px-4 py-2.5 rounded-lg text-sm min-h-[44px]"
             style={{ border: "1px solid var(--color-border)" }}>Cancel</button>
-          <button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}
-            className="px-4 py-2 rounded-md text-sm disabled:opacity-50"
-            style={{ backgroundColor: "var(--color-primary)", color: "white" }}>
+          <button type="button" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}
+            className="px-4 py-2.5 rounded-lg text-sm min-h-[44px] disabled:opacity-50"
+            style={{ backgroundColor: "var(--color-primary)", color: "var(--color-primary-foreground)" }}>
             {saveMutation.isPending ? "Saving..." : "Save"}
           </button>
         </div>
@@ -430,12 +430,12 @@ function ThemeDrawer({ site, onClose }: { site: SiteDto; onClose: () => void }) 
           <ColorGrid palette={dark} onChange={setDark} />
         </div>
 
-        <div className="flex justify-end gap-2 pt-4">
-          <button onClick={onClose} className="px-4 py-2 rounded-md text-sm"
+        <div className="flex justify-end gap-2 pt-4 sticky bottom-0" style={{ backgroundColor: "var(--color-surface)" }}>
+          <button type="button" onClick={onClose} className="px-4 py-2.5 rounded-lg text-sm min-h-[44px]"
             style={{ border: "1px solid var(--color-border)" }}>Cancel</button>
-          <button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}
-            className="px-4 py-2 rounded-md text-sm disabled:opacity-50"
-            style={{ backgroundColor: "var(--color-primary)", color: "white" }}>
+          <button type="button" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}
+            className="px-4 py-2.5 rounded-lg text-sm min-h-[44px] disabled:opacity-50"
+            style={{ backgroundColor: "var(--color-primary)", color: "var(--color-primary-foreground)" }}>
             {saveMutation.isPending ? "Saving..." : "Save"}
           </button>
         </div>
@@ -666,7 +666,7 @@ function Drawer({ title, onClose, children }: { title: string; onClose: () => vo
         <div className="flex items-center justify-between mb-4 px-6 pt-6 pb-3 shrink-0 sticky top-0 z-10"
           style={{ backgroundColor: "var(--color-surface)", borderBottom: "1px solid var(--color-border)" }}>
           <h2 className="text-lg font-semibold">{title}</h2>
-          <button onClick={onClose} className="text-2xl leading-none p-1 rounded hover:opacity-70" aria-label="Close">×</button>
+          <button onClick={onClose} className="text-2xl leading-none p-2 rounded-lg hover:opacity-70 transition-opacity min-h-[40px] min-w-[40px] flex items-center justify-center" aria-label="Close">×</button>
         </div>
         {/* Scrollable content */}
         <div className="flex-1 overflow-y-auto px-6 pb-6">
