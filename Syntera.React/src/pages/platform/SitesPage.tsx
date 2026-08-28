@@ -644,16 +644,31 @@ function AdminDrawer({ site, onClose }: { site: SiteDto; onClose: () => void }) 
 // ─── Helpers ────────────────────────────────────────────────────────
 
 function Drawer({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", handleEsc);
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", handleEsc);
+      document.body.style.overflow = "";
+    };
+  }, [onClose]);
+
   return (
     <div className="fixed inset-0 z-50 flex justify-end syntera-drawer-backdrop" style={{ backgroundColor: "rgba(0,0,0,0.4)" }} onClick={onClose}>
-      <div className="w-full max-w-md h-full overflow-y-auto p-6 syntera-drawer-panel"
+      <div className="w-full max-w-md h-full flex flex-col syntera-drawer-panel"
         style={{ backgroundColor: "var(--color-surface)" }}
         onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-4">
+        {/* Sticky header — always visible, even on mobile full-screen */}
+        <div className="flex items-center justify-between mb-4 px-6 pt-6 pb-3 shrink-0 sticky top-0 z-10"
+          style={{ backgroundColor: "var(--color-surface)", borderBottom: "1px solid var(--color-border)" }}>
           <h2 className="text-lg font-semibold">{title}</h2>
-          <button onClick={onClose} className="text-2xl leading-none">×</button>
+          <button onClick={onClose} className="text-2xl leading-none p-1 rounded hover:opacity-70" aria-label="Close">×</button>
         </div>
-        {children}
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-y-auto px-6 pb-6">
+          {children}
+        </div>
       </div>
     </div>
   );

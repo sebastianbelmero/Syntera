@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Plus, Pencil, Send } from "lucide-react";
@@ -150,6 +150,17 @@ function TemplateDrawer({ template, catalog, onClose }: {
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed"),
   });
 
+  // Escape key + body scroll lock
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", handleEsc);
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", handleEsc);
+      document.body.style.overflow = "";
+    };
+  }, [onClose]);
+
   const togglePerm = (key: string) => {
     setForm((f) => ({
       ...f,
@@ -161,15 +172,18 @@ function TemplateDrawer({ template, catalog, onClose }: {
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end syntera-drawer-backdrop" style={{ backgroundColor: "rgba(0,0,0,0.4)" }} onClick={onClose}>
-      <div className="w-full max-w-2xl h-full overflow-y-auto p-6 syntera-drawer-panel"
+      <div className="w-full max-w-2xl h-full flex flex-col syntera-drawer-panel"
         style={{ backgroundColor: "var(--color-surface)" }}
         onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-4">
+        {/* Sticky header */}
+        <div className="flex items-center justify-between px-6 pt-6 pb-3 shrink-0 sticky top-0 z-10"
+          style={{ backgroundColor: "var(--color-surface)", borderBottom: "1px solid var(--color-border)" }}>
           <h2 className="text-lg font-semibold">{isNew ? "New Role Template" : `Edit ${template?.displayName}`}</h2>
-          <button onClick={onClose} className="text-2xl leading-none">×</button>
+          <button onClick={onClose} className="text-2xl leading-none p-1 rounded hover:opacity-70" aria-label="Close">×</button>
         </div>
 
-        <div className="space-y-4">
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-4">
           <Field label="Key"><input className="input" value={form.key} disabled={!isNew}
             onChange={(e) => setForm({ ...form, key: e.target.value })} placeholder="viewer" /></Field>
           <Field label="Display Name"><input className="input" value={form.displayName}
@@ -207,6 +221,7 @@ function TemplateDrawer({ template, catalog, onClose }: {
             </div>
           </div>
 
+          {/* Sticky footer with Cancel + Save */}
           <div className="flex justify-end gap-2 pt-4 sticky bottom-0" style={{ backgroundColor: "var(--color-surface)" }}>
             <button onClick={onClose} className="px-4 py-2 rounded-md text-sm" style={{ border: "1px solid var(--color-border)" }}>Cancel</button>
             <button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}

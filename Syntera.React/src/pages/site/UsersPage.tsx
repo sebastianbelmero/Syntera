@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Plus, Power, Key, Shield, Clock } from "lucide-react";
@@ -128,6 +128,17 @@ function UserDrawer({ user, roles, catalog, isPlatformAdmin, onClose }: {
   const [grantReason, setGrantReason] = useState("");
   const [grantExpiry, setGrantExpiry] = useState("");
 
+  // Escape key + body scroll lock
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", handleEsc);
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", handleEsc);
+      document.body.style.overflow = "";
+    };
+  }, [onClose]);
+
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: USERS_KEY });
   };
@@ -243,14 +254,18 @@ function UserDrawer({ user, roles, catalog, isPlatformAdmin, onClose }: {
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end syntera-drawer-backdrop" style={{ backgroundColor: "rgba(0,0,0,0.4)" }} onClick={onClose}>
-      <div className="w-full max-w-2xl h-full overflow-y-auto p-6 syntera-drawer-panel"
+      <div className="w-full max-w-2xl h-full flex flex-col syntera-drawer-panel"
         style={{ backgroundColor: "var(--color-surface)" }}
         onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-4">
+        {/* Sticky header — always visible on mobile */}
+        <div className="flex items-center justify-between px-6 pt-6 pb-3 shrink-0 sticky top-0 z-10"
+          style={{ backgroundColor: "var(--color-surface)", borderBottom: "1px solid var(--color-border)" }}>
           <h2 className="text-lg font-semibold">{isNew ? "New User" : `Edit ${user?.displayName ?? ""}`}</h2>
-          <button onClick={onClose} className="text-2xl leading-none">×</button>
+          <button onClick={onClose} className="text-2xl leading-none p-1 rounded hover:opacity-70" aria-label="Close">×</button>
         </div>
 
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-y-auto p-6">
         <div className="space-y-4">
           <Field label="Email"><input className="input" value={form.email} disabled={!isNew}
             onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="user@kalventis.com" /></Field>
@@ -382,6 +397,7 @@ function UserDrawer({ user, roles, catalog, isPlatformAdmin, onClose }: {
               )}
             </>
           )}
+        </div>
         </div>
       </div>
     </div>
