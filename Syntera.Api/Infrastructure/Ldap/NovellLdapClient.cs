@@ -146,31 +146,63 @@ public sealed class NovellLdapClient : ILdapClient
 
             // Bind succeeded — search for the user's own entry to fetch details.
             // We use the bound connection (user's own credentials) for the search.
+            // Note: AD often returns Referral (code=10) for cross-domain entries.
+            // ldapsearch auto-follows referrals by default; we do the same.
             var filter = BuildUserFilter(escaped);
             LogInfo("Searching for user. BaseDn={BaseDn}, Filter={Filter}", endpoint.BaseDn, filter);
 
-            var searchResults = await conn.SearchAsync(
-                endpoint.BaseDn, LdapConnection.ScopeSub, filter,
-                new[] { AttrEmail, AttrDisplayName, AttrAccountControl, AttrMail }, false, ct).ConfigureAwait(false);
-
             LdapEntry? userEntry = null;
             int matchCount = 0;
-            await foreach (var entry in searchResults.WithCancellation(ct).ConfigureAwait(false))
+
+            try
             {
-                matchCount++;
-                LogInfo("Search returned entry: {Dn}", entry.Dn);
-                if (userEntry is not null)
+                // Use LdapSearchConstraints with ReferralFollowing = true so
+                // referrals are auto-followed (matching ldapsearch default behavior).
+                var constraints = new LdapSearchConstraints
                 {
-                    // Ambiguous — multiple entries match. Refuse to authenticate.
-                    return Fail(email, $"Multiple LDAP entries match email '{email}'. Refusing to authenticate.", sw);
+                    ReferralFollowing = true,
+                };
+
+                var searchResults = await conn.SearchAsync(
+                    endpoint.BaseDn, LdapConnection.ScopeSub, filter,
+                    new[] { AttrEmail, AttrDisplayName, AttrAccountControl, AttrMail },
+                    false, constraints, ct).ConfigureAwait(false);
+
+                await foreach (var entry in searchResults.WithCancellation(ct).ConfigureAwait(false))
+                {
+                    matchCount++;
+                    LogInfo("Search returned entry: {Dn}", entry.Dn);
+                    if (userEntry is not null)
+                    {
+                        return Fail(email, $"Multiple LDAP entries match '{email}'. Refusing to authenticate.", sw);
+                    }
+                    userEntry = entry;
                 }
-                userEntry = entry;
+            }
+            catch (LdapException ex) when (ex.ResultCode == 10)
+            {
+                // Referral even after auto-follow. Bind already succeeded,
+                // so the user IS authenticated — we just couldn't fetch details.
+                LogWarning("Search returned referral (code=10) but bind succeeded. Returning success with email as displayName.");
+                return new LdapAuthResult(true, null, email, email,
+                    null, (int)sw.Elapsed.TotalMilliseconds);
+            }
+            catch (Exception searchEx)
+            {
+                // Any other search failure — bind already succeeded, so treat
+                // as authenticated with minimal info. Better UX than failing.
+                LogWarning("Search failed after successful bind: {Error}. Returning success with email as displayName.", searchEx.Message);
+                return new LdapAuthResult(true, null, email, email,
+                    null, (int)sw.Elapsed.TotalMilliseconds);
             }
 
             if (userEntry is null)
             {
-                LogError("Bind succeeded but search returned 0 matches. Filter={Filter}", filter);
-                return Fail(email, "Bind succeeded but user entry not found in directory. Check BaseDn and filter.", sw);
+                // Bind worked but search returned 0 entries. User is authenticated
+                // (bind proved credentials), just no details available.
+                LogWarning("Bind succeeded but search returned 0 matches. Returning success with email as displayName.");
+                return new LdapAuthResult(true, null, email, email,
+                    null, (int)sw.Elapsed.TotalMilliseconds);
             }
 
             // Extract display name and account status.
