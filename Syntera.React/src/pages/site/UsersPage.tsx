@@ -30,6 +30,7 @@ export default function UsersPage() {
   const { data: catalog } = useQuery<PermissionCatalogDto>({
     queryKey: ["permission-catalog"],
     queryFn: () => roleTemplatesApi.permissionCatalog(),
+    enabled: isPlatformAdmin, // Only fetch for platform admin (endpoint is PlatformAdminOnly)
     retry: false,
   });
 
@@ -134,7 +135,8 @@ function UserDrawer({ user, roles, catalog, isPlatformAdmin, onClose }: {
   const saveMutation = useMutation({
     mutationFn: async () => {
       if (isNew) return usersApi.create(form);
-      return usersApi.update(user!.id, form);
+      if (!user) throw new Error("No user selected");
+      return usersApi.update(user.id, form);
     },
     onSuccess: () => {
       toast.success("Saved");
@@ -145,7 +147,10 @@ function UserDrawer({ user, roles, catalog, isPlatformAdmin, onClose }: {
   });
 
   const disableMutation = useMutation({
-    mutationFn: () => usersApi.disable(user!.id),
+    mutationFn: () => {
+      if (!user) throw new Error("No user selected");
+      return usersApi.disable(user.id);
+    },
     onSuccess: () => {
       toast.success("User disabled");
       invalidate();
@@ -164,7 +169,7 @@ function UserDrawer({ user, roles, catalog, isPlatformAdmin, onClose }: {
   });
 
   const revokeRoleMutation = useMutation({
-    mutationFn: (roleId: string) => usersApi.revokeRole({ userId: user!.id, roleId }),
+    mutationFn: (roleId: string) => usersApi.revokeRole({ userId: user?.id ?? "", roleId }),
     onSuccess: () => {
       toast.success("Role revoked");
       invalidate();
@@ -192,13 +197,14 @@ function UserDrawer({ user, roles, catalog, isPlatformAdmin, onClose }: {
   });
 
   const handleDisable = () => {
-    if (!confirm(`Disable user ${user!.email}?`)) return;
+    if (!user) return;
+    if (!confirm(`Disable user ${user.email}?`)) return;
     disableMutation.mutate();
   };
 
   const handleAssignRole = () => {
-    if (!assignRoleId) return;
-    assignRoleMutation.mutate({ userId: user!.id, roleId: assignRoleId });
+    if (!assignRoleId || !user) return;
+    assignRoleMutation.mutate({ userId: user.id, roleId: assignRoleId });
   };
 
   const handleRevokeRole = (roleId: string) => {
@@ -207,7 +213,7 @@ function UserDrawer({ user, roles, catalog, isPlatformAdmin, onClose }: {
   };
 
   const handleGrantPermission = () => {
-    if (!grantPermId || !grantReason || !grantExpiry) {
+    if (!grantPermId || !grantReason || !grantExpiry || !user) {
       toast.error("Permission, reason, and expiry are required");
       return;
     }
@@ -218,7 +224,7 @@ function UserDrawer({ user, roles, catalog, isPlatformAdmin, onClose }: {
       return;
     }
     grantPermissionMutation.mutate({
-      userId: user!.id, permissionId: grantPermId,
+      userId: user.id, permissionId: grantPermId,
       reason: grantReason, expiresAt: expiry.toISOString(),
     });
   };
@@ -234,7 +240,7 @@ function UserDrawer({ user, roles, catalog, isPlatformAdmin, onClose }: {
         style={{ backgroundColor: "var(--color-surface)" }}
         onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">{isNew ? "New User" : `Edit ${user!.displayName}`}</h2>
+          <h2 className="text-lg font-semibold">{isNew ? "New User" : `Edit ${user?.displayName ?? ""}`}</h2>
           <button onClick={onClose} className="text-2xl leading-none">×</button>
         </div>
 
@@ -250,7 +256,7 @@ function UserDrawer({ user, roles, catalog, isPlatformAdmin, onClose }: {
           </label>
 
           <div className="flex justify-end gap-2">
-            {!isNew && user!.isEnabled && (
+            {!isNew && user?.isEnabled && (
               <button onClick={handleDisable} disabled={disableMutation.isPending}
                 className="px-3 py-2 rounded-md text-sm flex items-center gap-1 disabled:opacity-50"
                 style={{ color: "var(--color-danger)", border: "1px solid var(--color-danger)" }}>
@@ -264,14 +270,14 @@ function UserDrawer({ user, roles, catalog, isPlatformAdmin, onClose }: {
             </button>
           </div>
 
-          {!isNew && (
+          {!isNew && user && (
             <>
               {/* Role Assignment */}
               <div className="pt-4 border-t" style={{ borderColor: "var(--color-border)" }}>
                 <h4 className="text-sm font-semibold mb-2 flex items-center gap-2"><Shield size={14} /> Roles</h4>
                 <div className="space-y-1 mb-3">
-                  {user!.roles.length === 0 && <div className="text-xs" style={{ color: "var(--color-muted)" }}>No roles assigned</div>}
-                  {user!.roles.map((r) => {
+                  {user.roles.length === 0 && <div className="text-xs" style={{ color: "var(--color-muted)" }}>No roles assigned</div>}
+                  {user.roles.map((r) => {
                     const canRevoke = isPlatformAdmin || r.roleKey !== "site-business-admin";
                     return (
                       <div key={r.roleId} className="flex items-center justify-between p-2 rounded-md"
@@ -314,8 +320,8 @@ function UserDrawer({ user, roles, catalog, isPlatformAdmin, onClose }: {
                 <div className="pt-4 border-t" style={{ borderColor: "var(--color-border)" }}>
                   <h4 className="text-sm font-semibold mb-2 flex items-center gap-2"><Key size={14} /> Direct Permissions (≤90 days)</h4>
                   <div className="space-y-1 mb-3">
-                    {user!.directPermissions.length === 0 && <div className="text-xs" style={{ color: "var(--color-muted)" }}>No direct permissions</div>}
-                    {user!.directPermissions.map((p) => (
+                    {user.directPermissions.length === 0 && <div className="text-xs" style={{ color: "var(--color-muted)" }}>No direct permissions</div>}
+                    {user.directPermissions.map((p) => (
                       <div key={p.id} className="p-2 rounded-md"
                         style={{ backgroundColor: "var(--color-background)", opacity: p.isRevoked ? 0.5 : 1 }}>
                         <div className="flex items-center justify-between">
