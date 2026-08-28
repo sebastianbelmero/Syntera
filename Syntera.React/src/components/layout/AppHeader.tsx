@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { MenuIcon, MoonIcon, SunIcon, LogOutIcon, UserIcon } from "lucide-react";
 import { useThemeStore } from "../../store/themeStore";
 import { useAuthStore } from "../../store/authStore";
+import logoUrl from "../../assets/syntera-logo.jpg";
 import {
   Avatar,
   AvatarFallback,
@@ -37,11 +38,9 @@ const getInitials = (name: string): string =>
     .slice(0, 2);
 
 export const AppHeader: React.FC<AppHeaderProps> = ({
-  title,
   toggleSidebar,
   user = { name: "User", role: "User" },
   onLogout,
-  logo,
 }) => {
   const { isDark, toggleMode } = useThemeStore();
   const theme = useAuthStore((s) => s.theme);
@@ -66,16 +65,24 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
           <MenuIcon className="size-5" />
         </button>
 
-        {logo ? (
-          <div className="flex min-w-0 items-center gap-2.5">{logo}</div>
-        ) : (
-          <span
-            className="truncate text-[1.05rem] font-semibold tracking-tight sm:text-[1.15rem]"
-            style={{ color: "var(--color-text)" }}
-          >
-            {title}
+        {/* Logo + title in navbar */}
+        <a
+          href="/dashboard"
+          className="flex items-center gap-2 no-underline"
+          aria-label="Syntera — Dashboard"
+        >
+          <span className="shrink-0 overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-black/5 size-9">
+            <img src={logoUrl} alt="" aria-hidden className="size-full object-contain p-0.5" draggable={false} />
           </span>
-        )}
+          <span className="flex flex-col leading-tight">
+            <span className="text-[15px] font-bold tracking-tight" style={{ color: "var(--color-text)" }}>
+              SYNTERA
+            </span>
+            <span className="text-[9px] font-medium uppercase tracking-wider" style={{ color: "var(--color-accent)" }}>
+              One Platform
+            </span>
+          </span>
+        </a>
       </div>
 
       <div className="flex items-center gap-2 sm:gap-3">

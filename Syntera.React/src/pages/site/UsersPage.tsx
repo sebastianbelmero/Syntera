@@ -134,7 +134,14 @@ function UserDrawer({ user, roles, catalog, isPlatformAdmin, onClose }: {
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      if (isNew) return usersApi.create(form);
+      if (isNew) {
+        const created = await usersApi.create(form);
+        // If a role was selected, assign it immediately.
+        if (assignRoleId && created.id) {
+          await usersApi.assignRole({ userId: created.id, roleId: assignRoleId });
+        }
+        return created;
+      }
       if (!user) throw new Error("No user selected");
       return usersApi.update(user.id, form);
     },
@@ -254,6 +261,22 @@ function UserDrawer({ user, roles, catalog, isPlatformAdmin, onClose }: {
               onChange={(e) => setForm({ ...form, isEnabled: e.target.checked })} />
             <span className="text-sm">Enabled</span>
           </label>
+
+          {/* For New User: role selection directly in the create form */}
+          {isNew && roles && roles.length > 0 && (
+            <div className="pt-4 border-t" style={{ borderColor: "var(--color-border)" }}>
+              <h4 className="text-sm font-semibold mb-2 flex items-center gap-2"><Shield size={14} /> Assign Role (optional)</h4>
+              <p className="text-xs mb-2" style={{ color: "var(--color-muted)" }}>
+                Select a role to assign immediately after user creation. You can change this later.
+              </p>
+              <select className="input" value={assignRoleId} onChange={(e) => setAssignRoleId(e.target.value)}>
+                <option value="">No role (create user only)</option>
+                {roles
+                  .filter((r) => isPlatformAdmin || r.key !== "site-business-admin")
+                  .map((r) => <option key={r.id} value={r.id}>{r.displayName}</option>)}
+              </select>
+            </div>
+          )}
 
           <div className="flex justify-end gap-2">
             {!isNew && user?.isEnabled && (

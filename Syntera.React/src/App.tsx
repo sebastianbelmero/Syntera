@@ -61,6 +61,10 @@ function ThemeApplier() {
       root.style.setProperty("--border", palette.border);
       root.style.setProperty("--input", palette.border);
       root.style.setProperty("--ring", palette.primary);
+      root.style.setProperty("--popover", palette.surface);
+      root.style.setProperty("--popover-foreground", palette.text);
+      root.style.setProperty("--secondary", palette.muted);
+      root.style.setProperty("--secondary-foreground", palette.text);
 
       root.setAttribute("data-theme", theme.themeKey);
     }
