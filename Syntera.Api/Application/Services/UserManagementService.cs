@@ -124,6 +124,11 @@ public sealed class UserManagementService : IUserManagementService
 
     public async Task<UserDto> UpdateAsync(Guid userId, UserUpsertDto dto, CancellationToken ct = default)
     {
+        // Prevent self-edit — a user cannot modify their own account.
+        if (userId == _current.UserId)
+            throw new BusinessRuleException("SELF_EDIT_FORBIDDEN",
+                "You cannot edit your own user account. Ask another admin to make changes.");
+
         var db = await _siteDbFactory.ResolveAsync(ct);
         var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId, ct)
             ?? throw new NotFoundException("User", userId);
@@ -136,6 +141,11 @@ public sealed class UserManagementService : IUserManagementService
 
     public async Task DisableAsync(Guid userId, Guid disabledBy, CancellationToken ct = default)
     {
+        // Prevent self-disable — a user cannot disable their own account.
+        if (userId == _current.UserId)
+            throw new BusinessRuleException("SELF_DISABLE_FORBIDDEN",
+                "You cannot disable your own account. Ask another admin to do this.");
+
         var db = await _siteDbFactory.ResolveAsync(ct);
         var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId, ct)
             ?? throw new NotFoundException("User", userId);
@@ -151,12 +161,24 @@ public sealed class UserManagementService : IUserManagementService
 
     public async Task<UserDto> AssignRoleAsync(AssignRoleDto dto, Guid assignedBy, CancellationToken ct = default)
     {
+        // Prevent self-assignment — a user cannot assign roles to themselves.
+        if (dto.UserId == _current.UserId)
+            throw new BusinessRuleException("SELF_ASSIGN_FORBIDDEN",
+                "You cannot assign roles to yourself. Ask another admin to do this.");
+
         var db = await _siteDbFactory.ResolveAsync(ct);
 
         var user = await db.Users.FirstOrDefaultAsync(u => u.Id == dto.UserId, ct)
             ?? throw new NotFoundException("User", dto.UserId);
         var role = await db.Roles.FirstOrDefaultAsync(r => r.Id == dto.RoleId, ct)
             ?? throw new NotFoundException("Role", dto.RoleId);
+
+        // Only Platform Admin can assign the site-business-admin role.
+        // Site Business Admins can only assign the 6 site roles
+        // (viewer, eng-planner, supervisor, technician, eng-manager, qo-manager).
+        if (role.Key == "site-business-admin" && !_current.IsPlatformAdmin)
+            throw new AuthorizationException("INSUFFICIENT_PRIVILEGE",
+                "Only Platform Admin (admin@syntera.com) can assign the site-business-admin role.");
 
         if (await db.UserRoles.AnyAsync(ur => ur.UserId == dto.UserId && ur.RoleId == dto.RoleId, ct))
             throw new BusinessRuleException("ROLE_ALREADY_ASSIGNED", "User already has this role.");
@@ -187,7 +209,19 @@ public sealed class UserManagementService : IUserManagementService
 
     public async Task RevokeRoleAsync(RevokeRoleDto dto, CancellationToken ct = default)
     {
+        // Prevent self-revoke — a user cannot revoke roles from themselves.
+        if (dto.UserId == _current.UserId)
+            throw new BusinessRuleException("SELF_REVOKE_FORBIDDEN",
+                "You cannot revoke roles from yourself. Ask another admin to do this.");
+
         var db = await _siteDbFactory.ResolveAsync(ct);
+
+        // Check if the role being revoked is site-business-admin — only platform admin can revoke it.
+        var role = await db.Roles.FirstOrDefaultAsync(r => r.Id == dto.RoleId, ct);
+        if (role is not null && role.Key == "site-business-admin" && !_current.IsPlatformAdmin)
+            throw new AuthorizationException("INSUFFICIENT_PRIVILEGE",
+                "Only Platform Admin (admin@syntera.com) can revoke the site-business-admin role.");
+
         var ur = await db.UserRoles.FirstOrDefaultAsync(x => x.UserId == dto.UserId && x.RoleId == dto.RoleId, ct)
             ?? throw new NotFoundException("UserRole", $"{dto.UserId}/{dto.RoleId}");
         db.UserRoles.Remove(ur);

@@ -5,6 +5,7 @@ import { Plus, Power, Key, Shield, Clock } from "lucide-react";
 import { usersApi } from "../../api/site";
 import { roleTemplatesApi } from "../../api/platform";
 import { ApiError } from "../../api/client";
+import { useAuthStore } from "../../store/authStore";
 import type { UserDto, UserUpsertDto, RoleDto, AssignRoleDto, GrantDirectPermissionDto, PermissionCatalogDto } from "../../types";
 
 const USERS_KEY = ["site-users"] as const;
@@ -12,6 +13,8 @@ const USERS_KEY = ["site-users"] as const;
 export default function UsersPage() {
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<UserDto | null>(null);
+  const currentUserId = useAuthStore((s) => s.profile?.userId);
+  const isPlatformAdmin = useAuthStore((s) => s.profile?.roles.includes("platform-admin") ?? false);
 
   const { data: users = [], isLoading: loading } = useQuery<UserDto[]>({
     queryKey: USERS_KEY,
@@ -82,9 +85,11 @@ export default function UsersPage() {
                     </span>
                   )}
                 </div>
-                <button onClick={() => setEditing(u)} className="p-1.5 rounded-md" style={{ border: "1px solid var(--color-border)" }}>
-                  <Key size={14} />
-                </button>
+                {u.id !== currentUserId && (
+                  <button onClick={() => setEditing(u)} className="p-1.5 rounded-md" style={{ border: "1px solid var(--color-border)" }}>
+                    <Key size={14} />
+                  </button>
+                )}
               </div>
             </div>
           ))}
@@ -96,16 +101,18 @@ export default function UsersPage() {
       )}
       {editing && (
         <UserDrawer user={editing} roles={roles} catalog={catalog}
+          isPlatformAdmin={isPlatformAdmin}
           onClose={() => setEditing(null)} />
       )}
     </div>
   );
 }
 
-function UserDrawer({ user, roles, catalog, onClose }: {
+function UserDrawer({ user, roles, catalog, isPlatformAdmin, onClose }: {
   user?: UserDto;
   roles?: RoleDto[];
   catalog?: PermissionCatalogDto | null;
+  isPlatformAdmin?: boolean;
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -264,27 +271,36 @@ function UserDrawer({ user, roles, catalog, onClose }: {
                 <h4 className="text-sm font-semibold mb-2 flex items-center gap-2"><Shield size={14} /> Roles</h4>
                 <div className="space-y-1 mb-3">
                   {user!.roles.length === 0 && <div className="text-xs" style={{ color: "var(--color-muted)" }}>No roles assigned</div>}
-                  {user!.roles.map((r) => (
-                    <div key={r.roleId} className="flex items-center justify-between p-2 rounded-md"
-                      style={{ backgroundColor: "var(--color-background)" }}>
-                      <div>
-                        <div className="text-sm font-medium">{r.roleDisplayName}</div>
-                        <div className="text-xs" style={{ color: "var(--color-muted)" }}>
-                          assigned {new Date(r.assignedAt).toLocaleDateString()}
-                          {r.expiresAt && <> · expires {new Date(r.expiresAt).toLocaleDateString()}</>}
+                  {user!.roles.map((r) => {
+                    const canRevoke = isPlatformAdmin || r.roleKey !== "site-business-admin";
+                    return (
+                      <div key={r.roleId} className="flex items-center justify-between p-2 rounded-md"
+                        style={{ backgroundColor: "var(--color-background)" }}>
+                        <div>
+                          <div className="text-sm font-medium">{r.roleDisplayName}</div>
+                          <div className="text-xs" style={{ color: "var(--color-muted)" }}>
+                            assigned {new Date(r.assignedAt).toLocaleDateString()}
+                            {r.expiresAt && <> · expires {new Date(r.expiresAt).toLocaleDateString()}</>}
+                          </div>
                         </div>
+                        {canRevoke ? (
+                          <button onClick={() => handleRevokeRole(r.roleId)} disabled={revokeRoleMutation.isPending}
+                            className="text-xs disabled:opacity-50"
+                            style={{ color: "var(--color-danger)" }}>Revoke</button>
+                        ) : (
+                          <span className="text-xs" style={{ color: "var(--color-muted)" }}>Platform Admin only</span>
+                        )}
                       </div>
-                      <button onClick={() => handleRevokeRole(r.roleId)} disabled={revokeRoleMutation.isPending}
-                        className="text-xs disabled:opacity-50"
-                        style={{ color: "var(--color-danger)" }}>Revoke</button>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 {roles && roles.length > 0 && (
                   <div className="flex gap-2">
                     <select className="input" value={assignRoleId} onChange={(e) => setAssignRoleId(e.target.value)}>
                       <option value="">Select role...</option>
-                      {roles.map((r) => <option key={r.id} value={r.id}>{r.displayName}</option>)}
+                      {roles
+                        .filter((r) => isPlatformAdmin || r.key !== "site-business-admin")
+                        .map((r) => <option key={r.id} value={r.id}>{r.displayName}</option>)}
                     </select>
                     <button onClick={handleAssignRole} disabled={assignRoleMutation.isPending}
                       className="px-3 py-2 rounded-md text-sm whitespace-nowrap disabled:opacity-50"
