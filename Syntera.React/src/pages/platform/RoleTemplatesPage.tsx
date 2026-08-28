@@ -31,8 +31,8 @@ export default function RoleTemplatesPage() {
             Define role templates. Publish clones them into every enabled site.
           </p>
         </div>
-        <button onClick={() => setCreating(true)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium"
-          style={{ backgroundColor: "var(--color-primary)", color: "white" }}>
+        <button type="button" onClick={() => setCreating(true)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium"
+          style={{ backgroundColor: "var(--color-primary)", color: "var(--color-primary-foreground)" }}>
           <Plus size={16} /> New Template
         </button>
       </div>
@@ -105,13 +105,13 @@ function TemplateRow({ template, onEdit }: { template: RoleTemplateDto; onEdit: 
           {template.description && <p className="text-xs mt-1" style={{ color: "var(--color-muted)" }}>{template.description}</p>}
         </div>
         <div className="flex gap-2">
-          <button onClick={onEdit} className="p-1.5 rounded-md" style={{ border: "1px solid var(--color-border)" }}>
+          <button type="button" onClick={onEdit} className="p-1.5 rounded-lg" style={{ border: "1px solid var(--color-border)" }}>
             <Pencil size={14} />
           </button>
           {!template.isPublished && (
-            <button onClick={handlePublish} disabled={publishMutation.isPending}
-              className="p-1.5 rounded-md disabled:opacity-50"
-              style={{ backgroundColor: "var(--color-primary)", color: "white" }} title="Publish">
+            <button type="button" onClick={handlePublish} disabled={publishMutation.isPending}
+              className="p-1.5 rounded-lg disabled:opacity-50"
+              style={{ backgroundColor: "var(--color-primary)", color: "var(--color-primary-foreground)" }} title="Publish">
               <Send size={14} />
             </button>
           )}
@@ -186,7 +186,7 @@ function TemplateDrawer({ template, catalog, onClose }: {
         <div className="flex items-center justify-between px-6 pt-6 pb-3 shrink-0 sticky top-0 z-10"
           style={{ backgroundColor: "var(--color-surface)", borderBottom: "1px solid var(--color-border)" }}>
           <h2 className="text-lg font-semibold">{isNew ? "New Role Template" : `Edit ${template?.displayName}`}</h2>
-          <button onClick={onClose} className="text-2xl leading-none p-2 rounded-lg hover:opacity-70 transition-opacity min-h-[40px] min-w-[40px] flex items-center justify-center" aria-label="Close">×</button>
+          <button type="button" onClick={onClose} className="text-2xl leading-none p-2 rounded-lg hover:opacity-70 transition-opacity min-h-[40px] min-w-[40px] flex items-center justify-center" aria-label="Close">×</button>
         </div>
 
         {/* Scrollable content */}
@@ -230,10 +230,10 @@ function TemplateDrawer({ template, catalog, onClose }: {
 
           {/* Sticky footer with Cancel + Save */}
           <div className="flex justify-end gap-2 pt-4 sticky bottom-0" style={{ backgroundColor: "var(--color-surface)" }}>
-            <button onClick={onClose} className="px-4 py-2 rounded-md text-sm" style={{ border: "1px solid var(--color-border)" }}>Cancel</button>
-            <button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}
-              className="px-4 py-2 rounded-md text-sm disabled:opacity-50"
-              style={{ backgroundColor: "var(--color-primary)", color: "white" }}>
+            <button type="button" onClick={onClose} className="px-4 py-2.5.5 rounded-lg text-sm min-h-[44px]" style={{ border: "1px solid var(--color-border)" }}>Cancel</button>
+            <button type="button" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}
+              className="px-4 py-2.5 rounded-lg text-sm disabled:opacity-50 min-h-[44px]"
+              style={{ backgroundColor: "var(--color-primary)", color: "var(--color-primary-foreground)" }}>
               {saveMutation.isPending ? "Saving..." : "Save"}
             </button>
           </div>

@@ -50,7 +50,7 @@ export default function SettingsPage() {
               {theme ? `Brand palette: ${theme.themeKey}` : "Default palette"}
             </div>
           </div>
-          <button onClick={toggleMode} className="px-3 py-2 rounded-md text-sm"
+          <button type="button" onClick={toggleMode} className="px-3 py-2.5 min-h-[44px] rounded-lg text-sm"
             style={{ border: "1px solid var(--color-border)" }}>
             Switch to {isDark ? "Light" : "Dark"}
           </button>

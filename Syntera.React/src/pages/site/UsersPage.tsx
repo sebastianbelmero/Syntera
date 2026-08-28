@@ -44,8 +44,8 @@ export default function UsersPage() {
             Users must be created here before they can log in via LDAP.
           </p>
         </div>
-        <button onClick={() => setCreating(true)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium"
-          style={{ backgroundColor: "var(--color-primary)", color: "white" }}>
+        <button type="button" onClick={() => setCreating(true)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium"
+          style={{ backgroundColor: "var(--color-primary)", color: "var(--color-primary-foreground)" }}>
           <Plus size={16} /> New User
         </button>
       </div>
@@ -271,7 +271,7 @@ function UserDrawer({ user, roles, catalog, isPlatformAdmin, onClose }: {
         <div className="flex items-center justify-between px-6 pt-6 pb-3 shrink-0 sticky top-0 z-10"
           style={{ backgroundColor: "var(--color-surface)", borderBottom: "1px solid var(--color-border)" }}>
           <h2 className="text-lg font-semibold">{isNew ? "New User" : `Edit ${user?.displayName ?? ""}`}</h2>
-          <button onClick={onClose} className="text-2xl leading-none p-2 rounded-lg hover:opacity-70 transition-opacity min-h-[40px] min-w-[40px] flex items-center justify-center" aria-label="Close">×</button>
+          <button type="button" onClick={onClose} className="text-2xl leading-none p-2 rounded-lg hover:opacity-70 transition-opacity min-h-[40px] min-w-[40px] flex items-center justify-center" aria-label="Close">×</button>
         </div>
 
         {/* Scrollable content */}
@@ -304,11 +304,11 @@ function UserDrawer({ user, roles, catalog, isPlatformAdmin, onClose }: {
           )}
 
           <div className="flex justify-end gap-2 pt-4 sticky bottom-0" style={{ backgroundColor: "var(--color-surface)" }}>
-            <button type="button" onClick={onClose} className="px-4 py-2.5 rounded-lg text-sm min-h-[44px]"
+            <button type="button" onClick={onClose} className="px-4 py-2.5.5 rounded-lg text-sm min-h-[44px]"
               style={{ border: "1px solid var(--color-border)" }}>Cancel</button>
             {!isNew && user?.isEnabled && (
               <button type="button" onClick={handleDisable} disabled={disableMutation.isPending}
-                className="px-3 py-2.5 rounded-lg text-sm flex items-center gap-1 disabled:opacity-50 min-h-[44px]"
+                className="px-3 py-2.5.5 rounded-lg text-sm flex items-center gap-1 disabled:opacity-50 min-h-[44px]"
                 style={{ color: "var(--color-danger)", border: "1px solid var(--color-danger)" }}>
                 <Power size={16} /> Disable
               </button>
@@ -340,7 +340,7 @@ function UserDrawer({ user, roles, catalog, isPlatformAdmin, onClose }: {
                           </div>
                         </div>
                         {canRevoke ? (
-                          <button onClick={() => handleRevokeRole(r.roleId)} disabled={revokeRoleMutation.isPending}
+                          <button type="button" onClick={() => handleRevokeRole(r.roleId)} disabled={revokeRoleMutation.isPending}
                             className="text-xs disabled:opacity-50"
                             style={{ color: "var(--color-danger)" }}>Revoke</button>
                         ) : (
@@ -358,9 +358,9 @@ function UserDrawer({ user, roles, catalog, isPlatformAdmin, onClose }: {
                         .filter((r) => isPlatformAdmin || r.key !== "site-business-admin")
                         .map((r) => <option key={r.id} value={r.id}>{r.displayName}</option>)}
                     </select>
-                    <button onClick={handleAssignRole} disabled={assignRoleMutation.isPending}
-                      className="px-3 py-2 rounded-md text-sm whitespace-nowrap disabled:opacity-50"
-                      style={{ backgroundColor: "var(--color-primary)", color: "white" }}>Assign</button>
+                    <button type="button" onClick={handleAssignRole} disabled={assignRoleMutation.isPending}
+                      className="px-3 py-2.5 min-h-[44px] rounded-lg text-sm whitespace-nowrap disabled:opacity-50"
+                      style={{ backgroundColor: "var(--color-primary)", color: "var(--color-primary-foreground)" }}>Assign</button>
                   </div>
                 )}
               </div>
@@ -377,7 +377,7 @@ function UserDrawer({ user, roles, catalog, isPlatformAdmin, onClose }: {
                         <div className="flex items-center justify-between">
                           <span className="font-mono text-xs">{p.permissionKey}</span>
                           {!p.isRevoked && (
-                            <button onClick={() => handleRevokePermission(p.id)} disabled={revokePermissionMutation.isPending}
+                            <button type="button" onClick={() => handleRevokePermission(p.id)} disabled={revokePermissionMutation.isPending}
                               className="text-xs disabled:opacity-50"
                               style={{ color: "var(--color-danger)" }}>Revoke</button>
                           )}
@@ -400,8 +400,8 @@ function UserDrawer({ user, roles, catalog, isPlatformAdmin, onClose }: {
                     <div className="flex gap-2">
                       <input type="date" className="input" value={grantExpiry}
                         onChange={(e) => setGrantExpiry(e.target.value)} />
-                      <button onClick={handleGrantPermission} disabled={grantPermissionMutation.isPending}
-                        className="px-3 py-2 rounded-md text-sm disabled:opacity-50"
+                      <button type="button" onClick={handleGrantPermission} disabled={grantPermissionMutation.isPending}
+                        className="px-3 py-2.5 min-h-[44px] rounded-lg text-sm disabled:opacity-50"
                         style={{ backgroundColor: "var(--color-warning)", color: "white" }}>Grant</button>
                     </div>
                   </div>

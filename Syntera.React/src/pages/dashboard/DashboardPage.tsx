@@ -100,8 +100,8 @@ function ActionLink({ onClick, label }: { onClick: () => void; label: string }) 
     <button
       type="button"
       onClick={onClick}
-      className="px-3 py-2 rounded-lg text-center transition hover:opacity-80 cursor-pointer"
-      style={{ backgroundColor: "var(--color-primary)", color: "white" }}
+      className="px-3 py-2.5 min-h-[44px] rounded-lg text-center transition hover:opacity-80 cursor-pointer"
+      style={{ backgroundColor: "var(--color-primary)", color: "var(--color-primary-foreground)" }}
     >
       {label}
     </button>
