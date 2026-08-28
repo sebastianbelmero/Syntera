@@ -34,6 +34,7 @@ interface AuthState {
     expiresAt: string;
   }) => void;
   updateProfile: (profile: UserProfile) => void;
+  updateTheme: (theme: ThemeBundle) => void;
   logout: () => void;
   clear: () => void;
 
@@ -73,6 +74,10 @@ export const useAuthStore = create<AuthState>()(
 
       updateProfile(profile) {
         set({ profile });
+      },
+
+      updateTheme(theme) {
+        set({ theme });
       },
 
       logout() {

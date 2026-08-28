@@ -41,12 +41,34 @@ public static class DbSeeder
         await EnsureSetting(db, "MaxFailedLogins", "5", "Failed login attempts before lockout.");
 
         // ── Default role templates ─────────────────────────────────────
+        // 6 user-facing roles per site + 1 platform-admin role for delegation.
         await EnsureRoleTemplate(db, "viewer", "Viewer", "Read-only access to dashboards and own profile.",
             isSiteAdminRole: false,
             permissions: ViewerPermissions);
 
+        await EnsureRoleTemplate(db, "eng-planner", "Eng Planner", "Engineering planner — dashboard + audit access.",
+            isSiteAdminRole: false,
+            permissions: EngPlannerPermissions);
+
+        await EnsureRoleTemplate(db, "supervisor", "Supervisor", "Supervisor — dashboard + audit + reports.",
+            isSiteAdminRole: false,
+            permissions: SupervisorPermissions);
+
+        await EnsureRoleTemplate(db, "technician", "Technician", "Technician — dashboard access.",
+            isSiteAdminRole: false,
+            permissions: TechnicianPermissions);
+
+        await EnsureRoleTemplate(db, "eng-manager", "Eng Manager", "Engineering Manager — manages users in own site.",
+            isSiteAdminRole: true,
+            permissions: EngManagerPermissions);
+
+        await EnsureRoleTemplate(db, "qo-manager", "QO Manager", "Quality Operations Manager — audit + reports.",
+            isSiteAdminRole: false,
+            permissions: QoManagerPermissions);
+
+        // Keep site-business-admin for backward compat (Platform Admin bootstrap).
         await EnsureRoleTemplate(db, "site-business-admin", "Site Business Admin",
-            "Manages users, roles, and permissions within own site.",
+            "Manages users, roles, and permissions within own site (platform-delegated).",
             isSiteAdminRole: true,
             permissions: SiteBusinessAdminPermissions);
 
@@ -203,9 +225,37 @@ public static class DbSeeder
         "dashboard.read", "audit.read", "profile.read",
     };
 
+    private static readonly string[] EngPlannerPermissions =
+    {
+        "dashboard.read", "audit.read", "report.read", "profile.read",
+    };
+
+    private static readonly string[] SupervisorPermissions =
+    {
+        "dashboard.read", "audit.read", "report.read", "profile.read",
+    };
+
+    private static readonly string[] TechnicianPermissions =
+    {
+        "dashboard.read", "profile.read",
+    };
+
+    private static readonly string[] EngManagerPermissions =
+    {
+        "dashboard.read", "audit.read", "report.read", "profile.read",
+        "user.read", "user.write", "user.disable",
+        "role.read", "user_role.assign", "user_role.revoke",
+        "permission.read", "permission.grant", "permission.revoke",
+    };
+
+    private static readonly string[] QoManagerPermissions =
+    {
+        "dashboard.read", "audit.read", "report.read", "profile.read",
+    };
+
     private static readonly string[] SiteBusinessAdminPermissions =
     {
-        "user.read", "user.write", "user.disable", "user.sync",
+        "user.read", "user.write", "user.disable",
         "role.read", "user_role.assign", "user_role.revoke",
         "permission.read", "permission.grant", "permission.revoke",
         "audit.read", "report.read",

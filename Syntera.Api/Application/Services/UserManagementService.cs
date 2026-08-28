@@ -297,10 +297,18 @@ public sealed class UserManagementService : IUserManagementService
         if (role is null)
         {
             // Role not found in site DB — auto-clone it now.
-            // This handles the case where the role template was published
-            // but cloning failed (e.g., due to an earlier bug, or because
-            // the site DB was created after the publish).
             role = await AutoCloneRoleFromTemplateAsync(db, siteId, "site-business-admin", ct);
+        }
+
+        // Also auto-clone the 6 site roles if they don't exist yet.
+        var siteRoles = new[] { "viewer", "eng-planner", "supervisor", "technician", "eng-manager", "qo-manager" };
+        foreach (var roleKey in siteRoles)
+        {
+            var existing = await db.Roles.FirstOrDefaultAsync(r => r.Key == roleKey, ct);
+            if (existing is null)
+            {
+                await AutoCloneRoleFromTemplateAsync(db, siteId, roleKey, ct);
+            }
         }
 
         // 3. Assign role if not already assigned (idempotent).

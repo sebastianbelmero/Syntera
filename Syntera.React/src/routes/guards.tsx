@@ -53,7 +53,10 @@ export function RequireSiteAdmin({ children }: { children: ReactNode }) {
   }
 
   const allowed = profile.roles.includes("platform-admin")
-    || profile.roles.includes("site-business-admin");
+    || profile.roles.includes("site-business-admin")
+    || profile.roles.includes("eng-manager")
+    || profile.roles.includes("supervisor")
+    || profile.roles.includes("qo-manager");
   if (!allowed) {
     return <ForbiddenPage />;
   }

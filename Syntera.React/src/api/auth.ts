@@ -53,8 +53,9 @@ export async function refresh(): Promise<RefreshResponse> {
     : { refreshToken };
 
   const data = await post<RefreshResponse>(url, body);
-  // Use setTokens — preserve profile/theme from initial login (server may return updated
-  // profile in refresh response, but we keep the original to avoid mismatched state).
+  // Update tokens, profile, AND theme (server may return updated theme
+  // in refresh response — important for site users whose theme comes
+  // from their site's SiteTheme record).
   useAuthStore.getState().setTokens({
     accessToken: data.accessToken,
     refreshToken: data.refreshToken,
@@ -62,6 +63,9 @@ export async function refresh(): Promise<RefreshResponse> {
   });
   if (data.profile) {
     useAuthStore.getState().updateProfile(data.profile);
+  }
+  if (data.theme) {
+    useAuthStore.getState().updateTheme(data.theme);
   }
   return data;
 }

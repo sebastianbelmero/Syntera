@@ -1,3 +1,4 @@
+import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../../store/authStore";
 import { ShieldCheck, Building2, Users, ScrollText } from "lucide-react";
 
@@ -8,10 +9,14 @@ import { ShieldCheck, Building2, Users, ScrollText } from "lucide-react";
  */
 export default function DashboardPage() {
   const profile = useAuthStore((s) => s.profile);
+  const navigate = useNavigate();
   if (!profile) return null;
 
   const isPlatform = profile.roles.includes("platform-admin");
-  const isSiteAdmin = profile.roles.includes("site-business-admin");
+  const isSiteAdmin = profile.roles.includes("site-business-admin")
+    || profile.roles.includes("eng-manager")
+    || profile.roles.includes("supervisor")
+    || profile.roles.includes("qo-manager");
 
   return (
     <div className="space-y-6">
@@ -55,14 +60,14 @@ export default function DashboardPage() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
             {isPlatform && (
               <>
-                <ActionLink href="/platform/sites" label="Manage Sites" />
-                <ActionLink href="/platform/role-templates" label="Role Templates" />
+                <ActionLink onClick={() => navigate("/platform/sites")} label="Manage Sites" />
+                <ActionLink onClick={() => navigate("/platform/role-templates")} label="Role Templates" />
               </>
             )}
             {isSiteAdmin && (
-              <ActionLink href="/site/users" label="Manage Users" />
+              <ActionLink onClick={() => navigate("/site/users")} label="Manage Users" />
             )}
-            <ActionLink href="/audit/logs" label="Audit Logs" />
+            <ActionLink onClick={() => navigate("/audit/logs")} label="Audit Logs" />
           </div>
         </div>
       )}
@@ -90,14 +95,15 @@ function Card({ icon, title, value, subtitle }: {
   );
 }
 
-function ActionLink({ href, label }: { href: string; label: string }) {
+function ActionLink({ onClick, label }: { onClick: () => void; label: string }) {
   return (
-    <a
-      href={href}
-      className="px-3 py-2 rounded-lg text-center transition hover:opacity-80"
+    <button
+      type="button"
+      onClick={onClick}
+      className="px-3 py-2 rounded-lg text-center transition hover:opacity-80 cursor-pointer"
       style={{ backgroundColor: "var(--color-primary)", color: "white" }}
     >
       {label}
-    </a>
+    </button>
   );
 }
