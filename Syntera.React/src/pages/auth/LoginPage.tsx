@@ -119,7 +119,7 @@ export default function LoginPage() {
           {/* Header */}
           <div className="mb-8">
             <h1 className="text-2xl font-bold tracking-tight">Sign in to Syntera</h1>
-            <p className="text-sm mt-2" style={{ color: "var(--color-muted)" }}>
+            <p className="text-sm mt-2" style={{ color: "var(--color-text)" }}>
               Enter your credentials to access the platform.
             </p>
           </div>
@@ -132,7 +132,7 @@ export default function LoginPage() {
               <label htmlFor="email" className="text-sm font-medium">Email</label>
               <div className="relative">
                 <Mail size={18} className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
-                  style={{ color: "var(--color-muted)" }} />
+                  style={{ color: "var(--color-text)" }} />
                 <input
                   id="email"
                   type="email"
@@ -157,7 +157,7 @@ export default function LoginPage() {
               <label htmlFor="password" className="text-sm font-medium">Password</label>
               <div className="relative">
                 <Lock size={18} className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
-                  style={{ color: "var(--color-muted)" }} />
+                  style={{ color: "var(--color-text)" }} />
                 <input
                   id="password"
                   type={showPassword ? "text" : "password"}
