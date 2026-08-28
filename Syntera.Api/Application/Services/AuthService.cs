@@ -208,7 +208,9 @@ public sealed class AuthService : IAuthService
         }
 
         // ── Pre-provisioning check: user must exist in site DB ────────
-        var siteDb = await _siteDbFactory.ResolveAsync(ct);
+        // Use ResolveForSiteAsync(site.Id) — at login time there is no JWT yet,
+        // so ResolveAsync(ct) (which reads JWT site_id claim) would throw.
+        var siteDb = await _siteDbFactory.ResolveForSiteAsync(site.Id, ct);
         var user = await siteDb.Users.FirstOrDefaultAsync(u => u.Email == email, ct);
         if (user is null)
         {
@@ -345,7 +347,7 @@ public sealed class AuthService : IAuthService
         var site = await _platformDb.Sites.FirstOrDefaultAsync(s => s.Id == siteId, ct)
             ?? throw new NotFoundException("Site", siteId);
 
-        var siteDb = await _siteDbFactory.ResolveAsync(ct);
+        var siteDb = await _siteDbFactory.ResolveForSiteAsync(siteId, ct);
         var token = await siteDb.RefreshTokens
             .FirstOrDefaultAsync(t => t.TokenHash == hash && t.RevokedAt == null, ct)
             ?? throw new AuthenticationException("REFRESH_NOT_FOUND", "Refresh token not found.");

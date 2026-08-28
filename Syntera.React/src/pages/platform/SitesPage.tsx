@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Pencil, KeyRound, Palette, UserPlus } from "lucide-react";
+import { Pencil, KeyRound, Palette, UserPlus, Users } from "lucide-react";
 import { sitesApi } from "../../api/platform";
 import { ApiError } from "../../api/client";
 import type {
@@ -28,6 +28,7 @@ export default function SitesPage() {
   const [ldapSite, setLdapSite] = useState<SiteDto | null>(null);
   const [themeSite, setThemeSite] = useState<SiteDto | null>(null);
   const [adminSite, setAdminSite] = useState<SiteDto | null>(null);
+  const [manageAdminSite, setManageAdminSite] = useState<SiteDto | null>(null);
 
   const { data: sites = [], isLoading: loading } = useQuery<SiteDto[]>({
     queryKey: SITES_KEY,
@@ -39,8 +40,7 @@ export default function SitesPage() {
       <div>
         <h1 className="text-2xl font-bold">Sites</h1>
         <p className="text-sm" style={{ color: "var(--color-muted)" }}>
-          6 fixed sites — edit name, email domains, LDAP config, theme, and assign business admin.
-          Database connection and code are managed via backend config.
+          6 fixed sites — edit name, email domains, LDAP config, theme, and manage business admins.
         </p>
       </div>
 
@@ -56,6 +56,7 @@ export default function SitesPage() {
               onConfigureLdap={() => setLdapSite(s)}
               onEditTheme={() => setThemeSite(s)}
               onAssignAdmin={() => setAdminSite(s)}
+              onManageAdmins={() => setManageAdminSite(s)}
             />
           ))}
         </div>
@@ -65,16 +66,18 @@ export default function SitesPage() {
       {ldapSite && <LdapDrawer site={ldapSite} onClose={() => setLdapSite(null)} />}
       {themeSite && <ThemeDrawer site={themeSite} onClose={() => setThemeSite(null)} />}
       {adminSite && <AdminDrawer site={adminSite} onClose={() => setAdminSite(null)} />}
+      {manageAdminSite && <ManageAdminsDrawer site={manageAdminSite} onClose={() => setManageAdminSite(null)} />}
     </div>
   );
 }
 
-function SiteCard({ site, onEdit, onConfigureLdap, onEditTheme, onAssignAdmin }: {
+function SiteCard({ site, onEdit, onConfigureLdap, onEditTheme, onAssignAdmin, onManageAdmins }: {
   site: SiteDto;
   onEdit: () => void;
   onConfigureLdap: () => void;
   onEditTheme: () => void;
   onAssignAdmin: () => void;
+  onManageAdmins: () => void;
 }) {
   const swatch = site.code;
   const swatchColor = THEME_SWATCH[swatch] ?? "#0B3D6F";
@@ -106,10 +109,15 @@ function SiteCard({ site, onEdit, onConfigureLdap, onEditTheme, onAssignAdmin }:
           style={{ border: "1px solid var(--color-border)" }}>
           <Pencil size={12} /> Edit Name
         </button>
+        <button onClick={onManageAdmins}
+          className="flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-xs"
+          style={{ border: "1px solid var(--color-border)" }}>
+          <Users size={12} /> Admins
+        </button>
         <button onClick={onAssignAdmin}
           className="flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-xs"
           style={{ backgroundColor: "var(--color-accent)", color: "white" }}>
-          <UserPlus size={12} /> Business Admin
+          <UserPlus size={12} /> Add Admin
         </button>
         <button onClick={onConfigureLdap}
           className="flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-xs"
@@ -117,7 +125,7 @@ function SiteCard({ site, onEdit, onConfigureLdap, onEditTheme, onAssignAdmin }:
           <KeyRound size={12} /> LDAP
         </button>
         <button onClick={onEditTheme}
-          className="flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-xs"
+          className="flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-xs col-span-2"
           style={{ border: "1px solid var(--color-border)" }}>
           <Palette size={12} /> Theme
         </button>
@@ -473,6 +481,101 @@ const DEFAULT_DARK: ThemePalette = {
   text: "#F1F5F9", muted: "#94A3B8", border: "#334155",
   success: "#34D399", warning: "#FBBF24", danger: "#F87171",
 };
+
+// ─── Manage Business Admins (list + revoke) ─────────────────────────
+
+function ManageAdminsDrawer({ site, onClose }: { site: SiteDto; onClose: () => void }) {
+  const queryClient = useQueryClient();
+
+  const { data: admins = [], isLoading } = useQuery({
+    queryKey: ["business-admins", site.id],
+    queryFn: () => sitesApi.listBusinessAdmins(site.id),
+  });
+
+  const revokeMutation = useMutation({
+    mutationFn: (userId: string) => sitesApi.revokeBusinessAdmin(site.id, userId),
+    onSuccess: () => {
+      toast.success("Business admin revoked");
+      void queryClient.invalidateQueries({ queryKey: ["business-admins", site.id] });
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed"),
+  });
+
+  const handleRevoke = (userId: string, email: string) => {
+    if (!confirm(`Revoke business admin role from ${email}?\n\nThe user will still exist but lose admin privileges.`)) return;
+    revokeMutation.mutate(userId);
+  };
+
+  return (
+    <Drawer title={`Business Admins — ${site.displayName}`} onClose={onClose}>
+      <div className="space-y-3">
+        <div className="p-3 rounded-md text-xs" style={{ backgroundColor: "var(--color-background)" }}>
+          <strong>Site:</strong> {site.displayName} ({site.code})<br />
+          <strong>Domains:</strong> {site.ldapDomains.join(", ")}
+        </div>
+
+        <div>
+          <h4 className="text-sm font-semibold mb-2">
+            Current Business Admins ({admins.length})
+          </h4>
+
+          {isLoading ? (
+            <div className="text-center py-4 text-sm" style={{ color: "var(--color-muted)" }}>
+              Loading...
+            </div>
+          ) : admins.length === 0 ? (
+            <div className="p-4 rounded-md text-center text-sm"
+              style={{ backgroundColor: "var(--color-background)", color: "var(--color-muted)" }}>
+              No business admins yet. Use "Add Admin" button to assign one.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {admins.map((admin) => (
+                <div key={admin.id}
+                  className="p-3 rounded-md flex items-center justify-between"
+                  style={{ backgroundColor: "var(--color-background)" }}>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold flex-shrink-0"
+                        style={{ backgroundColor: "var(--color-primary)" }}>
+                        {admin.displayName.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium truncate">{admin.displayName}</div>
+                        <div className="text-xs truncate" style={{ color: "var(--color-muted)" }}>
+                          {admin.email}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-xs mt-1" style={{ color: "var(--color-muted)" }}>
+                      {admin.isEnabled ? "✓ Active" : "✗ Disabled"}
+                      {admin.lastLoginAt && ` · Last login: ${new Date(admin.lastLoginAt).toLocaleDateString()}`}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleRevoke(admin.id, admin.email)}
+                    disabled={revokeMutation.isPending}
+                    className="px-2 py-1 rounded-md text-xs flex-shrink-0 ml-2 disabled:opacity-50"
+                    style={{ color: "var(--color-danger)", border: "1px solid var(--color-danger)" }}
+                  >
+                    Revoke
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="pt-4 border-t" style={{ borderColor: "var(--color-border)" }}>
+          <p className="text-xs" style={{ color: "var(--color-muted)" }}>
+            Revoking only removes the business admin role. The user account remains
+            and can still log in (if they have other roles or are a viewer).
+          </p>
+        </div>
+      </div>
+    </Drawer>
+  );
+}
 
 // ─── Assign Business Admin (Platform Admin bootstrap) ───────────────
 

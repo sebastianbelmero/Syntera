@@ -54,6 +54,19 @@ public sealed class SitesController : ApiControllerBase
     public async Task<IActionResult> AssignBusinessAdmin(Guid siteId, [FromBody] AssignBusinessAdminRequest req, CancellationToken ct)
         => Ok(await _users.AssignBusinessAdminAsync(siteId, req.Email, req.DisplayName ?? "", _current.UserId ?? Guid.Empty, ct));
 
+    /// <summary>List all business admins for a site.</summary>
+    [HttpGet("{siteId:guid}/business-admins")]
+    public async Task<IActionResult> ListBusinessAdmins(Guid siteId, CancellationToken ct)
+        => Ok(await _users.ListBusinessAdminsAsync(siteId, ct));
+
+    /// <summary>Revoke business admin role from a user.</summary>
+    [HttpDelete("{siteId:guid}/business-admin/{userId:guid}")]
+    public async Task<IActionResult> RevokeBusinessAdmin(Guid siteId, Guid userId, CancellationToken ct)
+    {
+        await _users.RevokeBusinessAdminAsync(siteId, userId, _current.UserId ?? Guid.Empty, ct);
+        return Ok(new { success = true });
+    }
+
     // ─── LDAP Config ──────────────────────────────────────────────────
 
     [HttpGet("{siteId:guid}/ldap-config")]

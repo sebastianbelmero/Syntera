@@ -34,6 +34,16 @@ export const sitesApi = {
   assignBusinessAdmin: (siteId: string, email: string, displayName?: string) =>
     post<UserDto>(`${BASE}/sites/${siteId}/business-admin`, { email, displayName }),
 
+  /** List all business admins for a site. */
+  listBusinessAdmins: (siteId: string) =>
+    get<UserDto[]>(`${BASE}/sites/${siteId}/business-admins`),
+
+  /** Revoke business admin role from a user. */
+  revokeBusinessAdmin: async (siteId: string, userId: string) => {
+    const { api } = await import("./client");
+    await api.delete(`${BASE}/sites/${siteId}/business-admin/${userId}`);
+  },
+
   getLdapConfig: (siteId: string) => get<LdapConfigDto>(`${BASE}/sites/${siteId}/ldap-config`),
   upsertLdapConfig: (siteId: string, dto: LdapConfigUpsertDto) =>
     put<LdapConfigDto>(`${BASE}/sites/${siteId}/ldap-config`, dto),

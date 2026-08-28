@@ -33,6 +33,16 @@ public interface IUserManagementService
     /// business admin before any user management can happen via /api/site/users.
     /// </summary>
     Task<UserDto> AssignBusinessAdminAsync(Guid siteId, string email, string displayName, Guid assignedBy, CancellationToken ct = default);
+
+    /// <summary>
+    /// Platform Admin → list all business admins for a site.
+    /// </summary>
+    Task<IReadOnlyList<UserDto>> ListBusinessAdminsAsync(Guid siteId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Platform Admin → revoke business admin role from a user.
+    /// </summary>
+    Task RevokeBusinessAdminAsync(Guid siteId, Guid userId, Guid revokedBy, CancellationToken ct = default);
 }
 
 public sealed class UserManagementService : IUserManagementService
@@ -345,6 +355,60 @@ public sealed class UserManagementService : IUserManagementService
     /// because the template was published before the cloning bug was fixed,
     /// or because the site DB was created after the last publish).
     /// </summary>
+    /// <summary>
+    /// Platform Admin → list all business admins for a site.
+    /// Returns users who have the site-business-admin role assigned.
+    /// </summary>
+    public async Task<IReadOnlyList<UserDto>> ListBusinessAdminsAsync(Guid siteId, CancellationToken ct = default)
+    {
+        var db = await _siteDbFactory.ResolveForSiteAsync(siteId, ct);
+
+        var role = await db.Roles.FirstOrDefaultAsync(r => r.Key == "site-business-admin", ct);
+        if (role is null)
+            return Array.Empty<UserDto>();
+
+        var admins = await db.Users.AsNoTracking()
+            .Include(u => u.UserRoles).ThenInclude(ur => ur.Role)
+            .Include(u => u.DirectPermissions).ThenInclude(up => up.Permission)
+            .Where(u => u.UserRoles.Any(ur => ur.RoleId == role.Id))
+            .OrderBy(u => u.Email)
+            .ToListAsync(ct);
+
+        return admins.Select(Map).ToList();
+    }
+
+    /// <summary>
+    /// Platform Admin → revoke business admin role from a user.
+    /// Does NOT delete the user — they may still have other roles or
+    /// be a regular viewer. Only removes the site-business-admin role.
+    /// </summary>
+    public async Task RevokeBusinessAdminAsync(Guid siteId, Guid userId, Guid revokedBy, CancellationToken ct = default)
+    {
+        var db = await _siteDbFactory.ResolveForSiteAsync(siteId, ct);
+
+        var role = await db.Roles.FirstOrDefaultAsync(r => r.Key == "site-business-admin", ct)
+            ?? throw new BusinessRuleException("ROLE_NOT_CLONED",
+                "The site-business-admin role does not exist in this site's database.");
+
+        var assignment = await db.UserRoles
+            .FirstOrDefaultAsync(ur => ur.UserId == userId && ur.RoleId == role.Id, ct)
+            ?? throw new NotFoundException("UserRole", $"{userId}/{role.Id}");
+
+        db.UserRoles.Remove(assignment);
+
+        // Bump permissions version so cached perms are invalidated.
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId, ct);
+        if (user is not null) user.PermissionsVersion++;
+
+        await db.SaveChangesAsync(ct);
+
+        await _audit.LogAsync(new AuditEntry(
+            SiteId: siteId, ActorUserId: revokedBy, ActorEmail: _current.Email,
+            ActorIp: null, ActorUserAgent: null,
+            Action: "business_admin.revoke", TargetType: "User", TargetId: userId.ToString(),
+            Outcome: "success"), ct);
+    }
+
     private async Task<Role> AutoCloneRoleFromTemplateAsync(
         SiteDbContext db, Guid siteId, string roleKey, CancellationToken ct)
     {
