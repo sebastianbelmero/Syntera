@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Pencil, KeyRound, Palette, UserPlus, Users } from "lucide-react";
+import { Pencil, Palette, UserPlus, Users } from "lucide-react";
 import { sitesApi } from "../../api/platform";
 import { ApiError } from "../../api/client";
 import type {
@@ -53,7 +53,6 @@ export default function SitesPage() {
               key={s.id}
               site={s}
               onEdit={() => setEditSite(s)}
-              onConfigureLdap={() => setLdapSite(s)}
               onEditTheme={() => setThemeSite(s)}
               onAssignAdmin={() => setAdminSite(s)}
               onManageAdmins={() => setManageAdminSite(s)}
@@ -71,10 +70,9 @@ export default function SitesPage() {
   );
 }
 
-function SiteCard({ site, onEdit, onConfigureLdap, onEditTheme, onAssignAdmin, onManageAdmins }: {
+function SiteCard({ site, onEdit, onEditTheme, onAssignAdmin, onManageAdmins }: {
   site: SiteDto;
   onEdit: () => void;
-  onConfigureLdap: () => void;
   onEditTheme: () => void;
   onAssignAdmin: () => void;
   onManageAdmins: () => void;
@@ -119,13 +117,8 @@ function SiteCard({ site, onEdit, onConfigureLdap, onEditTheme, onAssignAdmin, o
           style={{ backgroundColor: "var(--color-accent)", color: "var(--color-accent-foreground)" }}>
           <UserPlus size={16} /> Add Admin
         </button>
-        <button onClick={onConfigureLdap} type="button"
-          className="flex items-center justify-center gap-1.5 px-2 py-2.5 rounded-lg text-xs min-h-[44px] transition hover:opacity-80"
-          style={{ border: "1px solid var(--color-border)" }}>
-          <KeyRound size={16} /> LDAP
-        </button>
         <button onClick={onEditTheme} type="button"
-          className="flex items-center justify-center gap-1.5 px-2 py-2.5 rounded-lg text-xs min-h-[44px] col-span-2 transition hover:opacity-80"
+          className="flex items-center justify-center gap-1.5 px-2 py-2.5 rounded-lg text-xs min-h-[44px] transition hover:opacity-80"
           style={{ border: "1px solid var(--color-border)" }}>
           <Palette size={16} /> Theme
         </button>
