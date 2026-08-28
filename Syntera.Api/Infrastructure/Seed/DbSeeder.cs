@@ -270,15 +270,6 @@ public sealed class SiteSeedConfig
     public string EmailDomain { get; set; } = "";
     public ThemePaletteConfig LightPalette { get; set; } = new();
     public ThemePaletteConfig DarkPalette { get; set; } = new();
-    public LdapConfig? Ldap { get; set; }
-}
-
-/// <summary>LDAP config from appsettings (not stored in DB).</summary>
-public sealed class LdapConfig
-{
-    public string Path { get; set; } = "";
-    public string Port { get; set; } = "389";
-    public string Domain { get; set; } = "";
 }
 
 public sealed class ThemePaletteConfig

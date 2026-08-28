@@ -1,13 +1,11 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
-using Microsoft.Extensions.Configuration;
 using Syntera.Application.DTOs.Auth;
 using Syntera.Application.Interfaces.Services;
 using Syntera.Domain.Entities;
 using Syntera.Domain.Exceptions;
 using Syntera.Infrastructure.Data;
 using Syntera.Infrastructure.Ldap;
-using Syntera.Infrastructure.Seed;
 using System.Security.Cryptography;
 
 namespace Syntera.Application.Services;
@@ -44,7 +42,6 @@ public sealed class AuthService : IAuthService
     private readonly IPermissionService _permissions;
     private readonly IMemoryCache _cache;
     private readonly ILogger<AuthService> _log;
-    private readonly IConfiguration _config;
 
     private const int MaxFailedLogins = 5;
     private static readonly TimeSpan LockoutDuration = TimeSpan.FromMinutes(15);
@@ -59,8 +56,7 @@ public sealed class AuthService : IAuthService
         IThemeService themes,
         IPermissionService permissions,
         IMemoryCache cache,
-        ILogger<AuthService> log,
-        IConfiguration config)
+        ILogger<AuthService> log)
     {
         _platformDb = platformDb;
         _siteDbFactory = siteDbFactory;
@@ -72,7 +68,6 @@ public sealed class AuthService : IAuthService
         _permissions = permissions;
         _cache = cache;
         _log = log;
-        _config = config;
     }
 
     public async Task<LoginResponse> LoginAsync(LoginRequest request, string? ip, string? userAgent, CancellationToken ct = default)
@@ -183,27 +178,21 @@ public sealed class AuthService : IAuthService
 
         var site = domainRow.Site;
 
-        // ── Resolve LDAP config from appsettings (not DB) ────────────
-        // LDAP config (Path, Port, Domain) is stored in appsettings.json
-        // under Sites[].Ldap — NOT in the database. This is infrastructure
-        // config that belongs in config files, not editable from UI.
-        var ldapPath = _config[$"Sites:{GetSiteIndex(site.Code)}:Ldap:Path"];
-        var ldapPort = _config[$"Sites:{GetSiteIndex(site.Code)}:Ldap:Port"];
-        var ldapDomain = _config[$"Sites:{GetSiteIndex(site.Code)}:Ldap:Domain"];
-
-        if (string.IsNullOrWhiteSpace(ldapPath) || string.IsNullOrWhiteSpace(ldapDomain))
+        // ── Resolve LDAP config ───────────────────────────────────────
+        var ldapConfig = await _platformDb.LdapConfigs
+            .FirstOrDefaultAsync(c => c.SiteId == site.Id, ct);
+        if (ldapConfig is null)
         {
             throw new AuthenticationException("LDAP_NOT_CONFIGURED",
-                $"Site '{site.Code}' has no LDAP configuration in appsettings.json. " +
-                "Add 'Ldap' section with Path, Port, Domain under this site's config.");
+                $"Site '{site.Code}' has no LDAP configuration. Contact Platform Admin.");
         }
 
         var endpoint = new LdapEndpoint(
-            Host: ldapPath!,
-            Port: int.TryParse(ldapPort, out var p) ? p : 389,
-            UseStartTls: false,
-            BaseDn: ldapDomain!,
-            UpnDomain: null);
+            Host: ldapConfig.Host,
+            Port: ldapConfig.Port,
+            UseStartTls: ldapConfig.UseStartTls,
+            BaseDn: ldapConfig.BaseDn,
+            UpnDomain: ldapConfig.UpnDomain);
 
         // ── Authenticate via LDAP (direct bind: user's own email + password) ──
         var result = await _ldap.AuthenticateAsync(endpoint, email, password, ct);
@@ -441,21 +430,6 @@ public sealed class AuthService : IAuthService
             CreatedFromIp = ip,
             CreatedUserAgent = ua,
         };
-    }
-
-    /// <summary>
-    /// Finds the index of a site in the appsettings Sites[] array by code.
-    /// Used to read LDAP config: config[$"Sites:{index}:Ldap:Path"]
-    /// </summary>
-    private int GetSiteIndex(string siteCode)
-    {
-        var sites = _config.GetSection("Sites").Get<List<SiteSeedConfig>>() ?? new();
-        for (var i = 0; i < sites.Count; i++)
-        {
-            if (string.Equals(sites[i].Code, siteCode, StringComparison.OrdinalIgnoreCase))
-                return i;
-        }
-        return -1;
     }
 
     private static string GenerateRefreshToken(int bytes = 32)

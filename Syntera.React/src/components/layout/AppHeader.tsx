@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useNavigate } from "react-router-dom";
-import { MenuIcon, MoonIcon, SunIcon, LogOutIcon, UserIcon, MaximizeIcon, MinimizeIcon } from "lucide-react";
+import { MenuIcon, MoonIcon, SunIcon, LogOutIcon, UserIcon } from "lucide-react";
 import { useThemeStore } from "../../store/themeStore";
 import { useAuthStore } from "../../store/authStore";
 import logoUrl from "../../assets/syntera-logo.jpg";
@@ -45,23 +45,6 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   const { isDark, toggleMode } = useThemeStore();
   const theme = useAuthStore((s) => s.theme);
   const navigate = useNavigate();
-  const [isFullscreen, setIsFullscreen] = React.useState(false);
-
-  const toggleFullscreen = () => {
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen?.();
-      setIsFullscreen(true);
-    } else {
-      document.exitFullscreen?.();
-      setIsFullscreen(false);
-    }
-  };
-
-  React.useEffect(() => {
-    const onChange = () => setIsFullscreen(!!document.fullscreenElement);
-    document.addEventListener("fullscreenchange", onChange);
-    return () => document.removeEventListener("fullscreenchange", onChange);
-  }, []);
 
   return (
     <header
@@ -103,21 +86,6 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
       </div>
 
       <div className="flex items-center gap-2 sm:gap-3">
-        {/* Fullscreen toggle */}
-        <button
-          type="button"
-          onClick={toggleFullscreen}
-          className="rounded-lg p-2.5 transition-colors hover:opacity-80 min-h-[44px] min-w-[44px] flex items-center justify-center"
-          style={{
-            border: "1px solid var(--color-border)",
-            color: "var(--color-text)",
-          }}
-          aria-label="Toggle fullscreen"
-          title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
-        >
-          {isFullscreen ? <MinimizeIcon className="size-4" /> : <MaximizeIcon className="size-4" />}
-        </button>
-
         {/* Theme mode toggle (light/dark) */}
         <button
           type="button"
