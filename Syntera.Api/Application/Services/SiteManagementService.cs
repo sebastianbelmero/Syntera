@@ -108,7 +108,7 @@ public sealed class SiteManagementService : ISiteManagementService
         if (cfg is null)
         {
             // Return defaults if no config yet.
-            return new LdapConfigDto(siteId, Host: "", Port: 389, UseStartTls: false, BaseDn: "");
+            return new LdapConfigDto(siteId, Host: "", Port: 389, UseStartTls: false, BaseDn: "", UpnDomain: null);
         }
         return MapLdapConfig(cfg);
     }
@@ -130,6 +130,7 @@ public sealed class SiteManagementService : ISiteManagementService
         cfg.Port = dto.Port;
         cfg.UseStartTls = dto.UseStartTls;
         cfg.BaseDn = dto.BaseDn;
+        cfg.UpnDomain = string.IsNullOrWhiteSpace(dto.UpnDomain) ? null : dto.UpnDomain;
 
         if (isNew) _db.LdapConfigs.Add(cfg);
         await _db.SaveChangesAsync(ct);
@@ -138,7 +139,7 @@ public sealed class SiteManagementService : ISiteManagementService
             SiteId: siteId, ActorUserId: updatedBy, ActorEmail: null, ActorIp: null, ActorUserAgent: null,
             Action: "ldap.write", TargetType: "SiteLdapConfig", TargetId: siteId.ToString(),
             Outcome: "success", ErrorMessage: null,
-            AfterJson: System.Text.Json.JsonSerializer.Serialize(new { cfg.Host, cfg.Port, cfg.UseStartTls, cfg.BaseDn })), ct);
+            AfterJson: System.Text.Json.JsonSerializer.Serialize(new { cfg.Host, cfg.Port, cfg.UseStartTls, cfg.BaseDn, cfg.UpnDomain })), ct);
 
         return MapLdapConfig(cfg);
     }
@@ -147,7 +148,7 @@ public sealed class SiteManagementService : ISiteManagementService
     {
         var endpoint = new LdapEndpoint(
             Host: req.Host, Port: req.Port, UseStartTls: req.UseStartTls,
-            BaseDn: req.BaseDn);
+            BaseDn: req.BaseDn, UpnDomain: req.UpnDomain);
 
         // Direct bind: test with the user's actual email + password.
         var result = await _ldap.TestConnectionAsync(endpoint, req.TestEmail, req.TestPassword, ct);
@@ -196,5 +197,6 @@ public sealed class SiteManagementService : ISiteManagementService
         CreatedAt: s.CreatedAt, UpdatedAt: s.UpdatedAt);
 
     private static LdapConfigDto MapLdapConfig(SiteLdapConfig c) => new(
-        SiteId: c.SiteId, Host: c.Host, Port: c.Port, UseStartTls: c.UseStartTls, BaseDn: c.BaseDn);
+        SiteId: c.SiteId, Host: c.Host, Port: c.Port, UseStartTls: c.UseStartTls,
+        BaseDn: c.BaseDn, UpnDomain: c.UpnDomain);
 }

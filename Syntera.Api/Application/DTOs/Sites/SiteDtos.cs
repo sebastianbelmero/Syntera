@@ -25,19 +25,22 @@ public record LdapConfigDto(
     string Host,
     int Port,
     bool UseStartTls,
-    string BaseDn);
+    string BaseDn,
+    string? UpnDomain);
 
 public record LdapConfigUpsertDto(
     string Host,
     int Port,
     bool UseStartTls,
-    string BaseDn);
+    string BaseDn,
+    string? UpnDomain);
 
 public record LdapTestRequest(
     string Host,
     int Port,
     bool UseStartTls,
     string BaseDn,
+    string? UpnDomain,
     string TestEmail,
     string TestPassword);
 

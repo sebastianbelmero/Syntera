@@ -64,10 +64,10 @@ public class SiteLdapConfig : BaseEntity
     public Guid SiteId { get; set; }
     public Site Site { get; set; } = null!;
 
-    /// <summary>LDAP server host, e.g., "10.131.220.11" or "ldap.kalventis.dom".</summary>
+    /// <summary>LDAP server host, e.g., "10.131.220.11".</summary>
     public string Host { get; set; } = string.Empty;
 
-    /// <summary>Port. Typically 389 (plain or StartTLS) or 636 (LDAPS). Plain 389 is allowed.</summary>
+    /// <summary>Port. Typically 389 (plain or StartTLS) or 636 (LDAPS).</summary>
     public int Port { get; set; } = 389;
 
     /// <summary>If true, connection upgrades to TLS after initial connect on port 389 (StartTLS).</summary>
@@ -75,6 +75,17 @@ public class SiteLdapConfig : BaseEntity
 
     /// <summary>Base DN for the LDAP directory, e.g., "DC=KALVENTIS,DC=DOM".</summary>
     public string BaseDn { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The Active Directory UPN domain suffix for binding. e.g., "kalventis.dom".
+    /// When a user logs in with email "user@kalventis.com", we transform
+    /// the bind DN to "user@kalventis.dom" (replacing the email domain with
+    /// the UPN domain). This is necessary because AD's userPrincipalName
+    /// uses the AD domain suffix (.dom), which often differs from the
+    /// email domain (.com).
+    /// If empty, the email is used as-is for binding.
+    /// </summary>
+    public string? UpnDomain { get; set; }
 }
 
 /// <summary>

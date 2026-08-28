@@ -61,6 +61,7 @@ public sealed class PlatformDbContext : DbContext
             e.HasKey(x => x.Id);
             e.Property(x => x.Host).HasMaxLength(255).IsRequired();
             e.Property(x => x.BaseDn).HasMaxLength(255).IsRequired();
+            e.Property(x => x.UpnDomain).HasMaxLength(255);
             e.HasOne(x => x.Site)
                 .WithOne(s => s.LdapConfig)
                 .HasForeignKey<SiteLdapConfig>(x => x.SiteId)

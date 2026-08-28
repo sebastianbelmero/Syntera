@@ -53,7 +53,8 @@ public record LdapEndpoint(
     string Host,
     int Port,
     bool UseStartTls,
-    string BaseDn);
+    string BaseDn,
+    string? UpnDomain);
 
 /// <summary>
 /// Novell-based implementation. Plain LDAP on port 389 is allowed
@@ -80,8 +81,29 @@ public sealed class NovellLdapClient : ILdapClient
         LdapEndpoint endpoint, string email, string password, CancellationToken ct = default)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        LogInfo("LDAP auth starting for {Email} via {Host}:{Port} (StartTLS={StartTLS}, BaseDn={BaseDn})",
-            email, endpoint.Host, endpoint.Port, endpoint.UseStartTls, endpoint.BaseDn);
+
+        // Transform email → bind DN using UPN domain if configured.
+        // e.g., email="user@kalventis.com", UpnDomain="kalventis.dom"
+        //       → bindDn="user@kalventis.dom"
+        // This is necessary because AD's userPrincipalName uses the AD
+        // domain suffix (.dom), which often differs from the email domain (.com).
+        var bindDn = email;
+        if (!string.IsNullOrWhiteSpace(endpoint.UpnDomain))
+        {
+            var atIndex = email.IndexOf('@');
+            if (atIndex > 0)
+            {
+                bindDn = email[..atIndex] + "@" + endpoint.UpnDomain;
+            }
+            else
+            {
+                // No @ in the input — treat the whole thing as username.
+                bindDn = email + "@" + endpoint.UpnDomain;
+            }
+        }
+
+        LogInfo("LDAP auth starting for {Email} (bind as {BindDn}) via {Host}:{Port} (StartTLS={StartTLS}, BaseDn={BaseDn})",
+            email, bindDn, endpoint.Host, endpoint.Port, endpoint.UseStartTls, endpoint.BaseDn);
 
         try
         {
@@ -103,10 +125,10 @@ public sealed class NovellLdapClient : ILdapClient
 
             // Direct bind: user's own email + password.
             // Active Directory accepts userPrincipalName (email format) as bind identity.
-            LogInfo("Binding as {Email}...", email);
+            LogInfo("Binding as {BindDn}...", bindDn);
             try
             {
-                await conn.BindAsync(email, password, CancellationToken.None).ConfigureAwait(false);
+                await conn.BindAsync(bindDn, password, CancellationToken.None).ConfigureAwait(false);
                 LogInfo("Bind result: Bound={Bound}", conn.Bound);
                 if (!conn.Bound)
                 {

@@ -95,6 +95,7 @@ export interface LdapConfigDto {
   port: number;
   useStartTls: boolean;
   baseDn: string;
+  upnDomain: string | null;
 }
 
 export interface LdapConfigUpsertDto {
@@ -102,6 +103,7 @@ export interface LdapConfigUpsertDto {
   port: number;
   useStartTls: boolean;
   baseDn: string;
+  upnDomain: string | null;
 }
 
 export interface LdapTestRequest {
@@ -109,6 +111,7 @@ export interface LdapTestRequest {
   port: number;
   useStartTls: boolean;
   baseDn: string;
+  upnDomain: string | null;
   testEmail: string;
   testPassword: string;
 }

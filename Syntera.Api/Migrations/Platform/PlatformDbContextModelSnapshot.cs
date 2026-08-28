@@ -357,6 +357,10 @@ namespace Syntera.Migrations.Platform
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("UpnDomain")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
                     b.Property<bool>("UseStartTls")
                         .HasColumnType("bit");
 

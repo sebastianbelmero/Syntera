@@ -203,7 +203,7 @@ function SiteEditDrawer({ site, onClose }: { site: SiteDto; onClose: () => void 
 function LdapDrawer({ site, onClose }: { site: SiteDto; onClose: () => void }) {
   const queryClient = useQueryClient();
   const [cfg, setCfg] = useState<LdapConfigUpsertDto>({
-    host: "", port: 389, useStartTls: false, baseDn: "",
+    host: "", port: 389, useStartTls: false, baseDn: "", upnDomain: null,
   });
   const [testEmail, setTestEmail] = useState("");
   const [testPassword, setTestPassword] = useState("");
@@ -220,12 +220,13 @@ function LdapDrawer({ site, onClose }: { site: SiteDto; onClose: () => void }) {
   const lastConfigRef = useRef<string | null>(null);
   useEffect(() => {
     if (!existing) return;
-    const sig = `${existing.host}|${existing.port}|${existing.baseDn}`;
+    const sig = `${existing.host}|${existing.port}|${existing.baseDn}|${existing.upnDomain}`;
     if (lastConfigRef.current === sig) return;
     lastConfigRef.current = sig;
     setCfg({
       host: existing.host, port: existing.port,
       useStartTls: existing.useStartTls, baseDn: existing.baseDn,
+      upnDomain: existing.upnDomain,
     });
   }, [existing]);
 
@@ -293,6 +294,17 @@ function LdapDrawer({ site, onClose }: { site: SiteDto; onClose: () => void }) {
           <input className="input" value={cfg.baseDn}
             onChange={(e) => setCfg({ ...cfg, baseDn: e.target.value })}
             placeholder="DC=KALVENTIS,DC=DOM" />
+        </Field>
+
+        <Field label="UPN Domain (AD bind domain — leave empty if same as email domain)">
+          <input className="input" value={cfg.upnDomain ?? ""}
+            onChange={(e) => setCfg({ ...cfg, upnDomain: e.target.value || null })}
+            placeholder="kalventis.dom" />
+          <div className="text-xs mt-1" style={{ color: "var(--color-muted)" }}>
+            When user logs in with <code>user@kalventis.com</code>, we bind to AD as
+            <code> user@{cfg.upnDomain || "kalventis.dom"}</code>. Set this to the AD domain
+            suffix (from Base DN: DC=KALVENTIS,DC=DOM → kalventis.dom).
+          </div>
         </Field>
 
         {cfg.port === 389 && !cfg.useStartTls && (

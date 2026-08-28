@@ -191,7 +191,8 @@ public sealed class AuthService : IAuthService
             Host: ldapConfig.Host,
             Port: ldapConfig.Port,
             UseStartTls: ldapConfig.UseStartTls,
-            BaseDn: ldapConfig.BaseDn);
+            BaseDn: ldapConfig.BaseDn,
+            UpnDomain: ldapConfig.UpnDomain);
 
         // ── Authenticate via LDAP (direct bind: user's own email + password) ──
         var result = await _ldap.AuthenticateAsync(endpoint, email, password, ct);
