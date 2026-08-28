@@ -645,8 +645,8 @@ function AdminDrawer({ site, onClose }: { site: SiteDto; onClose: () => void }) 
 
 function Drawer({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
-    <div className="fixed inset-0 z-50 flex justify-end" style={{ backgroundColor: "rgba(0,0,0,0.4)" }} onClick={onClose}>
-      <div className="w-full max-w-md h-full overflow-y-auto p-6"
+    <div className="fixed inset-0 z-50 flex justify-end syntera-drawer-backdrop" style={{ backgroundColor: "rgba(0,0,0,0.4)" }} onClick={onClose}>
+      <div className="w-full max-w-md h-full overflow-y-auto p-6 syntera-drawer-panel"
         style={{ backgroundColor: "var(--color-surface)" }}
         onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">

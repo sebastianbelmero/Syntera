@@ -1245,3 +1245,63 @@ body {
 .dark .input {
   background-color: var(--color-surface, #1E293B);
 }
+
+/* ============================================
+   Drawer Animations — slide-in from right + fade backdrop
+   ============================================ */
+
+@keyframes syntera-drawer-slide-in {
+  from {
+    transform: translateX(100%);
+    opacity: 0.5;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes syntera-drawer-backdrop-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes syntera-drawer-slide-out {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+}
+
+@keyframes syntera-drawer-backdrop-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.syntera-drawer-backdrop {
+  animation: syntera-drawer-backdrop-fade-in 0.2s ease-out forwards;
+}
+
+.syntera-drawer-panel {
+  animation: syntera-drawer-slide-in 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Respect user's reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  .syntera-drawer-backdrop,
+  .syntera-drawer-panel {
+    animation: none;
+  }
+}
