@@ -209,7 +209,7 @@ export default function LoginPage() {
 
           {/* Helper text */}
           <div className="mt-8 pt-6" style={{ borderTop: "1px solid var(--color-border)" }}>
-            <p className="text-xs text-center" style={{ color: "var(--color-muted)" }}>
+            <p className="text-xs text-center leading-relaxed" style={{ color: "var(--color-text)", opacity: 0.6 }}>
               Authentication is routed by your email domain.
               <br />
               Contact your site admin if you cannot log in.
@@ -218,7 +218,7 @@ export default function LoginPage() {
 
           {/* Mobile footer */}
           <div className="lg:hidden mt-6 text-center">
-            <p className="text-xs" style={{ color: "var(--color-muted)" }}>
+            <p className="text-xs" style={{ color: "var(--color-text)", opacity: 0.5 }}>
               © 2026 Syntera. One Platform. One Standard.
             </p>
           </div>
