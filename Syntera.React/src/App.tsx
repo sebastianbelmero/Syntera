@@ -15,6 +15,16 @@ import UsersPage from "./pages/site/UsersPage";
 import AuditLogsPage from "./pages/audit/AuditLogsPage";
 import SettingsPage from "./pages/settings/SettingsPage";
 
+/** Calculate readable foreground color (dark/light) based on background luminance. */
+function pickFg(hex: string): string {
+  const c = hex.replace("#", "");
+  const r = parseInt(c.slice(0, 2), 16);
+  const g = parseInt(c.slice(2, 4), 16);
+  const b = parseInt(c.slice(4, 6), 16);
+  const L = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return L > 0.55 ? "#0a1428" : "#ffffff";
+}
+
 /**
  * ThemeApplier — applies the brand palette from the authenticated user's
  * site theme (loaded by AuthService into authStore.theme) plus the user's
@@ -52,10 +62,10 @@ function ThemeApplier() {
       root.style.setProperty("--card", palette.surface);
       root.style.setProperty("--card-foreground", palette.text);
       root.style.setProperty("--primary", palette.primary);
-      root.style.setProperty("--primary-foreground", "#ffffff");
+      root.style.setProperty("--primary-foreground", pickFg(palette.primary));
       root.style.setProperty("--primary-hover", palette.primary);
       root.style.setProperty("--accent", palette.accent);
-      root.style.setProperty("--accent-foreground", "#ffffff");
+      root.style.setProperty("--accent-foreground", pickFg(palette.accent));
       root.style.setProperty("--muted", palette.muted);
       root.style.setProperty("--muted-foreground", palette.muted);
       root.style.setProperty("--border", palette.border);

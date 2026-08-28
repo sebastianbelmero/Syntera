@@ -1234,7 +1234,7 @@ body {
 
 .input:focus {
   border-color: var(--color-primary, var(--primary, #4C6EF5));
-  box-shadow: 0 0 0 3px rgba(76, 110, 245, 0.15);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary, var(--primary, #4C6EF5)) 25%, transparent);
 }
 
 .input:disabled {

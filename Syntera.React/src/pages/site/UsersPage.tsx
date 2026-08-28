@@ -52,13 +52,20 @@ export default function UsersPage() {
 
       {loading ? (
         <div className="text-center py-8" style={{ color: "var(--color-muted)" }}>Loading...</div>
+      ) : users.length === 0 ? (
+        <div className="rounded-xl p-8 text-center"
+          style={{ backgroundColor: "var(--color-surface)", border: "1px solid var(--color-border)" }}>
+          <p className="text-sm" style={{ color: "var(--color-muted)" }}>
+            No users yet. Click "New User" to create one.
+          </p>
+        </div>
       ) : (
         <div className="space-y-2">
           {users.map((u) => (
-            <div key={u.id} className="rounded-lg p-3 flex items-center justify-between"
+            <div key={u.id} className="rounded-lg p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
               style={{ backgroundColor: "var(--color-surface)", border: "1px solid var(--color-border)" }}>
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-semibold"
+                <div className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-semibold shrink-0"
                   style={{ backgroundColor: "var(--color-primary)" }}>
                   {u.displayName.charAt(0).toUpperCase()}
                 </div>
@@ -73,22 +80,25 @@ export default function UsersPage() {
                   <div className="text-xs" style={{ color: "var(--color-muted)" }}>{u.email}</div>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <div className="flex flex-wrap gap-1 justify-end max-w-md">
+              <div className="flex items-center gap-2 sm:justify-end">
+                <div className="flex flex-wrap gap-1 sm:max-w-md">
                   {u.roles.map((r) => (
                     <span key={r.roleId} className="text-xs px-2 py-0.5 rounded"
-                      style={{ backgroundColor: "var(--color-accent)", color: "white" }}>{r.roleDisplayName}</span>
+                      style={{ backgroundColor: "var(--color-accent)", color: "var(--color-text)" }}>{r.roleDisplayName}</span>
                   ))}
                   {u.directPermissions.filter(p => !p.isRevoked).length > 0 && (
                     <span className="text-xs px-2 py-0.5 rounded flex items-center gap-1"
-                      style={{ backgroundColor: "var(--color-warning)", color: "white" }}>
+                      style={{ backgroundColor: "var(--color-warning)", color: "var(--color-text)" }}>
                       <Clock size={10} /> {u.directPermissions.filter(p => !p.isRevoked).length} direct
                     </span>
                   )}
                 </div>
                 {u.id !== currentUserId && (
-                  <button onClick={() => setEditing(u)} className="p-1.5 rounded-md" style={{ border: "1px solid var(--color-border)" }}>
-                    <Key size={14} />
+                  <button type="button" onClick={() => setEditing(u)}
+                    className="p-2 rounded-md min-h-[40px] min-w-[40px] flex items-center justify-center transition hover:opacity-80"
+                    style={{ border: "1px solid var(--color-border)" }}
+                    aria-label={`Edit ${u.displayName}`}>
+                    <Key size={16} />
                   </button>
                 )}
               </div>

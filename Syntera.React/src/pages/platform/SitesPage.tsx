@@ -104,30 +104,30 @@ function SiteCard({ site, onEdit, onConfigureLdap, onEditTheme, onAssignAdmin, o
       </div>
 
       <div className="grid grid-cols-2 gap-2">
-        <button onClick={onEdit}
-          className="flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-xs"
+        <button onClick={onEdit} type="button"
+          className="flex items-center justify-center gap-1.5 px-2 py-2.5 rounded-lg text-xs min-h-[44px] transition hover:opacity-80"
           style={{ border: "1px solid var(--color-border)" }}>
-          <Pencil size={12} /> Edit Name
+          <Pencil size={16} /> Edit Name
         </button>
-        <button onClick={onManageAdmins}
-          className="flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-xs"
+        <button onClick={onManageAdmins} type="button"
+          className="flex items-center justify-center gap-1.5 px-2 py-2.5 rounded-lg text-xs min-h-[44px] transition hover:opacity-80"
           style={{ border: "1px solid var(--color-border)" }}>
-          <Users size={12} /> Admins
+          <Users size={16} /> Admins
         </button>
-        <button onClick={onAssignAdmin}
-          className="flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-xs"
-          style={{ backgroundColor: "var(--color-accent)", color: "white" }}>
-          <UserPlus size={12} /> Add Admin
+        <button onClick={onAssignAdmin} type="button"
+          className="flex items-center justify-center gap-1.5 px-2 py-2.5 rounded-lg text-xs min-h-[44px] transition hover:opacity-80"
+          style={{ backgroundColor: "var(--color-accent)", color: "var(--color-text)" }}>
+          <UserPlus size={16} /> Add Admin
         </button>
-        <button onClick={onConfigureLdap}
-          className="flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-xs"
+        <button onClick={onConfigureLdap} type="button"
+          className="flex items-center justify-center gap-1.5 px-2 py-2.5 rounded-lg text-xs min-h-[44px] transition hover:opacity-80"
           style={{ border: "1px solid var(--color-border)" }}>
-          <KeyRound size={12} /> LDAP
+          <KeyRound size={16} /> LDAP
         </button>
-        <button onClick={onEditTheme}
-          className="flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-xs col-span-2"
+        <button onClick={onEditTheme} type="button"
+          className="flex items-center justify-center gap-1.5 px-2 py-2.5 rounded-lg text-xs min-h-[44px] col-span-2 transition hover:opacity-80"
           style={{ border: "1px solid var(--color-border)" }}>
-          <Palette size={12} /> Theme
+          <Palette size={16} /> Theme
         </button>
       </div>
     </div>
@@ -171,7 +171,10 @@ function SiteEditDrawer({ site, onClose }: { site: SiteDto; onClose: () => void 
               <span key={i} className="px-2 py-1 rounded-md text-xs flex items-center gap-1"
                 style={{ backgroundColor: "var(--color-background)", border: "1px solid var(--color-border)" }}>
                 {d}
-                <button onClick={() => setDomains(domains.filter((_, j) => j !== i))}>×</button>
+                <button type="button" onClick={() => setDomains(domains.filter((_, j) => j !== i))}
+                  aria-label={`Remove domain ${d}`}
+                  className="ml-1 inline-flex items-center justify-center rounded-full hover:opacity-70 transition-opacity"
+                  style={{ minWidth: "24px", minHeight: "24px" }}>×</button>
               </span>
             ))}
           </div>

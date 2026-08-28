@@ -39,6 +39,13 @@ export default function RoleTemplatesPage() {
 
       {loading ? (
         <div className="text-center py-8" style={{ color: "var(--color-muted)" }}>Loading...</div>
+      ) : templates.length === 0 ? (
+        <div className="rounded-xl p-8 text-center"
+          style={{ backgroundColor: "var(--color-surface)", border: "1px solid var(--color-border)" }}>
+          <p className="text-sm" style={{ color: "var(--color-muted)" }}>
+            No role templates yet. Click "New Template" to create one.
+          </p>
+        </div>
       ) : (
         <div className="space-y-3">
           {templates.map((t) => (

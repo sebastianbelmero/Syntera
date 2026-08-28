@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { CheckCircle2, XCircle } from "lucide-react";
 import { auditApi } from "../../api/audit";
 import { ApiError } from "../../api/client";
 import type { AuditLogDto } from "../../types";
@@ -41,7 +42,7 @@ export default function AuditLogsPage() {
         </p>
       </div>
 
-      <div className="flex gap-3">
+      <div className="flex flex-col sm:flex-row gap-3">
         <input className="input" placeholder="Filter by action (e.g., auth.login)" value={filterAction}
           onChange={(e) => setFilterAction(e.target.value)} />
         <select className="input" value={filterOutcome} onChange={(e) => setFilterOutcome(e.target.value)}>
@@ -62,8 +63,9 @@ export default function AuditLogsPage() {
           {displayLogs.map((l) => (
             <div key={l.id} className="rounded-md p-3 flex items-start gap-3 text-sm"
               style={{ backgroundColor: "var(--color-surface)", border: "1px solid var(--color-border)" }}>
-              <div className="w-2 h-2 rounded-full mt-1.5"
-                style={{ backgroundColor: l.outcome === "success" ? "var(--color-success)" : "var(--color-danger)" }} />
+              {l.outcome === "success"
+                ? <CheckCircle2 size={16} className="mt-0.5 shrink-0" style={{ color: "var(--color-success)" }} />
+                : <XCircle size={16} className="mt-0.5 shrink-0" style={{ color: "var(--color-danger)" }} />}
               <div className="flex-1">
                 <div className="flex items-center gap-2">
                   <span className="font-mono text-xs">{l.action}</span>

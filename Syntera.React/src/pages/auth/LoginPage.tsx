@@ -86,7 +86,7 @@ export default function LoginPage() {
               onChange={(e) => setEmail(e.target.value)}
               disabled={loading}
               placeholder="you@company.com"
-              className="px-3 py-2 rounded-lg outline-none transition"
+              className="px-3 py-3 rounded-lg outline-none transition focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] min-h-[44px]"
               style={{
                 backgroundColor: "var(--color-background)",
                 border: "1px solid var(--color-border)",
@@ -105,7 +105,7 @@ export default function LoginPage() {
               onChange={(e) => setPassword(e.target.value)}
               disabled={loading}
               placeholder="••••••••"
-              className="px-3 py-2 rounded-lg outline-none transition"
+              className="px-3 py-3 rounded-lg outline-none transition focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] min-h-[44px]"
               style={{
                 backgroundColor: "var(--color-background)",
                 border: "1px solid var(--color-border)",
@@ -117,10 +117,10 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="mt-2 py-2.5 rounded-lg font-medium transition disabled:opacity-50"
+            className="mt-2 py-3 rounded-lg font-medium transition disabled:opacity-50 min-h-[44px] active:scale-[0.98]"
             style={{
               backgroundColor: "var(--color-primary)",
-              color: "white",
+              color: "var(--color-text)",
             }}
           >
             {loading ? "Signing in..." : "Sign in"}

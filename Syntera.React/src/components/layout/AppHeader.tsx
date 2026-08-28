@@ -58,7 +58,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
         <button
           type="button"
           onClick={toggleSidebar}
-          className="rounded-lg border-none bg-transparent p-1 transition-colors hover:opacity-80"
+          className="rounded-lg border-none bg-transparent p-2.5 transition-colors hover:opacity-80 min-h-[44px] min-w-[44px] flex items-center justify-center"
           style={{ color: "var(--color-muted)" }}
           aria-label="Toggle sidebar"
         >
@@ -90,7 +90,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
         <button
           type="button"
           onClick={toggleMode}
-          className="rounded-lg p-2 transition-colors hover:opacity-80"
+          className="rounded-lg p-2.5 transition-colors hover:opacity-80 min-h-[44px] min-w-[44px] flex items-center justify-center"
           style={{
             border: "1px solid var(--color-border)",
             color: "var(--color-text)",
