@@ -26,6 +26,8 @@ export const usersApi = {
   update: (id: string, dto: UserUpsertDto) => put<UserDto>(`${BASE}/users/${id}`, dto),
   disable: (id: string) => post<{ success: boolean }>(`${BASE}/users/${id}/disable`),
 
+  listRoles: () => get<RoleDto[]>(`${BASE}/users/roles`),
+
   assignRole: (dto: AssignRoleDto) => post<UserDto>(`${BASE}/users/assign-role`, dto),
   revokeRole: (dto: RevokeRoleDto) => post<{ success: boolean }>(`${BASE}/users/revoke-role`, dto),
 

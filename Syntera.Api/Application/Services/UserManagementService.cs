@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Syntera.Application.DTOs.Roles;
 using Syntera.Application.DTOs.Users;
 using Syntera.Application.Interfaces.Services;
 using Syntera.Domain.Entities;
@@ -43,6 +44,9 @@ public interface IUserManagementService
     /// Platform Admin → revoke business admin role from a user.
     /// </summary>
     Task RevokeBusinessAdminAsync(Guid siteId, Guid userId, Guid revokedBy, CancellationToken ct = default);
+
+    /// <summary>List all available roles in this site (auto-clones from templates if missing).</summary>
+    Task<IReadOnlyList<SiteRoleDto>> ListRolesAsync(CancellationToken ct = default);
 }
 
 public sealed class UserManagementService : IUserManagementService
@@ -415,6 +419,48 @@ public sealed class UserManagementService : IUserManagementService
             ActorIp: null, ActorUserAgent: null,
             Action: "business_admin.revoke", TargetType: "User", TargetId: userId.ToString(),
             Outcome: "success"), ct);
+    }
+
+    /// <summary>
+    /// List all available roles in this site. Auto-clones all 7 role templates
+    /// from the platform DB if they don't exist in the site DB yet.
+    /// This ensures the role dropdown is always populated when a site admin
+    /// opens the user management page.
+    /// </summary>
+    public async Task<IReadOnlyList<SiteRoleDto>> ListRolesAsync(CancellationToken ct = default)
+    {
+        var siteId = _current.SiteId
+            ?? throw new AuthorizationException("NO_SITE", "ListRoles requires site context.");
+
+        var db = await _siteDbFactory.ResolveForSiteAsync(siteId, ct);
+
+        // Auto-clone all role templates if they don't exist yet.
+        var allTemplateKeys = await _platformDb.RoleTemplates
+            .Where(t => t.IsPublished)
+            .Select(t => t.Key)
+            .ToListAsync(ct);
+
+        foreach (var key in allTemplateKeys)
+        {
+            var exists = await db.Roles.AnyAsync(r => r.Key == key, ct);
+            if (!exists)
+            {
+                await AutoCloneRoleFromTemplateAsync(db, siteId, key, ct);
+            }
+        }
+
+        // Return all roles in the site DB.
+        var roles = await db.Roles.AsNoTracking()
+            .OrderBy(r => r.DisplayName)
+            .Select(r => new SiteRoleDto(
+                Id: r.Id,
+                Key: r.Key,
+                DisplayName: r.DisplayName,
+                Description: r.Description,
+                IsSiteAdminRole: r.IsSiteAdminRole))
+            .ToListAsync(ct);
+
+        return roles;
     }
 
     private async Task<Role> AutoCloneRoleFromTemplateAsync(

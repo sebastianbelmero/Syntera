@@ -1,18 +1,13 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
 using Syntera.Application.Interfaces.Services;
 using Syntera.Domain.Entities;
 using Syntera.Infrastructure.Data;
 
 namespace Syntera.Application.Services;
 
-/// <summary>
-/// Loads theme palettes from the Platform DB and caches them in-memory
-/// for 5 minutes. Storing palettes in DB allows Platform Admin to update
-/// brand colors without redeploying; the cache ensures no per-request
-/// DB hit on the hot path (login → theme → response).
-/// </summary>
 public interface IThemeService
 {
     Task<DTOs.Auth.ThemeDto> GetThemeAsync(Guid siteId, CancellationToken ct = default);
@@ -23,28 +18,38 @@ public sealed class ThemeService : IThemeService
 {
     private readonly PlatformDbContext _db;
     private readonly IMemoryCache _cache;
+    private readonly ILogger<ThemeService>? _logger;
     private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(5);
 
-    public ThemeService(PlatformDbContext db, IMemoryCache cache)
+    public ThemeService(PlatformDbContext db, IMemoryCache cache, ILogger<ThemeService>? logger = null)
     {
         _db = db;
         _cache = cache;
+        _logger = logger;
     }
 
     public async Task<DTOs.Auth.ThemeDto> GetThemeAsync(Guid siteId, CancellationToken ct = default)
     {
         var cacheKey = $"theme:{siteId}";
         if (_cache.TryGetValue<DTOs.Auth.ThemeDto>(cacheKey, out var cached))
+        {
+            _logger?.LogDebug("Theme cache hit for site {SiteId}: themeKey={ThemeKey}", siteId, cached?.ThemeKey);
             return cached!;
+        }
 
         var theme = await _db.Themes.AsNoTracking().FirstOrDefaultAsync(t => t.SiteId == siteId, ct);
         DTOs.Auth.ThemeDto dto;
+
         if (theme is null)
         {
+            _logger?.LogWarning("No SiteTheme record found for site {SiteId} — returning PlatformDefault", siteId);
             dto = PlatformDefault();
         }
         else
         {
+            _logger?.LogInformation("Loading theme for site {SiteId}: themeKey={ThemeKey}, lightJson={LightJson}",
+                siteId, theme.ThemeKey, theme.LightPaletteJson?.Substring(0, Math.Min(80, theme.LightPaletteJson?.Length ?? 0)));
+
             var light = ParsePalette(theme.LightPaletteJson, defaultPalette: false);
             var dark = ParsePalette(theme.DarkPaletteJson, defaultPalette: true);
             dto = new DTOs.Auth.ThemeDto(
@@ -70,37 +75,44 @@ public sealed class ThemeService : IThemeService
         Dark: DefaultDark(),
         LogoUrl: null);
 
-    private static DTOs.Auth.ThemePalette ParsePalette(string json, bool defaultPalette)
+    private static readonly JsonSerializerOptions JsonOpts = new()
+    {
+        PropertyNameCaseInsensitive = true,
+    };
+
+    private static DTOs.Auth.ThemePalette ParsePalette(string? json, bool defaultPalette)
     {
         if (string.IsNullOrWhiteSpace(json) || json == "{}")
             return defaultPalette ? DefaultDark() : DefaultLight();
 
         try
         {
-            using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
+            // Deserialize with case-insensitive property matching — handles
+            // both PascalCase (from DbSeeder) and camelCase (from frontend).
+            var parsed = JsonSerializer.Deserialize<Dictionary<string, string>>(json, JsonOpts);
+            if (parsed is null)
+                return defaultPalette ? DefaultDark() : DefaultLight();
+
+            string Get(string key, string fallback) =>
+                parsed.TryGetValue(key, out var val) && !string.IsNullOrEmpty(val) ? val : fallback;
+
             return new DTOs.Auth.ThemePalette(
-                Primary:   GetProp(root, "primary",   defaultPalette ? "#60A5FA" : "#0B3D6F"),
-                Accent:    GetProp(root, "accent",    defaultPalette ? "#22D3EE" : "#00A7B5"),
-                Background:GetProp(root, "background",defaultPalette ? "#0F172A" : "#F8FAFC"),
-                Surface:   GetProp(root, "surface",   defaultPalette ? "#1E293B" : "#FFFFFF"),
-                Text:      GetProp(root, "text",      defaultPalette ? "#F1F5F9" : "#243447"),
-                Muted:     GetProp(root, "muted",     defaultPalette ? "#94A3B8" : "#64748B"),
-                Border:    GetProp(root, "border",    defaultPalette ? "#334155" : "#E2E8F0"),
-                Success:   GetProp(root, "success",   "#10B981"),
-                Warning:   GetProp(root, "warning",   "#F59E0B"),
-                Danger:    GetProp(root, "danger",    "#EF4444"));
+                Primary:   Get("Primary",   defaultPalette ? "#60A5FA" : "#0B3D6F"),
+                Accent:    Get("Accent",    defaultPalette ? "#22D3EE" : "#00A7B5"),
+                Background:Get("Background",defaultPalette ? "#0F172A" : "#F8FAFC"),
+                Surface:   Get("Surface",   defaultPalette ? "#1E293B" : "#FFFFFF"),
+                Text:      Get("Text",      defaultPalette ? "#F1F5F9" : "#243447"),
+                Muted:     Get("Muted",     defaultPalette ? "#94A3B8" : "#64748B"),
+                Border:    Get("Border",    defaultPalette ? "#334155" : "#E2E8F0"),
+                Success:   Get("Success",   "#10B981"),
+                Warning:   Get("Warning",   "#F59E0B"),
+                Danger:    Get("Danger",    "#EF4444"));
         }
         catch
         {
             return defaultPalette ? DefaultDark() : DefaultLight();
         }
     }
-
-    private static string GetProp(JsonElement root, string name, string fallback)
-        => root.TryGetProperty(name, out var el) && el.ValueKind == JsonValueKind.String
-            ? el.GetString() ?? fallback
-            : fallback;
 
     public static DTOs.Auth.ThemePalette DefaultLight() => new(
         Primary: "#0B3D6F", Accent: "#00A7B5",

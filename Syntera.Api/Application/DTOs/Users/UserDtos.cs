@@ -67,3 +67,11 @@ public record UserSyncResultDto(
     int UsersUpdated,
     int UsersDisabled,
     string? Errors);
+
+/// <summary>Site-level role (simplified — no template metadata).</summary>
+public record SiteRoleDto(
+    Guid Id,
+    string Key,
+    string DisplayName,
+    string? Description,
+    bool IsSiteAdminRole);

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Plus, Power, Key, Shield, Clock } from "lucide-react";
-import { usersApi, extractRoles } from "../../api/site";
+import { usersApi } from "../../api/site";
 import { roleTemplatesApi } from "../../api/platform";
 import { ApiError } from "../../api/client";
 import type { UserDto, UserUpsertDto, RoleDto, AssignRoleDto, GrantDirectPermissionDto, PermissionCatalogDto } from "../../types";
@@ -18,7 +18,11 @@ export default function UsersPage() {
     queryFn: () => usersApi.list(),
   });
 
-  const roles: RoleDto[] = extractRoles(users);
+  // Fetch roles from dedicated endpoint (auto-clones from templates).
+  const { data: roles = [] } = useQuery<RoleDto[]>({
+    queryKey: ["site-roles"],
+    queryFn: () => usersApi.listRoles(),
+  });
 
   const { data: catalog } = useQuery<PermissionCatalogDto>({
     queryKey: ["permission-catalog"],

@@ -30,6 +30,10 @@ public sealed class UsersController : ApiControllerBase
     public async Task<IActionResult> List(CancellationToken ct)
         => Ok(await _svc.ListAsync(ct));
 
+    [HttpGet("roles")]
+    public async Task<IActionResult> ListRoles(CancellationToken ct)
+        => Ok(await _svc.ListRolesAsync(ct));
+
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> Get(Guid id, CancellationToken ct)
         => Ok(await _svc.GetAsync(id, ct));
