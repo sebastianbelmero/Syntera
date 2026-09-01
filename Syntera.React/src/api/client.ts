@@ -134,8 +134,16 @@ api.interceptors.response.use(
 async function acquireFreshAccessToken(): Promise<string> {
   if (refreshPromise) return refreshPromise;
 
-  const refreshToken = useAuthStore.getState().refreshToken;
+  const { refreshToken, profile } = useAuthStore.getState();
   if (!refreshToken) throw new Error("NO_REFRESH_TOKEN");
+
+  // Choose endpoint based on scope — site users need /auth/refresh-site
+  // with siteId. Platform admin uses /auth/refresh.
+  const isSiteUser = profile?.scope === "site" && profile.siteId;
+  const url = isSiteUser ? "/api/auth/refresh-site" : "/api/auth/refresh";
+  const body = isSiteUser
+    ? { refreshToken, siteId: profile!.siteId }
+    : { refreshToken };
 
   refreshPromise = (async () => {
     try {
@@ -145,8 +153,9 @@ async function acquireFreshAccessToken(): Promise<string> {
           refreshToken: string;
           expiresAt: string;
           profile: unknown;
+          theme: unknown;
         }>
-      >("/api/auth/refresh", { refreshToken });
+      >(url, body);
       const data = res.data.data;
       if (!data) throw new Error("REFRESH_FAILED");
       useAuthStore.getState().setTokens({
@@ -154,6 +163,9 @@ async function acquireFreshAccessToken(): Promise<string> {
         refreshToken: data.refreshToken,
         expiresAt: data.expiresAt,
       });
+      if (data.theme) {
+        useAuthStore.getState().updateTheme(data.theme as import("../types").ThemeBundle);
+      }
       return data.accessToken;
     } finally {
       refreshPromise = null;
