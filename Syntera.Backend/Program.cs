@@ -80,6 +80,17 @@ try
     builder.Services.AddScoped<ISiteManagementService, SiteManagementService>();
     builder.Services.AddScoped<IUserManagementService, UserManagementService>();
     builder.Services.AddScoped<IRoleTemplateService, RoleTemplateService>();
+    // M7: password policy enforcement for local-credential users
+    // (Platform Admin). Site users authenticate via LDAP — their policy
+    // is AD's, not ours.
+    builder.Services.AddSingleton<IPasswordPolicy, PasswordPolicy>();
+
+    // ─── M5: background audit log retention sweeper ────────────────
+    // Daily pass that deletes audit log rows older than Audit:RetentionYears.
+    // Only runs if Audit:EnforceRetention=true — opt-in to keep the table
+    // small. Disabled by default because regulated environments often keep
+    // audit logs forever and archive to cold storage separately.
+    builder.Services.AddAuditRetentionSweeper();
 
     // ─── Health checks ─────────────────────────────────────────────
     builder.Services.AddHealthChecks();

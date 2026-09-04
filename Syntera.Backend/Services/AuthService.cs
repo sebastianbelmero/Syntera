@@ -25,6 +25,13 @@ public interface IAuthService
     Task<RefreshResponse> RefreshAsync(string refreshToken, string? ip, string? userAgent, CancellationToken ct = default);
     Task LogoutAsync(string refreshToken, Guid? revokedBy, CancellationToken ct = default);
     Task<UserProfileDto> GetProfileAsync(CancellationToken ct = default);
+    /// <summary>
+    /// M7: change the calling user's password (Platform Admin only, since
+    /// site users authenticate via LDAP — their password is changed in AD,
+    /// not here). Enforces password policy, verifies current password,
+    /// and refuses to set the same password again.
+    /// </summary>
+    Task ChangePasswordAsync(string currentPassword, string newPassword, string? ip, string? userAgent, CancellationToken ct = default);
 }
 
 public sealed class AuthService : IAuthService
@@ -48,6 +55,8 @@ public sealed class AuthService : IAuthService
     // M2: refresh token TTL per scope, read from IConfiguration. Falls back
     // to legacy "Jwt:RefreshTokenDays" if the new per-scope keys are absent.
     private readonly Microsoft.Extensions.Configuration.IConfiguration _config;
+    // M7: password policy for ChangePasswordAsync (Platform Admin).
+    private readonly IPasswordPolicy _passwordPolicy;
 
     private const int MaxFailedLogins = 5;
     private static readonly TimeSpan LockoutDuration = TimeSpan.FromMinutes(15);
@@ -64,7 +73,8 @@ public sealed class AuthService : IAuthService
         IMemoryCache cache,
         ILogger<AuthService> log,
         ICurrentUserService currentUser,
-        Microsoft.Extensions.Configuration.IConfiguration config)
+        Microsoft.Extensions.Configuration.IConfiguration config,
+        IPasswordPolicy passwordPolicy)
     {
         _platformDb = platformDb;
         _siteDbFactory = siteDbFactory;
@@ -78,6 +88,7 @@ public sealed class AuthService : IAuthService
         _log = log;
         _currentUser = currentUser;
         _config = config;
+        _passwordPolicy = passwordPolicy;
 
         // L3: derive HMAC key from JWT signing key. Same secret, different
         // purpose (subdomain separation via "refresh-token-v1" prefix).
@@ -148,10 +159,14 @@ public sealed class AuthService : IAuthService
         {
             admin.FailedLoginCount++;
             admin.LastFailedLoginAt = DateTime.UtcNow;
+            var nowLocked = false;
+            DateTime? lockedUntil = null;
             if (admin.FailedLoginCount >= MaxFailedLogins)
             {
-                admin.LockedUntil = DateTime.UtcNow.Add(LockoutDuration);
+                lockedUntil = DateTime.UtcNow.Add(LockoutDuration);
+                admin.LockedUntil = lockedUntil;
                 admin.FailedLoginCount = 0;
+                nowLocked = true;
             }
             await _platformDb.SaveChangesAsync(ct);
             BumpFail(perIpKey, perEmailKey);
@@ -159,6 +174,24 @@ public sealed class AuthService : IAuthService
                 SiteId: null, ActorUserId: admin.Id, ActorEmail: email, ActorIp: ip, ActorUserAgent: ua,
                 Action: "auth.login", TargetType: "PlatformUser", TargetId: admin.Id.ToString(),
                 Outcome: "failure", ErrorMessage: "Invalid password"), ct);
+
+            // M6: when the account JUST got locked (not "already locked"),
+            // emit a separate audit event with action='auth.account_locked'.
+            // Operators can subscribe/alert on this specific action without
+            // having to grep the 'auth.login' failure stream. The error
+            // message includes the lockout window end-time so admins
+            // reviewing the audit log see the full context.
+            if (nowLocked && lockedUntil is not null)
+            {
+                await _audit.LogAsync(new AuditEntry(
+                    SiteId: null, ActorUserId: admin.Id, ActorEmail: email, ActorIp: ip, ActorUserAgent: ua,
+                    Action: "auth.account_locked", TargetType: "PlatformUser", TargetId: admin.Id.ToString(),
+                    Outcome: "failure",
+                    ErrorMessage: $"Account locked until {lockedUntil.Value:u} after {MaxFailedLogins} failed attempts."), ct);
+                _log.LogWarning("Platform admin {Email} locked until {LockoutUntil:O} after {Count} failed login attempts.",
+                    email, lockedUntil.Value, MaxFailedLogins);
+            }
+
             throw new AuthenticationException("INVALID_CREDENTIALS", "Invalid credentials.");
         }
 
@@ -564,6 +597,92 @@ public sealed class AuthService : IAuthService
         // Implementation requires authenticated context. The controller reads claims
         // and constructs profile from them. We provide a stub for the contract.
         throw new NotImplementedException("Use controller-level claim resolution for GetProfile.");
+    }
+
+    /// <summary>
+    /// M7: change the calling Platform Admin's password.
+    ///
+    /// Flow:
+    /// 1. Resolve caller from JWT (must be Platform Admin — site users
+    ///    change their password in AD, not here).
+    /// 2. Verify current password against stored bcrypt hash. Wrong =
+    ///    BusinessRuleException with "WRONG_CURRENT_PASSWORD" (this is
+    ///    NOT a credential-leak vector because the caller must already
+    ///    be authenticated to reach this endpoint).
+    /// 3. Validate new password against IPasswordPolicy. Failures are
+    ///    surfaced as a single joined string so the user sees all
+    ///    violated rules at once (better UX than one rule at a time).
+    /// 4. Refuse to set the new password equal to the current (no-op
+    ///    rotation defeats the purpose).
+    /// 5. Hash + persist. Audit log entry with action='auth.password_change'.
+    ///
+    /// Security: this endpoint does NOT invalidate existing sessions. If
+    /// an attacker stole the refresh token, changing the password won't
+    /// kick them out — they keep refreshing until they're revoked. For
+    /// full account takeover response, the user should also call logout
+    /// everywhere (we don't yet have a "revoke all my sessions" button —
+    /// that's a separate feature).
+    /// </summary>
+    public async Task ChangePasswordAsync(string currentPassword, string newPassword, string? ip, string? userAgent, CancellationToken ct = default)
+    {
+        var userId = _currentUser.UserId
+            ?? throw new Models.AuthorizationException("NOT_AUTHENTICATED", "You must be signed in to change your password.");
+        if (!_currentUser.IsPlatformAdmin)
+            throw new Models.AuthorizationException("NOT_PLATFORM_ADMIN",
+                "Password change is only available for Platform Admin. Site users must change their password in Active Directory.");
+
+        if (string.IsNullOrWhiteSpace(currentPassword))
+            throw new Models.BusinessRuleException("CURRENT_PASSWORD_REQUIRED", "Current password is required.");
+        if (string.IsNullOrWhiteSpace(newPassword))
+            throw new Models.BusinessRuleException("NEW_PASSWORD_REQUIRED", "New password is required.");
+
+        var admin = await _platformDb.PlatformUsers.FirstOrDefaultAsync(u => u.Id == userId, ct)
+            ?? throw new Models.NotFoundException("PlatformUser", userId);
+
+        // Verify current password.
+        if (!_hasher.Verify(currentPassword, admin.PasswordHash))
+        {
+            await _audit.LogAsync(new AuditEntry(
+                SiteId: null, ActorUserId: admin.Id, ActorEmail: admin.Email, ActorIp: ip, ActorUserAgent: userAgent,
+                Action: "auth.password_change", TargetType: "PlatformUser", TargetId: admin.Id.ToString(),
+                Outcome: "failure", ErrorMessage: "Wrong current password"), ct);
+            throw new Models.BusinessRuleException("WRONG_CURRENT_PASSWORD",
+                "Current password is incorrect.");
+        }
+
+        // Enforce policy — collect all violations and report them together.
+        var violations = _passwordPolicy.Validate(newPassword);
+        if (violations.Count > 0)
+        {
+            var msg = string.Join("; ", violations);
+            await _audit.LogAsync(new AuditEntry(
+                SiteId: null, ActorUserId: admin.Id, ActorEmail: admin.Email, ActorIp: ip, ActorUserAgent: userAgent,
+                Action: "auth.password_change", TargetType: "PlatformUser", TargetId: admin.Id.ToString(),
+                Outcome: "failure", ErrorMessage: $"Policy violation: {msg}"), ct);
+            throw new Models.BusinessRuleException("PASSWORD_POLICY_VIOLATION", msg);
+        }
+
+        // Refuse no-op rotation (new == current).
+        if (_hasher.Verify(newPassword, admin.PasswordHash))
+        {
+            throw new Models.BusinessRuleException("PASSWORD_SAME_AS_CURRENT",
+                "New password must be different from the current password.");
+        }
+
+        // Persist + audit.
+        admin.PasswordHash = _hasher.Hash(newPassword);
+        // Reset failed-login counters — successful password change proves
+        // the legitimate user is in control.
+        admin.FailedLoginCount = 0;
+        admin.LockedUntil = null;
+        await _platformDb.SaveChangesAsync(ct);
+
+        await _audit.LogAsync(new AuditEntry(
+            SiteId: null, ActorUserId: admin.Id, ActorEmail: admin.Email, ActorIp: ip, ActorUserAgent: userAgent,
+            Action: "auth.password_change", TargetType: "PlatformUser", TargetId: admin.Id.ToString(),
+            Outcome: "success", ErrorMessage: null), ct);
+
+        _log.LogInformation("Platform Admin {Email} changed their password.", admin.Email);
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────

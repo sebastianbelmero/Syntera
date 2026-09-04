@@ -165,6 +165,38 @@ public sealed class AuthController : ApiControllerBase
         return Ok(profile);
     }
 
+    /// <summary>
+    /// M7: change the calling Platform Admin's password. Enforces password
+    /// policy (length, complexity), verifies current password, refuses
+    /// no-op rotation. Site users change their password in AD, not here.
+    /// </summary>
+    [HttpPost("change-password")]
+    [Authorize]
+    public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest? req, CancellationToken ct)
+    {
+        if (req is null
+            || string.IsNullOrWhiteSpace(req.CurrentPassword)
+            || string.IsNullOrWhiteSpace(req.NewPassword))
+            return BadRequest(ApiResponse<object>.Fail("INVALID_INPUT",
+                "Current and new passwords are required."));
+
+        var ip = HttpContext.Connection.RemoteIpAddress?.ToString();
+        var ua = Request.Headers.UserAgent.ToString();
+
+        try
+        {
+            await _auth.ChangePasswordAsync(req.CurrentPassword, req.NewPassword, ip, ua, ct);
+            return Ok(ApiResponse<object>.Ok(null, "Password changed."));
+        }
+        catch (Models.DomainException ex)
+        {
+            // Authorization + BusinessRule exceptions (NOT_PLATFORM_ADMIN,
+            // WRONG_CURRENT_PASSWORD, PASSWORD_POLICY_VIOLATION, etc.)
+            // — surface as 400 with structured envelope.
+            return BadRequest(ApiResponse<object>.Fail(ex.Code, ex.Message));
+        }
+    }
+
     // ── Cookie helpers (H7) ─────────────────────────────────────────────
 
     private void SetRefreshCookie(string token, string scope)
@@ -231,3 +263,9 @@ public sealed class AuthController : ApiControllerBase
 }
 
 public record RefreshSiteRequest(string RefreshToken, Guid SiteId);
+
+/// <summary>
+/// M7: request body for POST /api/auth/change-password. The caller must be
+/// an authenticated Platform Admin (site users change their password in AD).
+/// </summary>
+public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
