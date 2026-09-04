@@ -2,7 +2,6 @@ using Microsoft.AspNetCore.Mvc;
 using Syntera.Backend.Controllers;
 using Syntera.Backend.Models.Dtos.Roles;
 using Syntera.Backend.Services;
-using Syntera.Backend.Services;
 using Syntera.Backend.Authorization;
 
 namespace Syntera.Backend.Controllers;

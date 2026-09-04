@@ -2,7 +2,6 @@ using System.Net;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Syntera.Backend.Models;
-using Syntera.Backend.Models;
 
 namespace Syntera.Backend.Middleware;
 

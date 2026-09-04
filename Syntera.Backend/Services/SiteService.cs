@@ -4,7 +4,6 @@ using Syntera.Backend.Services;
 using Syntera.Backend.Models.Entities;
 using Syntera.Backend.Models;
 using Syntera.Backend.Data;
-using Syntera.Backend.Services;
 
 namespace Syntera.Backend.Services;
 

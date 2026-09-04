@@ -3,9 +3,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
 using Syntera.Backend.Services;
-using Syntera.Backend.Services;
 using Syntera.Backend.Data;
-using Syntera.Backend.Services;
 using System.Text;
 using System.Text.Json.Serialization;
 

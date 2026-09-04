@@ -4,7 +4,6 @@ using Syntera.Backend.Models;
 using Syntera.Backend.Models.Dtos.Sites;
 using Syntera.Backend.Models.Dtos.Users;
 using Syntera.Backend.Services;
-using Syntera.Backend.Services;
 using Syntera.Backend.Authorization;
 
 namespace Syntera.Backend.Controllers;

@@ -4,7 +4,6 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Syntera.Backend.Services;
 using Syntera.Backend.Models;
-using Syntera.Backend.Services;
 
 namespace Syntera.Backend.Authorization;
 
