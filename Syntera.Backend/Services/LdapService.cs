@@ -122,6 +122,29 @@ public sealed class NovellLdapClient : ILdapClient
             // Email must be sanitized for LDAP filter safety (RFC 4515).
             var escaped = EscapeLdapFilter(email);
 
+            // SECURITY (H6): refuse to send credentials over a cleartext
+            // connection. Port 389 without StartTLS = bind password travels
+            // in cleartext → on-path attacker can sniff it. Only allowed
+            // when explicitly opted-in via config (e.g., isolated lab env
+            // where TLS isn't configured yet), or in Development when
+            // debugger is attached. In Production, this fails-fast so
+            // misconfigured sites can't silently downgrade to cleartext.
+            if (endpoint.Port == 389 && !endpoint.UseStartTls)
+            {
+                var allowPlain = ShouldAllowPlainLdap();
+                if (!allowPlain)
+                {
+                    LogError("Refusing to bind via cleartext LDAP (port 389, no StartTLS). " +
+                             "Set Ldap:AllowPlainPort389=true OR enable UseStartTls OR switch to port 636 (LDAPS).");
+                    return new LdapAuthResult(false, null, email, null, null,
+                        "LDAP configuration error: cleartext port 389 refused. " +
+                        "Contact your administrator to enable StartTLS or LDAPS.",
+                        (int)sw.Elapsed.TotalMilliseconds);
+                }
+                LogWarning("Cleartext LDAP (port 389, no StartTLS) allowed by config — " +
+                            "password will traverse the network in cleartext. Not recommended for production.");
+            }
+
             using var conn = CreateConnection(endpoint, skipCertValidation: ShouldSkipCertValidation());
             LogInfo("Connecting to {Host}:{Port}...", endpoint.Host, endpoint.Port);
             await conn.ConnectAsync(endpoint.Host, endpoint.Port, ct).ConfigureAwait(false);
@@ -329,6 +352,26 @@ public sealed class NovellLdapClient : ILdapClient
         var skipFromConfig = _configuration?.GetValue<bool>("Ldap:SkipCertValidation") ?? false;
         return skipFromConfig || System.Diagnostics.Debugger.IsAttached;
     }
+
+    /// <summary>
+    /// Decide whether cleartext LDAP (port 389 without StartTLS) is allowed.
+    /// SECURITY (H6): defaults to <b>false</b> — cleartext bind would expose
+    /// user passwords on the wire. Only opt-in via:
+    /// <list type="bullet">
+    ///   <item><see cref="LdapAllowPlainPort389ConfigKey"/> = "true" in appsettings
+    ///     or env var <c>SYNTERA_Ldap__AllowPlainPort389=true</c></item>
+    ///   <item>Debugger.IsAttached (Visual Studio local debugging)</item>
+    /// </list>
+    /// In Production with a real AD, configure LDAPS (636) or StartTLS — never plain 389.
+    /// </summary>
+    private bool ShouldAllowPlainLdap()
+    {
+        var allowFromConfig = _configuration?.GetValue<bool>("Ldap:AllowPlainPort389") ?? false;
+        return allowFromConfig || System.Diagnostics.Debugger.IsAttached;
+    }
+
+    /// <summary>Configuration key for opting-in to cleartext LDAP (H6).</summary>
+    private const string LdapAllowPlainPort389ConfigKey = "Ldap:AllowPlainPort389";
 
     private static LdapConnection CreateConnection(LdapEndpoint endpoint, bool skipCertValidation)
     {

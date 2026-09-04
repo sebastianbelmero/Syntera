@@ -201,12 +201,21 @@ public sealed class AuthService : IAuthService
         if (!result.IsSuccess)
         {
             BumpFail(rateKey);
+            // SECURITY (H5): audit log keeps the detailed internal error for
+            // forensic/admin debugging, but the user-facing exception is
+            // genericized to prevent account enumeration / info leakage.
+            // Attackers must not be able to distinguish:
+            //   "user does not exist" vs "wrong password" vs "multiple AD entries"
+            //   vs "AD server unreachable" — all collapse to the same generic
+            //   message. The disabled-account case is intentionally kept
+            //   explicit because it provides actionable UX to legitimate
+            //   users (their admin disabled them, they need to contact admin).
             await _audit.LogAsync(new AuditEntry(
                 SiteId: site.Id, ActorUserId: null, ActorEmail: email, ActorIp: ip, ActorUserAgent: ua,
                 Action: "auth.login", TargetType: "User", TargetId: null,
                 Outcome: "failure", ErrorMessage: result.ErrorMessage), ct);
-            throw new AuthenticationException("LDAP_AUTH_FAILED",
-                result.ErrorMessage ?? "LDAP authentication failed.");
+            var publicMessage = MapLdapErrorToPublic(result.ErrorMessage);
+            throw new AuthenticationException("LDAP_AUTH_FAILED", publicMessage);
         }
 
         // ── Pre-provisioning check: user must exist in site DB ────────
@@ -485,6 +494,42 @@ public sealed class AuthService : IAuthService
             return 0;
         });
         _cache.Set(key, current + 1, TimeSpan.FromMinutes(15));
+    }
+
+    /// <summary>
+    /// SECURITY (H5): Map detailed LDAP server errors to a small set of
+    /// generic user-facing messages. The detailed error is preserved in
+    /// the audit log for forensic/admin debugging. Three buckets:
+    /// <list type="bullet">
+    ///   <item>Disabled account — kept explicit ("Your account is disabled…")
+    ///     for legitimate UX (admin disabled the user, user needs to know).</item>
+    ///   <item>Server / transport error — "Authentication service unavailable,
+    ///     please try again later." Reveals nothing about whether the user
+    ///     exists or credentials are wrong.</item>
+    ///   <item>Everything else (invalid creds, multiple matches, unknown
+    ///     LDAP codes) — "Invalid email or password." Attackers cannot
+    ///     distinguish "user doesn't exist" from "wrong password" from
+    ///     "multiple AD entries match" — all collapse to the same message.</item>
+    /// </list>
+    /// </summary>
+    private static string MapLdapErrorToPublic(string? internalMessage)
+    {
+        if (string.IsNullOrEmpty(internalMessage))
+            return "Invalid email or password.";
+
+        // Disabled account: keep explicit for UX (B2B internal — admin
+        // disabling a user wants the user to know why login fails).
+        if (internalMessage.Contains("disabled", StringComparison.OrdinalIgnoreCase))
+            return "Your account is disabled. Contact your Site Business Admin.";
+
+        // Server / transport failures: don't leak user existence.
+        if (internalMessage.Contains("server error", StringComparison.OrdinalIgnoreCase)
+            || internalMessage.Contains("connection failed", StringComparison.OrdinalIgnoreCase)
+            || internalMessage.Contains("unavailable", StringComparison.OrdinalIgnoreCase))
+            return "Authentication service unavailable, please try again later.";
+
+        // Everything else (invalid creds, multiple matches, bind code X): generic.
+        return "Invalid email or password.";
     }
 }
 

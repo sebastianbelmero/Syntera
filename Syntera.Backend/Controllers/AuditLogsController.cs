@@ -21,7 +21,7 @@ public sealed class AuditLogsController : ApiControllerBase
     }
 
     [HttpGet("logs")]
-    [SiteBusinessAdmin]
+    [HasPermission("audit.read")]
     public async Task<IActionResult> Query(
         [FromQuery] DateTime? from,
         [FromQuery] DateTime? to,

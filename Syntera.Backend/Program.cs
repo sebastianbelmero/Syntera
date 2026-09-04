@@ -104,6 +104,7 @@ try
     }
 
     app.UseMiddleware<GlobalExceptionMiddleware>();
+    app.UseMiddleware<Syntera.Backend.Middleware.SecurityHeadersMiddleware>();
     app.UseSerilogRequestLogging();
     app.UseCors();
     app.UseRateLimiter();

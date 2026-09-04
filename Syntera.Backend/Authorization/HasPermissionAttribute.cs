@@ -71,9 +71,15 @@ public sealed class PlatformAdminOnlyAttribute : AuthorizeAttribute, IAuthorizat
 }
 
 /// <summary>
-/// Restricts an endpoint to Site Business Admin (within their own site).
+/// Restricts an endpoint to Site Business Admin (within their own site) only.
 /// Platform Admin also passes (they can do anything site admins can do).
-/// System Admin also passes (viewer-level access + admin management).
+/// System Admin also passes (per their role: assign/manage Business Admins for the site).
+///
+/// <b>SECURITY:</b> Previously this attribute also granted access to eng-manager,
+/// supervisor, and qo-manager roles — that was a privilege escalation vector
+/// (those roles are <i>not</i> site admins). Use <see cref="HasPermissionAttribute"/>
+/// on individual actions to gate specific operations (e.g., eng-manager needs
+/// <c>user.read</c> but not <c>permission.grant</c>).
 /// </summary>
 public sealed class SiteBusinessAdminAttribute : AuthorizeAttribute, IAuthorizationFilter
 {
@@ -93,20 +99,10 @@ public sealed class SiteBusinessAdminAttribute : AuthorizeAttribute, IAuthorizat
         var isSiteAdmin = user.Claims.Any(c =>
             c.Type == CurrentUserService.ClaimIsSiteBusinessAdmin && c.Value == "true");
         if (isSiteAdmin) return;
-        // System Admin
+        // System Admin (Tier 2 — between Platform Admin and Business Admin)
         var isSystemAdmin = user.Claims.Any(c =>
             c.Type == System.Security.Claims.ClaimTypes.Role && c.Value == "system-admin");
         if (isSystemAdmin) return;
-        // Eng Manager (has user management permissions)
-        var isEngManager = user.Claims.Any(c =>
-            c.Type == System.Security.Claims.ClaimTypes.Role && c.Value == "eng-manager");
-        if (isEngManager) return;
-        // Supervisor / QO Manager
-        var isSupervisor = user.Claims.Any(c =>
-            c.Type == System.Security.Claims.ClaimTypes.Role && c.Value == "supervisor");
-        var isQoManager = user.Claims.Any(c =>
-            c.Type == System.Security.Claims.ClaimTypes.Role && c.Value == "qo-manager");
-        if (isSupervisor || isQoManager) return;
 
         context.Result = new Microsoft.AspNetCore.Mvc.ForbidResult();
     }
