@@ -33,6 +33,11 @@
     <PackageReference Include="Swashbuckle.AspNetCore" Version="8.1.2" />
   </ItemGroup>
 
+  <!-- Validation (L1) -->
+  <ItemGroup>
+    <PackageReference Include="FluentValidation.AspNetCore" Version="11.3.0" />
+  </ItemGroup>
+
   <ItemGroup>
     <Folder Include="Migrations\Platform\" />
     <Folder Include="Migrations\Site\" />

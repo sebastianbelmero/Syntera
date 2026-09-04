@@ -42,6 +42,9 @@ public sealed class AuthService : IAuthService
     private readonly IMemoryCache _cache;
     private readonly ILogger<AuthService> _log;
     private readonly ICurrentUserService _currentUser;
+    // L3: HMAC key for refresh token signature (fast-reject invalid tokens
+    // without DB lookup). Derived from Jwt:SigningKey so no extra config.
+    private readonly byte[] _refreshHmacKey;
 
     private const int MaxFailedLogins = 5;
     private static readonly TimeSpan LockoutDuration = TimeSpan.FromMinutes(15);
@@ -57,7 +60,8 @@ public sealed class AuthService : IAuthService
         IPermissionService permissions,
         IMemoryCache cache,
         ILogger<AuthService> log,
-        ICurrentUserService currentUser)
+        ICurrentUserService currentUser,
+        Microsoft.Extensions.Configuration.IConfiguration config)
     {
         _platformDb = platformDb;
         _siteDbFactory = siteDbFactory;
@@ -70,6 +74,16 @@ public sealed class AuthService : IAuthService
         _cache = cache;
         _log = log;
         _currentUser = currentUser;
+
+        // L3: derive HMAC key from JWT signing key. Same secret, different
+        // purpose (subdomain separation via "refresh-token-v1" prefix).
+        var jwtKey = config["Jwt:SigningKey"]
+            ?? throw new InvalidOperationException("Jwt:SigningKey is required for refresh token HMAC (L3).");
+        // Hash the (prefix + jwtKey) string with SHA-256 to derive a 32-byte
+        // HMAC key. Subdomain separation via the prefix ensures this key is
+        // distinct from any other use of Jwt:SigningKey.
+        _refreshHmacKey = System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes("syntera:refresh-hmac:v1:" + jwtKey));
     }
 
     public async Task<LoginResponse> LoginAsync(LoginRequest request, string? ip, string? userAgent, CancellationToken ct = default)
@@ -313,7 +327,17 @@ public sealed class AuthService : IAuthService
         if (string.IsNullOrWhiteSpace(refreshToken))
             throw new AuthenticationException("INVALID_REFRESH", "Refresh token is required.");
 
-        var hash = SHA256Hex(refreshToken);
+        // L3: fast-reject forged tokens before DB lookup. An attacker
+        // spraying random strings at this endpoint would otherwise force
+        // a DB query per attempt — now they're rejected at the signature
+        // check. REFRESH_NOT_FOUND is returned (same as a real miss) so
+        // the failure mode doesn't leak that the signature failed.
+        if (!VerifyRefreshTokenSignature(refreshToken))
+            throw new AuthenticationException("REFRESH_NOT_FOUND", "Refresh token not found.");
+
+        // L3: hash only the random part — signature suffix is server-derived
+        // and adds no entropy. DB column already stores hash of the random part.
+        var hash = SHA256Hex(TokenRandomPart(refreshToken));
 
         // Look in platform DB first (platform admin).
         // M1: include tokens that are already revoked in the lookup so we can
@@ -388,7 +412,11 @@ public sealed class AuthService : IAuthService
 
     public async Task<RefreshResponse> RefreshSiteAsync(string refreshToken, Guid siteId, string? ip, string? ua, CancellationToken ct = default)
     {
-        var hash = SHA256Hex(refreshToken);
+        // L3: signature check before DB lookup (same rationale as RefreshAsync).
+        if (!VerifyRefreshTokenSignature(refreshToken))
+            throw new AuthenticationException("REFRESH_NOT_FOUND", "Refresh token not found.");
+
+        var hash = SHA256Hex(TokenRandomPart(refreshToken));
 
         // Verify site exists.
         var site = await _platformDb.Sites.FirstOrDefaultAsync(s => s.Id == siteId, ct)
@@ -449,7 +477,13 @@ public sealed class AuthService : IAuthService
 
     public async Task LogoutAsync(string refreshToken, Guid? revokedBy, CancellationToken ct = default)
     {
-        var hash = SHA256Hex(refreshToken);
+        // L3: signature check before DB lookup. Even on logout we don't
+        // want an attacker to be able to force DB queries with garbage tokens.
+        // If signature fails, silently succeed (logout is idempotent — there's
+        // nothing to revoke). Don't leak the failure mode.
+        if (!VerifyRefreshTokenSignature(refreshToken))
+            return;
+        var hash = SHA256Hex(TokenRandomPart(refreshToken));
         var platformToken = await _platformDb.RefreshTokens.FirstOrDefaultAsync(t => t.TokenHash == hash, ct);
         if (platformToken is not null)
         {
@@ -513,12 +547,88 @@ public sealed class AuthService : IAuthService
         };
     }
 
-    private static string GenerateRefreshToken(int bytes = 32)
+    /// <summary>
+    /// SECURITY (L3): Generate a refresh token that is both random AND
+    /// HMAC-signed. Format: <c>{base64url random}.{base64url hmac}</c>.
+    /// The random part has the entropy; the HMAC lets the server reject
+    /// obviously-forged tokens without a DB lookup (DoS mitigation — an
+    /// attacker spraying random strings at /api/auth/refresh would
+    /// otherwise force a DB query per attempt).
+    /// </summary>
+    private string GenerateRefreshToken(int bytes = 32)
     {
         var buf = new byte[bytes];
         using var rng = RandomNumberGenerator.Create();
         rng.GetBytes(buf);
-        return Convert.ToBase64String(buf).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        var random = Convert.ToBase64String(buf).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+
+        // HMAC-SHA256 over the random part. Verification: server recomputes
+        // HMAC on incoming token, constant-time compares. If mismatch → reject
+        // before DB query.
+        using var hmac = new System.Security.Cryptography.HMACSHA256(_refreshHmacKey);
+        var sig = hmac.ComputeHash(System.Text.Encoding.UTF8.GetBytes(random));
+        var sigB64 = Convert.ToBase64String(sig).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+
+        return $"{random}.{sigB64}";
+    }
+
+    /// <summary>
+    /// SECURITY (L3): verify the HMAC signature on an incoming refresh token.
+    /// Returns false (without throwing) if the token is malformed or the
+    /// signature doesn't match — caller should treat as REFRESH_NOT_FOUND,
+    /// not as a different error (don't leak that the signature check failed).
+    /// </summary>
+    private bool VerifyRefreshTokenSignature(string? token)
+    {
+        if (string.IsNullOrWhiteSpace(token)) return false;
+        var dot = token.IndexOf('.');
+        if (dot <= 0 || dot >= token.Length - 1) return false;
+        var random = token[..dot];
+        var sigB64 = token[(dot + 1)..];
+
+        byte[] expectedSig;
+        try
+        {
+            using var hmac = new System.Security.Cryptography.HMACSHA256(_refreshHmacKey);
+            expectedSig = hmac.ComputeHash(System.Text.Encoding.UTF8.GetBytes(random));
+        }
+        catch
+        {
+            return false;
+        }
+
+        // Decode incoming signature (base64url → bytes). Malformed = reject.
+        byte[]? incomingSig;
+        try
+        {
+            // base64url → base64
+            var b64 = sigB64.Replace('-', '+').Replace('_', '/');
+            switch (b64.Length % 4)
+            {
+                case 2: b64 += "=="; break;
+                case 3: b64 += "="; break;
+            }
+            incomingSig = Convert.FromBase64String(b64);
+        }
+        catch
+        {
+            return false;
+        }
+
+        // Constant-time comparison to avoid timing-based signature oracle.
+        return System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+            expectedSig, incomingSig);
+    }
+
+    /// <summary>
+    /// SECURITY (L3): extract the random portion of a signed refresh token,
+    /// which is what the SHA-256 hash is computed over for DB lookup. The
+    /// signature suffix is stripped before hashing.
+    /// </summary>
+    private static string TokenRandomPart(string token)
+    {
+        var dot = token.IndexOf('.');
+        return dot > 0 ? token[..dot] : token;
     }
 
     private static string SHA256Hex(string input)

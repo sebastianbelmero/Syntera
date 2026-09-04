@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
+using FluentValidation;
 using Syntera.Backend.Services;
 using Syntera.Backend.Data;
 using System.Text;
@@ -23,6 +24,29 @@ public static class ServiceCollectionExtensions
             .ConfigureApiBehaviorOptions(options =>
             {
                 options.SuppressModelStateInvalidFilter = false;
+                // L1: surface FluentValidation failures as 400 with the
+                // standard ApiResponse envelope (errorCode="VALIDATION_FAILED",
+                // fieldErrors=[...]). The default ASP.NET Core behavior would
+                // return a generic ProblemDetails — we want our own envelope
+                // for frontend consistency.
+                options.InvalidModelStateResponseFactory = context =>
+                {
+                    var fieldErrors = context.ModelState
+                        .Where(kv => kv.Value!.Errors.Count > 0)
+                        .Select(kv => new Syntera.Backend.Models.FieldError(
+                            kv.Key,
+                            kv.Value!.Errors.First().ErrorMessage))
+                        .ToList();
+
+                    var apiResp = new Syntera.Backend.Models.ApiResponse<object>
+                    {
+                        Success = false,
+                        Message = "Validation failed.",
+                        ErrorCode = "VALIDATION_FAILED",
+                        FieldErrors = fieldErrors,
+                    };
+                    return new Microsoft.AspNetCore.Mvc.BadRequestObjectResult(apiResp);
+                };
             })
             .AddJsonOptions(options =>
             {
@@ -32,6 +56,9 @@ public static class ServiceCollectionExtensions
                 options.JsonSerializerOptions.Converters.Add(
                     new System.Text.Json.Serialization.JsonStringEnumConverter());
             });
+
+        // L1: register all FluentValidation validators from the assembly.
+        services.AddValidatorsFromAssemblyContaining<Models.Dtos.Validators.LoginRequestValidator>();
         return services;
     }
 

@@ -17,7 +17,18 @@ public interface ISiteManagementService
 
     Task<LdapConfigDto> GetLdapConfigAsync(Guid siteId, CancellationToken ct = default);
     Task<LdapConfigDto> UpsertLdapConfigAsync(Guid siteId, LdapConfigUpsertDto dto, Guid updatedBy, CancellationToken ct = default);
-    Task<LdapTestResult> TestLdapAsync(LdapTestRequest req, CancellationToken ct = default);
+    /// <summary>
+    /// Test an LDAP connection by binding with the provided credentials.
+    /// SECURITY (L2): every invocation is audit-logged as
+    /// <c>ldap.test_connection</c> so attempts (successful or not) are
+    /// traceable. Previously this endpoint was unaudited — a Platform
+    /// Admin could probe AD credentials with no record left behind.
+    /// </summary>
+    /// <param name="req">LDAP endpoint + test credentials.</param>
+    /// <param name="actorUserId">The Platform Admin invoking the test.</param>
+    /// <param name="actorEmail">The Platform Admin's email (for audit log).</param>
+    /// <param name="ct">Cancellation token.</param>
+    Task<LdapTestResult> TestLdapAsync(LdapTestRequest req, Guid actorUserId, string? actorEmail, CancellationToken ct = default);
 
     Task<Models.Dtos.Auth.ThemeDto> GetThemeAsync(Guid siteId, CancellationToken ct = default);
     Task<Models.Dtos.Auth.ThemeDto> UpsertThemeAsync(Guid siteId, ThemeUpsertDto dto, Guid updatedBy, CancellationToken ct = default);
@@ -143,7 +154,7 @@ public sealed class SiteManagementService : ISiteManagementService
         return MapLdapConfig(cfg);
     }
 
-    public async Task<LdapTestResult> TestLdapAsync(LdapTestRequest req, CancellationToken ct = default)
+    public async Task<LdapTestResult> TestLdapAsync(LdapTestRequest req, Guid actorUserId, string? actorEmail, CancellationToken ct = default)
     {
         var endpoint = new LdapEndpoint(
             Host: req.Host, Port: req.Port, UseStartTls: req.UseStartTls,
@@ -151,6 +162,19 @@ public sealed class SiteManagementService : ISiteManagementService
 
         // Direct bind: test with the user's actual email + password.
         var result = await _ldap.TestConnectionAsync(endpoint, req.TestEmail, req.TestPassword, ct);
+
+        // L2: audit log every test attempt — success OR failure. Never
+        // log the test password (only the email that was probed).
+        await _audit.LogAsync(new AuditEntry(
+            SiteId: null,
+            ActorUserId: actorUserId == Guid.Empty ? null : actorUserId,
+            ActorEmail: actorEmail,
+            ActorIp: null, ActorUserAgent: null,
+            Action: "ldap.test_connection",
+            TargetType: "LdapConfig",
+            TargetId: req.TestEmail,
+            Outcome: result.IsSuccess ? "success" : "failure",
+            ErrorMessage: result.IsSuccess ? null : result.ErrorMessage), ct);
 
         return new LdapTestResult(
             Success: result.IsSuccess,

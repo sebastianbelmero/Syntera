@@ -129,7 +129,7 @@ public sealed class SitesController : ApiControllerBase
     [HttpPost("ldap-test")]
     [PlatformAdminOnly]
     public async Task<IActionResult> TestLdap([FromBody] LdapTestRequest req, CancellationToken ct)
-        => Ok(await _sites.TestLdapAsync(req, ct));
+        => Ok(await _sites.TestLdapAsync(req, _current.UserId ?? Guid.Empty, _current.Email, ct));
 
     // ─── Theme (Platform Admin only) ────────────────────────────────
 
