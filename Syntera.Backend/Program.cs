@@ -1,41 +1,136 @@
-var builder = WebApplication.CreateBuilder(args);
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Serilog;
+using Syntera.Backend.Authorization;
+using Syntera.Backend.Controllers;
+using Syntera.Backend.Data;
+using Syntera.Backend.Extensions;
+using Syntera.Backend.Middleware;
+using Syntera.Backend.Services;
+using System.Globalization;
 
-// Add services to the container.
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
-builder.Services.AddOpenApi();
+// ─── Bootstrap Serilog ─────────────────────────────────────────────
+Log.Logger = new LoggerConfiguration()
+    .Enrich.FromLogContext()
+    .WriteTo.Console(
+        formatProvider: CultureInfo.InvariantCulture,
+        outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {SourceContext} {Message:lj}{NewLine}{Exception}")
+    .CreateBootstrapLogger();
 
-var app = builder.Build();
-
-// Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
+try
 {
-    app.MapOpenApi();
+    var builder = WebApplication.CreateBuilder(args);
+
+    builder.Host.UseSerilog((ctx, services, lc) => lc
+        .ReadFrom.Configuration(ctx.Configuration)
+        .Enrich.FromLogContext()
+        .Enrich.WithProperty("App", "Syntera.Backend"));
+
+    builder.Configuration.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+        .AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json",
+            optional: true, reloadOnChange: true)
+        .AddEnvironmentVariables(prefix: "SYNTERA_");
+
+    // ─── Fail-fast: Production checks ─────────────────────────────
+    if (builder.Environment.IsProduction())
+    {
+        var signingKey = builder.Configuration["Jwt:SigningKey"];
+        if (string.IsNullOrWhiteSpace(signingKey) || signingKey.Length < 32)
+            throw new InvalidOperationException("Jwt:SigningKey must be set (≥32 chars) in Production.");
+
+        var allowedHosts = builder.Configuration["Cors:AllowedOrigins"];
+        if (string.IsNullOrWhiteSpace(allowedHosts))
+            throw new InvalidOperationException("Cors:AllowedOrigins must be set in Production.");
+    }
+
+    // ─── DI: Framework ─────────────────────────────────────────────
+    builder.Services.AddHttpContextAccessor();
+    builder.Services.AddMemoryCache();
+    builder.Services.AddSynteraMvc();
+    builder.Services.AddSynteraOpenApi();
+    builder.Services.AddSynteraSecurity(builder.Configuration);
+
+    // ─── DI: DbContexts ─────────────────────────────────────────────
+    builder.Services.AddDbContext<PlatformDbContext>(opt =>
+        opt.UseSqlServer(
+            builder.Configuration.GetConnectionString("Platform")
+                ?? throw new InvalidOperationException("ConnectionStrings:Platform is required."),
+            sql => sql.MigrationsHistoryTable("__EFMigrationsHistory_Platform")));
+
+    builder.Services.AddScoped<Syntera.Backend.Data.ISiteDbContextFactory, SiteDbContextFactory>();
+
+    // ─── DI: Services ─────────────────────────────────────────────
+    builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
+    builder.Services.AddSingleton<ILdapClient, NovellLdapClient>();
+    builder.Services.AddScoped<ITokenService, JwtTokenService>();
+    builder.Services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
+    builder.Services.AddScoped<IAuthService, AuthService>();
+    builder.Services.AddScoped<IPermissionService, PermissionService>();
+    builder.Services.AddScoped<IAuditService, AuditService>();
+    builder.Services.AddScoped<IThemeService, ThemeService>();
+    builder.Services.AddScoped<ISiteManagementService, SiteManagementService>();
+    builder.Services.AddScoped<IUserManagementService, UserManagementService>();
+    builder.Services.AddScoped<IRoleTemplateService, RoleTemplateService>();
+
+    // ─── Health checks ─────────────────────────────────────────────
+    builder.Services.AddHealthChecks();
+
+    var app = builder.Build();
+
+    // ─── Pipeline ───────────────────────────────────────────────
+    if (app.Environment.IsDevelopment())
+    {
+        app.UseDeveloperExceptionPage();
+        app.UseSwagger();
+        app.UseSwaggerUI(o =>
+        {
+            o.SwaggerEndpoint("/swagger/v1/swagger.json", "Syntera API v1");
+            o.RoutePrefix = "docs";
+        });
+    }
+    else
+    {
+        app.UseHsts();
+        app.UseHttpsRedirection();
+    }
+
+    app.UseMiddleware<GlobalExceptionMiddleware>();
+    app.UseSerilogRequestLogging();
+    app.UseCors();
+    app.UseRateLimiter();
+    app.UseAuthentication();
+    app.UseAuthorization();
+    app.MapControllers();
+    app.MapHealthChecks("/health");
+
+    // ─── Database init ───────────────────────────────────────────
+    using (var scope = app.Services.CreateScope())
+    {
+        var platformDb = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+        var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+        if (app.Environment.IsDevelopment())
+        {
+            await DatabaseInitializer.MigrateOrBaselineAsync(platformDb, logger);
+        }
+
+        await DbSeeder.SeedPlatformAsync(platformDb, app.Configuration, logger);
+    }
+
+    app.Run();
+}
+catch (Exception ex) when (ex is not HostAbortedException)
+{
+    Log.Fatal(ex, "Syntera.Backend terminated with an unhandled exception");
+    throw;
+}
+finally
+{
+    Log.CloseAndFlush();
 }
 
-app.UseHttpsRedirection();
-
-var summaries = new[]
+public partial class Program
 {
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
-
-app.MapGet("/weatherforecast", () =>
-{
-    var forecast =  Enumerable.Range(1, 5).Select(index =>
-        new WeatherForecast
-        (
-            DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-            Random.Shared.Next(-20, 55),
-            summaries[Random.Shared.Next(summaries.Length)]
-        ))
-        .ToArray();
-    return forecast;
-})
-.WithName("GetWeatherForecast");
-
-app.Run();
-
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-{
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
+    internal static readonly string[] HealthCheckTags = { "db", "platform" };
 }
