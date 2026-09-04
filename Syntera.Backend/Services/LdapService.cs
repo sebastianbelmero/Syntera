@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Novell.Directory.Ldap;
 
@@ -71,9 +72,13 @@ public sealed class NovellLdapClient : ILdapClient
     private const int DefaultTimeoutMs = 20_000;
 
     private readonly ILogger<NovellLdapClient>? _logger;
+    private readonly IConfiguration? _configuration;
 
-    public NovellLdapClient(ILogger<NovellLdapClient>? logger = null)
+    public NovellLdapClient(
+        IConfiguration? configuration = null,
+        ILogger<NovellLdapClient>? logger = null)
     {
+        _configuration = configuration;
         _logger = logger;
     }
 
@@ -110,7 +115,7 @@ public sealed class NovellLdapClient : ILdapClient
             // Email must be sanitized for LDAP filter safety (RFC 4515).
             var escaped = EscapeLdapFilter(email);
 
-            using var conn = CreateConnection(endpoint);
+            using var conn = CreateConnection(endpoint, skipCertValidation: ShouldSkipCertValidation());
             LogInfo("Connecting to {Host}:{Port}...", endpoint.Host, endpoint.Port);
             await conn.ConnectAsync(endpoint.Host, endpoint.Port, ct).ConfigureAwait(false);
             LogInfo("Connected to {Host}:{Port}.", endpoint.Host, endpoint.Port);
@@ -301,17 +306,29 @@ public sealed class NovellLdapClient : ILdapClient
                $")";
     }
 
-    private static LdapConnection CreateConnection(LdapEndpoint endpoint)
+    /// <summary>
+    /// Decide whether to skip LDAP server certificate validation. Returns true when
+    /// config key "Ldap:SkipCertValidation" is set (appsettings or env var override via
+    /// SYNTERA_Ldap__SkipCertValidation) OR when a debugger is attached.
+    /// </summary>
+    private bool ShouldSkipCertValidation()
+    {
+        var skipFromConfig = _configuration?.GetValue<bool>("Ldap:SkipCertValidation") ?? false;
+        return skipFromConfig || System.Diagnostics.Debugger.IsAttached;
+    }
+
+    private static LdapConnection CreateConnection(LdapEndpoint endpoint, bool skipCertValidation)
     {
         var options = new LdapConnectionOptions();
         if (endpoint.Port == 636) options.UseSsl();
 
-        // In Development: accept self-signed certificates for internal AD.
-        // In Production: certificate validation is enforced (no bypass).
-        // To allow self-signed in Production, set SYNTERA_Ldap__SkipCertValidation=true
-        // (NOT recommended — install internal CA cert to trust store instead).
-        var skipCertValidation = Environment.GetEnvironmentVariable("SYNTERA_Ldap__SkipCertValidation") == "true"
-            || System.Diagnostics.Debugger.IsAttached;
+        // Skip certificate validation only when explicitly requested via config
+        // (appsettings or env var SYNTERA_Ldap__SkipCertValidation) or debugger attached.
+        //
+        // In Production with a real CA-signed cert: leave both off and let the OS
+        // trust store validate. To allow self-signed in Production, set
+        // SYNTERA_Ldap__SkipCertValidation=true (NOT recommended — install internal
+        // CA cert to trust store instead).
 
         if (skipCertValidation)
         {
