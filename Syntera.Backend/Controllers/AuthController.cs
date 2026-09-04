@@ -15,6 +15,7 @@ public sealed class AuthController : ApiControllerBase
     private readonly IAuthService _auth;
     private readonly ILogger<AuthController> _log;
     private readonly IHostEnvironment _env;
+    private readonly Microsoft.Extensions.Configuration.IConfiguration _config;
 
     /// <summary>
     /// Cookie name for the refresh token. httpOnly — JavaScript cannot read it.
@@ -23,11 +24,16 @@ public sealed class AuthController : ApiControllerBase
     /// </summary>
     public const string RefreshCookieName = "syntera_refresh";
 
-    public AuthController(IAuthService auth, ILogger<AuthController> log, IHostEnvironment env)
+    public AuthController(
+        IAuthService auth,
+        ILogger<AuthController> log,
+        IHostEnvironment env,
+        Microsoft.Extensions.Configuration.IConfiguration config)
     {
         _auth = auth;
         _log = log;
         _env = env;
+        _config = config;
     }
 
     /// <summary>
@@ -56,7 +62,7 @@ public sealed class AuthController : ApiControllerBase
             // cross-site CSRF on auth endpoints. Secure=true in Production
             // (HTTPS only). Path=/api/auth scopes the cookie to auth routes
             // only — business API calls don't carry it.
-            SetRefreshCookie(result.RefreshToken);
+            SetRefreshCookie(result.RefreshToken, result.Profile.Scope);
             return Ok(result);
         }
         catch (Models.DomainException ex)
@@ -85,7 +91,7 @@ public sealed class AuthController : ApiControllerBase
         {
             var result = await _auth.RefreshAsync(refreshToken, ip, ua, ct);
             // Rotate the cookie to the new token.
-            SetRefreshCookie(result.RefreshToken);
+            SetRefreshCookie(result.RefreshToken, result.Profile.Scope);
             return Ok(result);
         }
         catch (Models.DomainException ex)
@@ -112,7 +118,7 @@ public sealed class AuthController : ApiControllerBase
         try
         {
             var result = await _auth.RefreshSiteAsync(refreshToken, req.SiteId, ip, ua, ct);
-            SetRefreshCookie(result.RefreshToken);
+            SetRefreshCookie(result.RefreshToken, result.Profile.Scope);
             return Ok(result);
         }
         catch (Models.DomainException ex)
@@ -161,8 +167,13 @@ public sealed class AuthController : ApiControllerBase
 
     // ── Cookie helpers (H7) ─────────────────────────────────────────────
 
-    private void SetRefreshCookie(string token)
+    private void SetRefreshCookie(string token, string scope)
     {
+        // M2: cookie MaxAge must match the refresh token's TTL (which is
+        // scope-specific — see AuthService.GetRefreshTokenTtl). If cookie
+        // outlives the token, browser still sends stale cookies; if cookie
+        // expires first, user must re-login despite valid token.
+        var ttl = GetRefreshCookieTtl(scope);
         var options = new CookieOptions
         {
             HttpOnly = true,
@@ -170,11 +181,28 @@ public sealed class AuthController : ApiControllerBase
             SameSite = SameSiteMode.Lax,      // blocks CSRF on cross-site POSTs
             Path = "/api/auth",               // scoped to auth routes only
             IsEssential = true,
-            // Match the refresh token's TTL (1 day per BuildRefreshToken).
-            MaxAge = TimeSpan.FromDays(1),
+            MaxAge = ttl,
             // Don't set Domain — host-only cookie, not sent to subdomains.
         };
         Response.Cookies.Append(RefreshCookieName, token, options);
+    }
+
+    /// <summary>
+    /// M2: cookie TTL matches the refresh token's TTL per scope. Mirrors
+    /// AuthService.GetRefreshTokenTtl but in the controller context (we
+    /// don't share state with AuthService to keep the cookie logic visible
+    /// in one place).
+    /// </summary>
+    private TimeSpan GetRefreshCookieTtl(string scope)
+    {
+        var legacy = _config["Jwt:RefreshTokenDays"];
+        var perScope = scope == "platform"
+            ? _config["Jwt:RefreshTokenDaysPlatform"]
+            : _config["Jwt:RefreshTokenDaysSite"];
+        var str = perScope ?? legacy;
+        if (int.TryParse(str, out var days) && days > 0)
+            return TimeSpan.FromDays(days);
+        return scope == "platform" ? TimeSpan.FromDays(1) : TimeSpan.FromDays(7);
     }
 
     private void ClearRefreshCookie()

@@ -3,12 +3,41 @@ import type { ReactNode } from "react";
 import { useAuthStore } from "../store/authStore";
 
 /**
+ * H7-full (Sprint 4): full-screen loading state shown while silent
+ * refresh is in flight on app boot. Prevents a "login page flash"
+ * for already-authenticated users before the in-memory store is
+ * repopulated from the httpOnly cookie.
+ */
+function AuthInitializing() {
+  return (
+    <div className="flex h-screen flex-col items-center justify-center gap-4 px-6">
+      <div
+        className="h-8 w-8 animate-spin rounded-full border-2 border-current border-t-transparent"
+        style={{ color: "var(--color-primary)" }}
+        aria-label="Loading"
+      />
+      <p className="text-sm" style={{ color: "var(--color-muted)" }}>
+        Loading session…
+      </p>
+    </div>
+  );
+}
+
+/**
  * Route guard — redirects to /login if the user is not authenticated.
  * Preserves the original location so we can bounce back after login.
+ *
+ * H7-full: while silent refresh is in flight (initializing=true), we
+ * render AuthInitializing instead of redirecting to /login. This
+ * prevents the "login page flash" for already-authenticated users
+ * whose in-memory store was wiped by a page reload.
  */
 export function RequireAuth({ children }: { children: ReactNode }) {
   const isAuthed = useAuthStore((s) => s.isAuthenticated());
+  const initializing = useAuthStore((s) => s.initializing);
   const location = useLocation();
+
+  if (initializing) return <AuthInitializing />;
   if (!isAuthed) {
     return (
       <Navigate
@@ -27,8 +56,10 @@ export function RequireAuth({ children }: { children: ReactNode }) {
 export function RequirePlatformAdmin({ children }: { children: ReactNode }) {
   const profile = useAuthStore((s) => s.profile);
   const isAuthed = useAuthStore((s) => s.isAuthenticated());
+  const initializing = useAuthStore((s) => s.initializing);
   const location = useLocation();
 
+  if (initializing) return <AuthInitializing />;
   if (!isAuthed || !profile) {
     return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
   }
@@ -46,8 +77,10 @@ export function RequirePlatformAdmin({ children }: { children: ReactNode }) {
 export function RequirePlatformOrSystemAdmin({ children }: { children: ReactNode }) {
   const profile = useAuthStore((s) => s.profile);
   const isAuthed = useAuthStore((s) => s.isAuthenticated());
+  const initializing = useAuthStore((s) => s.initializing);
   const location = useLocation();
 
+  if (initializing) return <AuthInitializing />;
   if (!isAuthed || !profile) {
     return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
   }
@@ -67,8 +100,10 @@ export function RequirePlatformOrSystemAdmin({ children }: { children: ReactNode
 export function RequireSiteAdmin({ children }: { children: ReactNode }) {
   const profile = useAuthStore((s) => s.profile);
   const isAuthed = useAuthStore((s) => s.isAuthenticated());
+  const initializing = useAuthStore((s) => s.initializing);
   const location = useLocation();
 
+  if (initializing) return <AuthInitializing />;
   if (!isAuthed || !profile) {
     return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
   }
@@ -97,8 +132,10 @@ export function RequireRole({
 }) {
   const profile = useAuthStore((s) => s.profile);
   const isAuthed = useAuthStore((s) => s.isAuthenticated());
+  const initializing = useAuthStore((s) => s.initializing);
   const location = useLocation();
 
+  if (initializing) return <AuthInitializing />;
   if (!isAuthed || !profile) {
     return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
   }

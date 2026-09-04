@@ -45,6 +45,9 @@ public sealed class AuthService : IAuthService
     // L3: HMAC key for refresh token signature (fast-reject invalid tokens
     // without DB lookup). Derived from Jwt:SigningKey so no extra config.
     private readonly byte[] _refreshHmacKey;
+    // M2: refresh token TTL per scope, read from IConfiguration. Falls back
+    // to legacy "Jwt:RefreshTokenDays" if the new per-scope keys are absent.
+    private readonly Microsoft.Extensions.Configuration.IConfiguration _config;
 
     private const int MaxFailedLogins = 5;
     private static readonly TimeSpan LockoutDuration = TimeSpan.FromMinutes(15);
@@ -74,6 +77,7 @@ public sealed class AuthService : IAuthService
         _cache = cache;
         _log = log;
         _currentUser = currentUser;
+        _config = config;
 
         // L3: derive HMAC key from JWT signing key. Same secret, different
         // purpose (subdomain separation via "refresh-token-v1" prefix).
@@ -92,26 +96,41 @@ public sealed class AuthService : IAuthService
         if (string.IsNullOrEmpty(email) || !email.Contains('@'))
             throw new AuthenticationException("INVALID_EMAIL", "Valid email is required.");
 
-        // ── Rate limit by IP+email ───────────────────────────────────
-        var rateKey = $"login:rl:{ip}:{email}";
-        if (_cache.TryGetValue<int>(rateKey, out var fails) && fails >= MaxFailedLogins)
+        // ── Rate limit: per (IP + email) AND per email (M4) ─────────────
+        // Two buckets protect against different attack patterns:
+        //   - (IP, email): blocks a single attacker at one IP hammering
+        //     one account. (Original H2 mitigation.)
+        //   - email alone (no IP): blocks a botnet spraying one account
+        //     from many IPs. Without this, an attacker with a 10k-IP
+        //     botnet could try each IP twice and never trip the per-(IP,email)
+        //     limit. Per-email limit caps total attempts against one
+        //     account regardless of source IP.
+        //
+        // Failure message is the same generic "RATE_LIMITED" so attackers
+        // can't tell which bucket tripped.
+        var perIpKey = $"login:rl:ip:{ip}:{email}";
+        var perEmailKey = $"login:rl:email:{email}";
+        if (_cache.TryGetValue<int>(perIpKey, out var ipFails) && ipFails >= MaxFailedLogins)
+            throw new AuthenticationException("RATE_LIMITED",
+                "Too many failed login attempts. Try again in 15 minutes.");
+        if (_cache.TryGetValue<int>(perEmailKey, out var emailFails) && emailFails >= MaxFailedLogins)
             throw new AuthenticationException("RATE_LIMITED",
                 "Too many failed login attempts. Try again in 15 minutes.");
 
         // ── Branch: Platform Admin or Site user? ─────────────────────
         if (email.EndsWith("@syntera.com", StringComparison.OrdinalIgnoreCase))
-            return await LoginPlatformAdminAsync(email, request.Password, ip, userAgent, rateKey, ct);
+            return await LoginPlatformAdminAsync(email, request.Password, ip, userAgent, perIpKey, perEmailKey, ct);
 
-        return await LoginSiteUserAsync(email, request.Password, ip, userAgent, rateKey, ct);
+        return await LoginSiteUserAsync(email, request.Password, ip, userAgent, perIpKey, perEmailKey, ct);
     }
 
     private async Task<LoginResponse> LoginPlatformAdminAsync(
-        string email, string password, string? ip, string? ua, string rateKey, CancellationToken ct)
+        string email, string password, string? ip, string? ua, string perIpKey, string perEmailKey, CancellationToken ct)
     {
         var admin = await _platformDb.PlatformUsers.FirstOrDefaultAsync(u => u.Email == email, ct);
         if (admin is null || !admin.IsEnabled)
         {
-            BumpFail(rateKey);
+            BumpFail(perIpKey, perEmailKey);
             await _audit.LogAsync(new AuditEntry(
                 SiteId: null, ActorUserId: null, ActorEmail: email, ActorIp: ip, ActorUserAgent: ua,
                 Action: "auth.login", TargetType: "PlatformUser", TargetId: null,
@@ -135,7 +154,7 @@ public sealed class AuthService : IAuthService
                 admin.FailedLoginCount = 0;
             }
             await _platformDb.SaveChangesAsync(ct);
-            BumpFail(rateKey);
+            BumpFail(perIpKey, perEmailKey);
             await _audit.LogAsync(new AuditEntry(
                 SiteId: null, ActorUserId: admin.Id, ActorEmail: email, ActorIp: ip, ActorUserAgent: ua,
                 Action: "auth.login", TargetType: "PlatformUser", TargetId: admin.Id.ToString(),
@@ -161,7 +180,9 @@ public sealed class AuthService : IAuthService
             roles: profile.Roles, permissions: profile.Permissions,
             version: 1, ip: ip, ua: ua, ct: ct);
 
-        _cache.Remove(rateKey);
+        // M4: clear BOTH rate-limit buckets on success.
+        _cache.Remove(perIpKey);
+        _cache.Remove(perEmailKey);
 
         await _audit.LogAsync(new AuditEntry(
             SiteId: null, ActorUserId: admin.Id, ActorEmail: email, ActorIp: ip, ActorUserAgent: ua,
@@ -172,7 +193,7 @@ public sealed class AuthService : IAuthService
     }
 
     private async Task<LoginResponse> LoginSiteUserAsync(
-        string email, string password, string? ip, string? ua, string rateKey, CancellationToken ct)
+        string email, string password, string? ip, string? ua, string perIpKey, string perEmailKey, CancellationToken ct)
     {
         var domain = email[(email.IndexOf('@') + 1)..];
 
@@ -183,7 +204,7 @@ public sealed class AuthService : IAuthService
 
         if (domainRow is null || domainRow.Site is null || !domainRow.Site.IsEnabled)
         {
-            BumpFail(rateKey);
+            BumpFail(perIpKey, perEmailKey);
             await _audit.LogAsync(new AuditEntry(
                 SiteId: null, ActorUserId: null, ActorEmail: email, ActorIp: ip, ActorUserAgent: ua,
                 Action: "auth.login", TargetType: "Site", TargetId: null,
@@ -214,7 +235,7 @@ public sealed class AuthService : IAuthService
         var result = await _ldap.AuthenticateAsync(endpoint, email, password, ct);
         if (!result.IsSuccess)
         {
-            BumpFail(rateKey);
+            BumpFail(perIpKey, perEmailKey);
             // SECURITY (H5): audit log keeps the detailed internal error for
             // forensic/admin debugging, but the user-facing exception is
             // genericized to prevent account enumeration / info leakage.
@@ -310,7 +331,9 @@ public sealed class AuthService : IAuthService
             await siteDb.SaveChangesAsync(ct);
         }
 
-        _cache.Remove(rateKey);
+        // M4: clear BOTH rate-limit buckets on success.
+        _cache.Remove(perIpKey);
+        _cache.Remove(perEmailKey);
 
         var theme = await _themes.GetThemeAsync(site.Id, ct);
 
@@ -396,18 +419,45 @@ public sealed class AuthService : IAuthService
             return new RefreshResponse(access, exp, newRefresh, profile, ThemeService.PlatformDefault());
         }
 
-        // Otherwise, look across site DBs. Since refresh tokens live in each site DB,
-        // we iterate. In production, embed siteId in the token's first 8 chars (omitted here for brevity).
-        // For simplicity, we let the client send siteId as part of refresh (refresh endpoint accepts body).
-        // Here, we accept that the frontend will pass refresh token; we hash and try the current site's DB
-        // via JWT context (requires a still-valid access token in the Authorization header).
-        // If you want fully-decoupled refresh, embed siteId in the refresh token prefix.
-        // We'll use the access token's expired claims to recover siteId.
-        // Implementation note: the controller passes the previously-known siteId.
-        // For this implementation, we expect the API to use /api/auth/refresh endpoint
-        // with body {refreshToken, siteId}.
+        // H7-full (Sprint 4): if the token wasn't in the platform DB, it
+        // might be a site-scope token. On a fresh page load, the frontend
+        // doesn't know which site the user belongs to (no in-memory
+        // profile), so it can't call /api/auth/refresh-site with siteId.
+        // We auto-detect by scanning all enabled sites' RefreshTokens.
+        // Performance: 6 sites typical, indexed by TokenHash (unique) —
+        // each lookup is O(1). Total worst case = 6 PK lookups.
+        var allSites = await _platformDb.Sites.AsNoTracking()
+            .Where(s => s.IsEnabled)
+            .ToListAsync(ct);
+
+        foreach (var site in allSites)
+        {
+            SiteDbContext siteDb;
+            try
+            {
+                siteDb = await _siteDbFactory.ResolveForSiteAsync(site.Id, ct);
+            }
+            catch
+            {
+                // Site DB unreachable — skip, try next site. Don't let one
+                // broken site DB block refresh for everyone.
+                continue;
+            }
+
+            var siteToken = await siteDb.RefreshTokens
+                .FirstOrDefaultAsync(t => t.TokenHash == hash, ct);
+            if (siteToken is null)
+                continue;
+
+            // Found in this site's DB — delegate to the site-scoped refresh
+            // logic (which handles reuse detection, family revocation, etc).
+            // We re-issue via RefreshSiteAsync to keep the logic in one place.
+            return await RefreshSiteAsync(refreshToken, site.Id, ip, userAgent, ct);
+        }
+
+        // Not found in platform DB nor any site DB — genuine miss.
         throw new AuthenticationException("REFRESH_NOT_FOUND",
-            "Refresh token not found in platform scope. For site refresh, POST to /api/auth/refresh-site with siteId.");
+            "Refresh token not found.");
     }
 
     public async Task<RefreshResponse> RefreshSiteAsync(string refreshToken, Guid siteId, string? ip, string? ua, CancellationToken ct = default)
@@ -529,7 +579,30 @@ public sealed class AuthService : IAuthService
         return (access.Token, access.ExpiresAt, refresh);
     }
 
-    private static RefreshToken BuildRefreshToken(Guid userId, string scope, Guid? siteId, string rawToken, string? ip, string? ua, Guid? familyId = null)
+    /// <summary>
+    /// M2: refresh token TTL per scope. Platform Admin tokens are
+    /// shorter-lived (default 1 day) because they carry the highest
+    /// privilege. Site user tokens are longer-lived (default 7 days)
+    /// because end users shouldn't be forced to re-login every day,
+    /// and site-scoped tokens have a smaller blast radius (one site only).
+    /// Falls back to legacy Jwt:RefreshTokenDays if per-scope key is absent.
+    /// </summary>
+    private TimeSpan GetRefreshTokenTtl(string scope)
+    {
+        var legacy = _config["Jwt:RefreshTokenDays"];
+        var perScope = scope == "platform"
+            ? _config["Jwt:RefreshTokenDaysPlatform"]
+            : _config["Jwt:RefreshTokenDaysSite"];
+
+        // Per-scope key takes precedence; legacy key is the fallback; final
+        // fallback is a sane default (1 day for platform, 7 days for site).
+        var str = perScope ?? legacy;
+        if (int.TryParse(str, out var days) && days > 0)
+            return TimeSpan.FromDays(days);
+        return scope == "platform" ? TimeSpan.FromDays(1) : TimeSpan.FromDays(7);
+    }
+
+    private RefreshToken BuildRefreshToken(Guid userId, string scope, Guid? siteId, string rawToken, string? ip, string? ua, Guid? familyId = null)
     {
         return new RefreshToken
         {
@@ -538,7 +611,7 @@ public sealed class AuthService : IAuthService
             UserId = userId,
             UserScope = scope,
             SiteId = siteId,
-            ExpiresAt = DateTime.UtcNow.AddDays(1),
+            ExpiresAt = DateTime.UtcNow.Add(GetRefreshTokenTtl(scope)),
             CreatedFromIp = ip,
             CreatedUserAgent = ua,
             // M1: new tokens without an explicit FamilyId start a new family.
@@ -664,14 +737,23 @@ public sealed class AuthService : IAuthService
         // Caller is responsible for SaveChangesAsync.
     }
 
-    private void BumpFail(string key)
+    /// <summary>
+    /// M4: increment one or more rate-limit buckets. Each key has its own
+    /// 15-minute sliding window (per cache AbsoluteExpiration). Failures
+    /// from one IP don't count toward an email's limit, and vice versa —
+    /// they're independent buckets.
+    /// </summary>
+    private void BumpFail(params string[] keys)
     {
-        var current = _cache.GetOrCreate(key, e =>
+        foreach (var key in keys)
         {
-            e.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(15);
-            return 0;
-        });
-        _cache.Set(key, current + 1, TimeSpan.FromMinutes(15));
+            var current = _cache.GetOrCreate(key, e =>
+            {
+                e.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(15);
+                return 0;
+            });
+            _cache.Set(key, current + 1, TimeSpan.FromMinutes(15));
+        }
     }
 
     /// <summary>

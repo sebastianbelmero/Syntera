@@ -1,22 +1,31 @@
 /**
- * Auth store (Zustand + persist) — holds tokens, profile, and theme bundle.
+ * Auth store (Zustand) — holds tokens, profile, and theme bundle.
  *
- * SECURITY (H7): refresh token is no longer stored client-side. The backend
- * sets it as an httpOnly cookie (syntera_refresh) that JavaScript cannot
- * read — XSS cannot exfiltrate it. The cookie is auto-sent on /api/auth/*
- * requests via `withCredentials: true` on axios.
+ * SECURITY (H7 full — Sprint 4):
+ *   Neither access token NOR refresh token is persisted to localStorage.
+ *   - Refresh token: httpOnly cookie set by backend (syntera_refresh).
+ *     JS cannot read it; XSS cannot exfiltrate it.
+ *   - Access token: in-memory only (this store). On page reload, the
+ *     store is empty; an explicit silent-refresh via /api/auth/refresh
+ *     is run on app boot (see src/main.tsx → initAuth()) to repopulate
+ *     the store from the cookie. If the cookie is expired or absent,
+ *     the user is treated as logged-out.
  *
- * Access token stays in localStorage for now (TTL-bounded to 15 min — XSS
- * blast radius is small and CSP blocks external script injection). A full
- * migration to silent-refresh-on-app-start would remove the access token
- * from localStorage too, at the cost of an extra roundtrip on every page
- * load. That's a Sprint 3 candidate if you want stricter defense.
+ *   Trade-off: an extra roundtrip on every page load (~50ms typical).
+ *   Benefit: a single XSS can no longer read a long-lived refresh
+ *   token; the worst-case for an XSS is a 15-minute access token,
+ *   which is bounded by the same TTL we already enforced.
  *
- * Theme application:
- *   After login, the theme bundle (light + dark palettes) is applied to
- *   CSS variables by the ThemeProvider component. User's preferred mode
- *   (light/dark) is stored separately in themeStore.ts so the user can
- *   override the site default.
+ * Theme persistence:
+ *   Theme bundle (light + dark palettes) IS still persisted to
+ *   localStorage — it's not sensitive and we want it available
+ *   before the silent refresh completes (to avoid FOUC on login page).
+ *   User's preferred mode (light/dark) is in themeStore.ts.
+ *
+ * Profile persistence:
+ *   Profile is NOT persisted — it's re-fetched via silent refresh on
+ *   app boot. Same rationale as the access token: stale profile data
+ *   after a role change would mislead the user.
  */
 
 import { create } from "zustand";
@@ -24,16 +33,21 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import type { LoginResponse, UserProfile, ThemeBundle } from "../types";
 
 interface AuthState {
+  /** In-memory only. Empty on page load until silent refresh completes. */
   accessToken: string | null;
   /**
-   * SECURITY (H7): kept for backward compat with old refresh logic, but
-   * no longer populated from login responses and NOT persisted to
-   * localStorage. The backend's httpOnly cookie is the source of truth.
+   * Always null on the client now — refresh token lives in httpOnly cookie.
+   * Kept in the interface for backward compat with any code reading this
+   * field; they get null and should NOT try to send it (the cookie flows
+   * automatically).
    */
   refreshToken: string | null;
   expiresAt: string | null;
   profile: UserProfile | null;
+  /** Persisted to localStorage (not sensitive). */
   theme: ThemeBundle | null;
+  /** True while a silent refresh is in flight on app boot. */
+  initializing: boolean;
 
   login: (payload: LoginResponse) => void;
   setTokens: (payload: {
@@ -42,6 +56,7 @@ interface AuthState {
   }) => void;
   updateProfile: (profile: UserProfile) => void;
   updateTheme: (theme: ThemeBundle) => void;
+  setInitializing: (initializing: boolean) => void;
   logout: () => void;
   clear: () => void;
 
@@ -60,17 +75,16 @@ export const useAuthStore = create<AuthState>()(
       expiresAt: null,
       profile: null,
       theme: null,
+      initializing: true,
 
       login(payload) {
         set({
           accessToken: payload.accessToken,
-          // H7: don't store refreshToken in JS — backend manages it via
-          // httpOnly cookie. Set to null so any legacy code reading this
-          // field doesn't throw, but the value is always null.
-          refreshToken: null,
+          refreshToken: null, // H7: cookie owns this
           expiresAt: payload.expiresAt,
           profile: payload.profile,
           theme: payload.theme,
+          initializing: false,
         });
       },
 
@@ -89,13 +103,17 @@ export const useAuthStore = create<AuthState>()(
         set({ theme });
       },
 
+      setInitializing(initializing) {
+        set({ initializing });
+      },
+
       logout() {
         set({
           accessToken: null,
           refreshToken: null,
           expiresAt: null,
           profile: null,
-          theme: null,
+          initializing: false,
         });
       },
 
@@ -105,7 +123,7 @@ export const useAuthStore = create<AuthState>()(
           refreshToken: null,
           expiresAt: null,
           profile: null,
-          theme: null,
+          initializing: true,
         });
       },
 
@@ -134,13 +152,10 @@ export const useAuthStore = create<AuthState>()(
     {
       name: "syntera.auth",
       storage: createJSONStorage(() => localStorage),
+      // H7-full: ONLY theme is persisted. accessToken, refreshToken,
+      // expiresAt, profile are in-memory only — gone on page reload,
+      // restored by silent refresh.
       partialize: (state) => ({
-        // H7: only persist accessToken, expiresAt, profile, theme.
-        // refreshToken is intentionally NOT persisted — backend cookie
-        // is the source of truth and JS never needs to read it.
-        accessToken: state.accessToken,
-        expiresAt: state.expiresAt,
-        profile: state.profile,
         theme: state.theme,
       }),
     },
