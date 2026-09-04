@@ -67,6 +67,26 @@ public sealed class SitesController : ApiControllerBase
         return Ok(new { success = true });
     }
 
+    // ─── System Admin management (Platform Admin only) ─────────────
+
+    /// <summary>Assign System Admin for a site.</summary>
+    [HttpPost("{siteId:guid}/system-admin")]
+    public async Task<IActionResult> AssignSystemAdmin(Guid siteId, [FromBody] AssignBusinessAdminRequest req, CancellationToken ct)
+        => Ok(await _users.AssignSystemAdminAsync(siteId, req.Email, req.DisplayName ?? "", _current.UserId ?? Guid.Empty, ct));
+
+    /// <summary>List all System Admins for a site.</summary>
+    [HttpGet("{siteId:guid}/system-admins")]
+    public async Task<IActionResult> ListSystemAdmins(Guid siteId, CancellationToken ct)
+        => Ok(await _users.ListSystemAdminsAsync(siteId, ct));
+
+    /// <summary>Revoke System Admin role from a user.</summary>
+    [HttpDelete("{siteId:guid}/system-admin/{userId:guid}")]
+    public async Task<IActionResult> RevokeSystemAdmin(Guid siteId, Guid userId, CancellationToken ct)
+    {
+        await _users.RevokeSystemAdminAsync(siteId, userId, _current.UserId ?? Guid.Empty, ct);
+        return Ok(new { success = true });
+    }
+
     // ─── LDAP Config ──────────────────────────────────────────────────
 
     [HttpGet("{siteId:guid}/ldap-config")]

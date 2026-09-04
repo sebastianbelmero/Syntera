@@ -44,6 +44,22 @@ export const sitesApi = {
     await api.delete(`${BASE}/sites/${siteId}/business-admin/${userId}`);
   },
 
+  // ─── System Admin management ──────────────────────────────────
+
+  /** Platform Admin → assign System Admin for a site. */
+  assignSystemAdmin: (siteId: string, email: string, displayName?: string) =>
+    post<UserDto>(`${BASE}/sites/${siteId}/system-admin`, { email, displayName }),
+
+  /** List all System Admins for a site. */
+  listSystemAdmins: (siteId: string) =>
+    get<UserDto[]>(`${BASE}/sites/${siteId}/system-admins`),
+
+  /** Revoke System Admin role from a user. */
+  revokeSystemAdmin: async (siteId: string, userId: string) => {
+    const { api } = await import("./client");
+    await api.delete(`${BASE}/sites/${siteId}/system-admin/${userId}`);
+  },
+
   getLdapConfig: (siteId: string) => get<LdapConfigDto>(`${BASE}/sites/${siteId}/ldap-config`),
   upsertLdapConfig: (siteId: string, dto: LdapConfigUpsertDto) =>
     put<LdapConfigDto>(`${BASE}/sites/${siteId}/ldap-config`, dto),
