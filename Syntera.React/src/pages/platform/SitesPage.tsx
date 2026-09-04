@@ -41,10 +41,15 @@ export default function SitesPage() {
   const isPlatformAdmin = profile?.roles.includes("platform-admin") ?? false;
   const isSystemAdmin = profile?.roles.includes("system-admin") ?? false;
 
-  const { data: sites = [], isLoading: loading } = useQuery<SiteDto[]>({
+  const { data: allSites = [], isLoading: loading } = useQuery<SiteDto[]>({
     queryKey: SITES_KEY,
     queryFn: () => sitesApi.list(),
   });
+
+  // System Admin only sees their own site; Platform Admin sees all
+  const sites = isPlatformAdmin
+    ? allSites
+    : allSites.filter((s) => s.id === profile?.siteId);
 
   return (
     <div className="space-y-4">
