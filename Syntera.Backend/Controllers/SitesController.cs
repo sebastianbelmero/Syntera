@@ -1,23 +1,24 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Syntera.Backend.Authorization;
 using Syntera.Backend.Controllers;
 using Syntera.Backend.Models;
 using Syntera.Backend.Models.Dtos.Sites;
-using Syntera.Backend.Models.Dtos.Users;
 using Syntera.Backend.Services;
-using Syntera.Backend.Authorization;
 
 namespace Syntera.Backend.Controllers;
 
 /// <summary>
 /// Platform Admin → Site Management.
 ///
-/// Sites are PRE-DEFINED in backend configuration (appsettings.json Sites[]).
-/// Only DisplayName, LdapDomains, LDAP config, and Theme are editable from
-/// the frontend. Code, DatabaseConnectionString, and IsEnabled are locked.
+/// Authorization:
+///   - System Admin endpoints: Platform Admin only
+///   - Business Admin endpoints: System Admin only (NOT Platform Admin)
+///   - Site management (list, get, update): Platform Admin only
 /// </summary>
 [ApiController]
 [Route("api/platform/sites")]
-[PlatformAdminOnly]
+[Authorize] // Require auth, per-method attributes enforce specific roles
 public sealed class SitesController : ApiControllerBase
 {
     private readonly ISiteManagementService _sites;
@@ -31,66 +32,117 @@ public sealed class SitesController : ApiControllerBase
         _current = current;
     }
 
+    // ─── Site Management (Platform Admin only) ──────────────────────
+
     [HttpGet]
+    [PlatformAdminOnly]
     public async Task<IActionResult> List(CancellationToken ct)
         => Ok(await _sites.ListAsync(ct));
 
     [HttpGet("{id:guid}")]
+    [PlatformAdminOnly]
     public async Task<IActionResult> Get(Guid id, CancellationToken ct)
         => Ok(await _sites.GetAsync(id, ct));
 
-    /// <summary>Update editable fields (DisplayName, LdapDomains). Code &amp; ConnectionString are locked.</summary>
     [HttpPut("{id:guid}")]
+    [PlatformAdminOnly]
     public async Task<IActionResult> Update(Guid id, [FromBody] SiteUpdateDto dto, CancellationToken ct)
         => Ok(await _sites.UpdateAsync(id, dto, _current.UserId ?? Guid.Empty, ct));
 
-    /// <summary>
-    /// Bootstrap the first Site Business Admin for a site. Creates the user
-    /// (if not exists) and assigns the site-business-admin role. Used to
-    /// break the chicken-and-egg problem.
-    /// </summary>
-    [HttpPost("{siteId:guid}/business-admin")]
-    public async Task<IActionResult> AssignBusinessAdmin(Guid siteId, [FromBody] AssignBusinessAdminRequest req, CancellationToken ct)
-        => Ok(await _users.AssignBusinessAdminAsync(siteId, req.Email, req.DisplayName ?? "", _current.UserId ?? Guid.Empty, ct));
+    // ─── System Admin management (Platform Admin only) ──────────────
 
-    /// <summary>List all business admins for a site.</summary>
+    [HttpPost("{siteId:guid}/system-admin")]
+    [PlatformAdminOnly]
+    public async Task<IActionResult> AssignSystemAdmin(Guid siteId, [FromBody] AssignAdminRequest req, CancellationToken ct)
+        => Ok(await _users.AssignSystemAdminAsync(siteId, req.Email, req.DisplayName ?? "", _current.UserId ?? Guid.Empty, ct));
+
+    [HttpGet("{siteId:guid}/system-admins")]
+    [PlatformAdminOnly]
+    public async Task<IActionResult> ListSystemAdmins(Guid siteId, CancellationToken ct)
+        => Ok(await _users.ListSystemAdminsAsync(siteId, ct));
+
+    [HttpDelete("{siteId:guid}/system-admin/{userId:guid}")]
+    [PlatformAdminOnly]
+    public async Task<IActionResult> RevokeSystemAdmin(Guid siteId, Guid userId, CancellationToken ct)
+    {
+        await _users.RevokeSystemAdminAsync(siteId, userId, _current.UserId ?? Guid.Empty, ct);
+        return Ok(new { success = true });
+    }
+
+    // ─── Business Admin management (System Admin only) ─────────────
+    // Platform Admin CANNOT assign/revoke Business Admin — must go
+    // through System Admin. This enforces the delegation chain:
+    //   Platform Admin → System Admin → Business Admin
+
+    [HttpPost("{siteId:guid}/business-admin")]
+    public async Task<IActionResult> AssignBusinessAdmin(Guid siteId, [FromBody] AssignAdminRequest req, CancellationToken ct)
+    {
+        // Only System Admin can assign Business Admin
+        if (!_current.Roles.Contains("system-admin"))
+            return Forbid();
+
+        // System Admin can only manage their own site
+        if (_current.SiteId != siteId)
+            return Forbid();
+
+        return Ok(await _users.AssignBusinessAdminAsync(siteId, req.Email, req.DisplayName ?? "", _current.UserId ?? Guid.Empty, ct));
+    }
+
     [HttpGet("{siteId:guid}/business-admins")]
     public async Task<IActionResult> ListBusinessAdmins(Guid siteId, CancellationToken ct)
-        => Ok(await _users.ListBusinessAdminsAsync(siteId, ct));
+    {
+        // Only System Admin can list Business Admins
+        if (!_current.Roles.Contains("system-admin"))
+            return Forbid();
 
-    /// <summary>Revoke business admin role from a user.</summary>
+        if (_current.SiteId != siteId)
+            return Forbid();
+
+        return Ok(await _users.ListBusinessAdminsAsync(siteId, ct));
+    }
+
     [HttpDelete("{siteId:guid}/business-admin/{userId:guid}")]
     public async Task<IActionResult> RevokeBusinessAdmin(Guid siteId, Guid userId, CancellationToken ct)
     {
+        if (!_current.Roles.Contains("system-admin"))
+            return Forbid();
+
+        if (_current.SiteId != siteId)
+            return Forbid();
+
         await _users.RevokeBusinessAdminAsync(siteId, userId, _current.UserId ?? Guid.Empty, ct);
         return Ok(new { success = true });
     }
 
-    // ─── LDAP Config ──────────────────────────────────────────────────
+    // ─── LDAP Config (Platform Admin only) ─────────────────────────
 
     [HttpGet("{siteId:guid}/ldap-config")]
+    [PlatformAdminOnly]
     public async Task<IActionResult> GetLdapConfig(Guid siteId, CancellationToken ct)
         => Ok(await _sites.GetLdapConfigAsync(siteId, ct));
 
     [HttpPut("{siteId:guid}/ldap-config")]
+    [PlatformAdminOnly]
     public async Task<IActionResult> UpsertLdapConfig(Guid siteId, [FromBody] LdapConfigUpsertDto dto, CancellationToken ct)
         => Ok(await _sites.UpsertLdapConfigAsync(siteId, dto, _current.UserId ?? Guid.Empty, ct));
 
     [HttpPost("ldap-test")]
+    [PlatformAdminOnly]
     public async Task<IActionResult> TestLdap([FromBody] LdapTestRequest req, CancellationToken ct)
         => Ok(await _sites.TestLdapAsync(req, ct));
 
-    // ─── Theme ────────────────────────────────────────────────────────
+    // ─── Theme (Platform Admin only) ────────────────────────────────
 
     [HttpGet("{siteId:guid}/theme")]
+    [PlatformAdminOnly]
     public async Task<IActionResult> GetTheme(Guid siteId, CancellationToken ct)
         => Ok(await _sites.GetThemeAsync(siteId, ct));
 
     [HttpPut("{siteId:guid}/theme")]
+    [PlatformAdminOnly]
     public async Task<IActionResult> UpsertTheme(Guid siteId, [FromBody] ThemeUpsertDto dto, CancellationToken ct)
         => Ok(await _sites.UpsertThemeAsync(siteId, dto, _current.UserId ?? Guid.Empty, ct));
 }
 
-/// <summary>Request body for assigning a business admin.</summary>
-public sealed record AssignBusinessAdminRequest(string Email, string? DisplayName);
-
+/// <summary>Request body for assigning admin (System or Business).</summary>
+public sealed record AssignAdminRequest(string Email, string? DisplayName);

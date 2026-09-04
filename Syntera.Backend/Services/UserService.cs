@@ -45,6 +45,15 @@ public interface IUserManagementService
     /// </summary>
     Task RevokeBusinessAdminAsync(Guid siteId, Guid userId, Guid revokedBy, CancellationToken ct = default);
 
+    /// <summary>Platform Admin → assign System Admin for a site.</summary>
+    Task<UserDto> AssignSystemAdminAsync(Guid siteId, string email, string displayName, Guid assignedBy, CancellationToken ct = default);
+
+    /// <summary>Platform Admin → list all System Admins for a site.</summary>
+    Task<IReadOnlyList<UserDto>> ListSystemAdminsAsync(Guid siteId, CancellationToken ct = default);
+
+    /// <summary>Platform Admin → revoke System Admin from a user.</summary>
+    Task RevokeSystemAdminAsync(Guid siteId, Guid userId, Guid revokedBy, CancellationToken ct = default);
+
     /// <summary>List all available roles in this site (auto-clones from templates if missing).</summary>
     Task<IReadOnlyList<SiteRoleDto>> ListRolesAsync(CancellationToken ct = default);
 }
@@ -495,6 +504,118 @@ public sealed class UserManagementService : IUserManagementService
             .ToListAsync(ct);
 
         return roles;
+    }
+
+    // ─── System Admin management (Platform Admin only) ──────────────
+
+    /// <summary>
+    /// Platform Admin → assign System Admin for a site.
+    /// System Admin can then assign Business Admins for that site.
+    /// </summary>
+    public async Task<UserDto> AssignSystemAdminAsync(
+        Guid siteId, string email, string displayName, Guid assignedBy, CancellationToken ct = default)
+    {
+        email = email.Trim().ToLowerInvariant();
+        if (string.IsNullOrEmpty(email) || !email.Contains('@'))
+            throw new BusinessRuleException("INVALID_EMAIL", "A valid email is required.");
+
+        var db = await _siteDbFactory.ResolveForSiteAsync(siteId, ct);
+
+        // Find or create the user.
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Email == email, ct);
+        if (user is null)
+        {
+            user = new User
+            {
+                Email = email,
+                DisplayName = string.IsNullOrWhiteSpace(displayName) ? email : displayName,
+                IsEnabled = true,
+                SiteId = siteId,
+                PermissionsVersion = 1,
+            };
+            db.Users.Add(user);
+        }
+
+        // Find or auto-clone the system-admin role.
+        var role = await db.Roles.FirstOrDefaultAsync(r => r.Key == "system-admin", ct);
+        if (role is null)
+            role = await AutoCloneRoleFromTemplateAsync(db, siteId, "system-admin", ct);
+
+        // Also auto-clone all site roles so they're ready.
+        var siteRoles = new[] { "viewer", "eng-planner", "supervisor", "technician", "eng-manager", "qo-manager", "site-business-admin" };
+        foreach (var roleKey in siteRoles)
+        {
+            var exists = await db.Roles.AnyAsync(r => r.Key == roleKey, ct);
+            if (!exists)
+                await AutoCloneRoleFromTemplateAsync(db, siteId, roleKey, ct);
+        }
+
+        // Assign role if not already assigned.
+        var existing = await db.UserRoles.FirstOrDefaultAsync(ur => ur.UserId == user.Id && ur.RoleId == role.Id, ct);
+        if (existing is null)
+        {
+            db.UserRoles.Add(new UserRole
+            {
+                UserId = user.Id,
+                RoleId = role.Id,
+                AssignedBy = assignedBy,
+                ExpiresAt = null,
+            });
+            user.PermissionsVersion++;
+        }
+
+        await db.SaveChangesAsync(ct);
+
+        await _audit.LogAsync(new AuditEntry(
+            SiteId: siteId, ActorUserId: assignedBy, ActorEmail: _current.Email,
+            ActorIp: null, ActorUserAgent: null,
+            Action: "system_admin.assign", TargetType: "User", TargetId: user.Id.ToString(),
+            Outcome: "success",
+            AfterJson: System.Text.Json.JsonSerializer.Serialize(new { email, role.Key })), ct);
+
+        var fresh = await db.Users.AsNoTracking()
+            .Include(u => u.UserRoles).ThenInclude(ur => ur.Role)
+            .Include(u => u.DirectPermissions).ThenInclude(up => up.Permission)
+            .FirstOrDefaultAsync(u => u.Id == user.Id, ct);
+        return Map(fresh!);
+    }
+
+    /// <summary>Platform Admin → list all System Admins for a site.</summary>
+    public async Task<IReadOnlyList<UserDto>> ListSystemAdminsAsync(Guid siteId, CancellationToken ct = default)
+    {
+        var db = await _siteDbFactory.ResolveForSiteAsync(siteId, ct);
+        var role = await db.Roles.FirstOrDefaultAsync(r => r.Key == "system-admin", ct);
+        if (role is null) return Array.Empty<UserDto>();
+
+        var admins = await db.Users.AsNoTracking()
+            .Include(u => u.UserRoles).ThenInclude(ur => ur.Role)
+            .Include(u => u.DirectPermissions).ThenInclude(up => up.Permission)
+            .Where(u => u.UserRoles.Any(ur => ur.RoleId == role.Id))
+            .OrderBy(u => u.Email)
+            .ToListAsync(ct);
+        return admins.Select(Map).ToList();
+    }
+
+    /// <summary>Platform Admin → revoke System Admin from a user.</summary>
+    public async Task RevokeSystemAdminAsync(Guid siteId, Guid userId, Guid revokedBy, CancellationToken ct = default)
+    {
+        var db = await _siteDbFactory.ResolveForSiteAsync(siteId, ct);
+        var role = await db.Roles.FirstOrDefaultAsync(r => r.Key == "system-admin", ct)
+            ?? throw new BusinessRuleException("ROLE_NOT_CLONED", "system-admin role not found.");
+
+        var assignment = await db.UserRoles.FirstOrDefaultAsync(ur => ur.UserId == userId && ur.RoleId == role.Id, ct)
+            ?? throw new NotFoundException("UserRole", $"{userId}/{role.Id}");
+
+        db.UserRoles.Remove(assignment);
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId, ct);
+        if (user is not null) user.PermissionsVersion++;
+        await db.SaveChangesAsync(ct);
+
+        await _audit.LogAsync(new AuditEntry(
+            SiteId: siteId, ActorUserId: revokedBy, ActorEmail: _current.Email,
+            ActorIp: null, ActorUserAgent: null,
+            Action: "system_admin.revoke", TargetType: "User", TargetId: userId.ToString(),
+            Outcome: "success"), ct);
     }
 
     private async Task<Role> AutoCloneRoleFromTemplateAsync(

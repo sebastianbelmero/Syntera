@@ -41,7 +41,23 @@ public static class DbSeeder
         await EnsureSetting(db, "MaxFailedLogins", "5", "Failed login attempts before lockout.");
 
         // ── Default role templates ─────────────────────────────────────
-        // 6 user-facing roles per site + 1 platform-admin role for delegation.
+        // Role hierarchy:
+        //   Platform Admin → System Admin (per site) → Business Admin → End Users
+        
+        // Tier 2: System Administrator (1+ per site, assigned by Platform Admin)
+        // Can only assign Business Admin. Otherwise has Viewer-level access.
+        await EnsureRoleTemplate(db, "system-admin", "System Administrator",
+            "System Administrator — assigns Business Admin for this site. Viewer-level access otherwise.",
+            isSiteAdminRole: false,
+            permissions: SystemAdminPermissions);
+
+        // Tier 3: Site Business Administrator (assigned by System Admin)
+        await EnsureRoleTemplate(db, "site-business-admin", "Site Business Administrator",
+            "Manages users, roles, and permissions within own site.",
+            isSiteAdminRole: true,
+            permissions: SiteBusinessAdminPermissions);
+
+        // Tier 4: End User roles
         await EnsureRoleTemplate(db, "viewer", "Viewer", "Read-only access to dashboards and own profile.",
             isSiteAdminRole: false,
             permissions: ViewerPermissions);
@@ -65,12 +81,6 @@ public static class DbSeeder
         await EnsureRoleTemplate(db, "qo-manager", "QO Manager", "Quality Operations Manager — audit + reports.",
             isSiteAdminRole: false,
             permissions: QoManagerPermissions);
-
-        // Keep site-business-admin for backward compat (Platform Admin bootstrap).
-        await EnsureRoleTemplate(db, "site-business-admin", "Site Business Admin",
-            "Manages users, roles, and permissions within own site (platform-delegated).",
-            isSiteAdminRole: true,
-            permissions: SiteBusinessAdminPermissions);
 
         // ── 6 fixed sites ──────────────────────────────────────────────
         await EnsureSitesAsync(db, config, logger);
@@ -218,8 +228,19 @@ public static class DbSeeder
         });
     }
 
-    // ── Static readonly permission arrays (CA1861: avoid allocating
-    //    new[] on every call — pull up to static readonly fields). ──────
+    // ── Static readonly permission arrays ──────────────────────────
+    
+    /// <summary>
+    /// System Admin: Viewer-level access + ability to assign Business Admin.
+    /// This is the ONLY role (besides Platform Admin) that can assign
+    /// the site-business-admin role.
+    /// </summary>
+    private static readonly string[] SystemAdminPermissions =
+    {
+        "dashboard.read", "audit.read", "profile.read",
+        "business_admin.assign", "business_admin.revoke",
+    };
+
     private static readonly string[] ViewerPermissions =
     {
         "dashboard.read", "audit.read", "profile.read",
