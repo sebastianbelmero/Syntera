@@ -11,19 +11,21 @@
     <NoWarn>$(NoWarn);CA1051;CA1303;CA1848;CA1861</NoWarn>
   </PropertyGroup>
 
-  <!-- Reference the API project so we can reuse PlatformDbContext, SiteDbContext,
-       DbSeeder, entities, and migrations without duplicating code. -->
+  <!-- Reference the Backend project so we can reuse PlatformDbContext, SiteDbContext,
+       DbSeeder, entities, and migrations without duplicating code.
+       (Previously referenced Syntera.Api — deleted in commit e675819 during the
+       Backend migration; this ProjectReference was missed in that cleanup.) -->
   <ItemGroup>
-    <ProjectReference Include="..\Syntera.Api\Syntera.Api.csproj" />
+    <ProjectReference Include="..\Syntera.Backend\Syntera.Backend.csproj" />
   </ItemGroup>
 
-  <!-- Copy appsettings.json from the API project so the setup tool reads the
-       same configuration as the API when run. -->
+  <!-- Copy appsettings.json from the Backend project so the setup tool reads the
+       same configuration as the Backend when run. -->
   <ItemGroup>
-    <None Include="..\Syntera.Api\appsettings.json" Link="appsettings.json">
+    <None Include="..\Syntera.Backend\appsettings.json" Link="appsettings.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Include="..\Syntera.Api\appsettings.Development.json" Link="appsettings.Development.json">
+    <None Include="..\Syntera.Backend\appsettings.Development.json" Link="appsettings.Development.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

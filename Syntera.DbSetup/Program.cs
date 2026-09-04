@@ -4,7 +4,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Serilog;
 using Syntera.Backend.Data;
-using Syntera.Backend.Data;
 
 // ─── Bootstrap Serilog (matches API style) ─────────────────────────
 Log.Logger = new LoggerConfiguration()
