@@ -32,16 +32,24 @@ try
             optional: true, reloadOnChange: true)
         .AddEnvironmentVariables(prefix: "SYNTERA_");
 
-    // ─── Fail-fast: Production checks ─────────────────────────────
+    // ─── Fail-fast: Production security checks ────────────────────
     if (builder.Environment.IsProduction())
     {
         var signingKey = builder.Configuration["Jwt:SigningKey"];
         if (string.IsNullOrWhiteSpace(signingKey) || signingKey.Length < 32)
-            throw new InvalidOperationException("Jwt:SigningKey must be set (≥32 chars) in Production.");
+            throw new InvalidOperationException("Jwt:SigningKey must be set (≥32 chars) in Production. Set via SYNTERA_Jwt__SigningKey env var.");
 
         var allowedHosts = builder.Configuration["Cors:AllowedOrigins"];
         if (string.IsNullOrWhiteSpace(allowedHosts))
             throw new InvalidOperationException("Cors:AllowedOrigins must be set in Production.");
+
+        var adminPassword = builder.Configuration["Seed:PlatformAdminPassword"];
+        if (string.IsNullOrWhiteSpace(adminPassword))
+            throw new InvalidOperationException("Seed:PlatformAdminPassword must be set in Production. Set via SYNTERA_Seed__PlatformAdminPassword env var.");
+
+        var dbPassword = builder.Configuration.GetConnectionString("Platform");
+        if (dbPassword != null && dbPassword.Contains("__SET_VIA_ENV"))
+            throw new InvalidOperationException("ConnectionStrings:Platform must not contain placeholder in Production. Set via SYNTERA_ConnectionStrings__Platform env var.");
     }
 
     // ─── DI: Framework ─────────────────────────────────────────────

@@ -3,8 +3,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Serilog;
-using Syntera.Infrastructure.Data;
-using Syntera.Infrastructure.Seed;
+using Syntera.Backend.Data;
+using Syntera.Backend.Data;
 
 // ─── Bootstrap Serilog (matches API style) ─────────────────────────
 Log.Logger = new LoggerConfiguration()
@@ -112,7 +112,7 @@ try
     Log.Information("  Platform Admin: admin@syntera.com");
     Log.Information("  Password:       (from Seed:PlatformAdminPassword in appsettings)");
     Log.Information("");
-    Log.Information("  Next: cd ../Syntera.Api && dotnet run");
+    Log.Information("  Next: cd ../Syntera.Backend && dotnet run");
     Log.Information("════════════════════════════════════════════════════════════════");
 }
 catch (Exception ex)

@@ -306,12 +306,20 @@ public sealed class NovellLdapClient : ILdapClient
         var options = new LdapConnectionOptions();
         if (endpoint.Port == 636) options.UseSsl();
 
-        // Accept self-signed certificates — operator accepts the risk for internal AD.
-        // In production with proper CA trust, remove this callback.
+        // In Development: accept self-signed certificates for internal AD.
+        // In Production: certificate validation is enforced (no bypass).
+        // To allow self-signed in Production, set SYNTERA_Ldap__SkipCertValidation=true
+        // (NOT recommended — install internal CA cert to trust store instead).
+        var skipCertValidation = Environment.GetEnvironmentVariable("SYNTERA_Ldap__SkipCertValidation") == "true"
+            || System.Diagnostics.Debugger.IsAttached;
+
+        if (skipCertValidation)
+        {
 #pragma warning disable CA5359 // Do not disable certificate validation
-        options.ConfigureRemoteCertificateValidationCallback(
-            (sender, certificate, chain, sslPolicyErrors) => true);
+            options.ConfigureRemoteCertificateValidationCallback(
+                (sender, certificate, chain, sslPolicyErrors) => true);
 #pragma warning restore CA5359
+        }
 
         var conn = new LdapConnection(options)
         {

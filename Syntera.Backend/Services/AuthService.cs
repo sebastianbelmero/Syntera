@@ -41,6 +41,7 @@ public sealed class AuthService : IAuthService
     private readonly IPermissionService _permissions;
     private readonly IMemoryCache _cache;
     private readonly ILogger<AuthService> _log;
+    private readonly ICurrentUserService _currentUser;
 
     private const int MaxFailedLogins = 5;
     private static readonly TimeSpan LockoutDuration = TimeSpan.FromMinutes(15);
@@ -55,7 +56,8 @@ public sealed class AuthService : IAuthService
         IThemeService themes,
         IPermissionService permissions,
         IMemoryCache cache,
-        ILogger<AuthService> log)
+        ILogger<AuthService> log,
+        ICurrentUserService currentUser)
     {
         _platformDb = platformDb;
         _siteDbFactory = siteDbFactory;
@@ -67,6 +69,7 @@ public sealed class AuthService : IAuthService
         _permissions = permissions;
         _cache = cache;
         _log = log;
+        _currentUser = currentUser;
     }
 
     public async Task<LoginResponse> LoginAsync(LoginRequest request, string? ip, string? userAgent, CancellationToken ct = default)
@@ -394,7 +397,21 @@ public sealed class AuthService : IAuthService
             await _platformDb.SaveChangesAsync(ct);
             return;
         }
-        // Site refresh tokens require site context to revoke — handled by the controller.
+
+        // Try site DB — revoke site refresh token
+        var siteId = _currentUser.SiteId;
+        if (siteId is not null)
+        {
+            var siteDb = await _siteDbFactory.ResolveForSiteAsync(siteId.Value, ct);
+            var siteToken = await siteDb.RefreshTokens
+                .FirstOrDefaultAsync(t => t.TokenHash == hash && t.RevokedAt == null, ct);
+            if (siteToken is not null)
+            {
+                siteToken.RevokedAt = DateTime.UtcNow;
+                siteToken.RevokedBy = revokedBy;
+                await siteDb.SaveChangesAsync(ct);
+            }
+        }
     }
 
     public async Task<UserProfileDto> GetProfileAsync(CancellationToken ct = default)

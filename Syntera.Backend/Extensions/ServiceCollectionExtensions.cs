@@ -68,31 +68,35 @@ public static class ServiceCollectionExtensions
 
     public static IServiceCollection AddSynteraSecurity(this IServiceCollection services, IConfiguration cfg)
     {
-        // CORS — fail-closed: if no origins configured, REJECT all cross-origin requests.
-        // The original code allowed AllowAnyOrigin() as fallback, which is unsafe.
+        var env = services.BuildServiceProvider().GetRequiredService<IHostEnvironment>();
+
         services.AddCors(o => o.AddDefaultPolicy(p =>
         {
             var origins = cfg.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
-            var devOrigins = cfg.GetSection("Cors:DevOrigins").Get<string[]>() ?? [];
-            var allOrigins = origins.Concat(devOrigins).Distinct().ToArray();
-            if (allOrigins.Length == 0)
+
+            // Only include DevOrigins in Development — never in Production
+            if (env.IsDevelopment())
             {
-                // No origins → block all CORS in Production. In Development, allow localhost.
-                if (cfg["ASPNETCORE_ENVIRONMENT"] == "Development")
+                var devOrigins = cfg.GetSection("Cors:DevOrigins").Get<string[]>() ?? [];
+                origins = origins.Concat(devOrigins).Distinct().ToArray();
+            }
+
+            if (origins.Length == 0)
+            {
+                if (env.IsDevelopment())
                 {
                     p.SetIsOriginAllowed(s => s.StartsWith("http://localhost", StringComparison.OrdinalIgnoreCase))
                      .AllowAnyHeader().AllowAnyMethod().AllowCredentials();
                 }
                 else
                 {
-                    // Empty policy — no origin will match.
                     p.SetIsOriginAllowed(_ => false)
                      .AllowAnyHeader().AllowAnyMethod();
                 }
             }
             else
             {
-                p.WithOrigins(allOrigins).AllowAnyHeader().AllowAnyMethod().AllowCredentials();
+                p.WithOrigins(origins).AllowAnyHeader().AllowAnyMethod().AllowCredentials();
             }
         }));
 
