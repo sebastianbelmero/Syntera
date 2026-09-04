@@ -40,6 +40,27 @@ export function RequirePlatformAdmin({ children }: { children: ReactNode }) {
 }
 
 /**
+ * Platform Admin OR System Admin — used for /platform/sites.
+ * System Admin can access Sites to manage Business Admins for their site.
+ */
+export function RequirePlatformOrSystemAdmin({ children }: { children: ReactNode }) {
+  const profile = useAuthStore((s) => s.profile);
+  const isAuthed = useAuthStore((s) => s.isAuthenticated());
+  const location = useLocation();
+
+  if (!isAuthed || !profile) {
+    return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
+  }
+
+  const allowed = profile.roles.includes("platform-admin")
+    || profile.roles.includes("system-admin");
+  if (!allowed) {
+    return <ForbiddenPage />;
+  }
+  return <>{children}</>;
+}
+
+/**
  * Site Business Admin only — must have site-business-admin role.
  * Platform Admin also passes (they can do anything site admins can do).
  */

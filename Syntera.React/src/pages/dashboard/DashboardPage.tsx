@@ -13,10 +13,12 @@ export default function DashboardPage() {
   if (!profile) return null;
 
   const isPlatform = profile.roles.includes("platform-admin");
+  const isSystemAdmin = profile.roles.includes("system-admin");
   const isSiteAdmin = profile.roles.includes("site-business-admin")
     || profile.roles.includes("eng-manager")
     || profile.roles.includes("supervisor")
-    || profile.roles.includes("qo-manager");
+    || profile.roles.includes("qo-manager")
+    || isSystemAdmin;
 
   return (
     <div className="space-y-6">

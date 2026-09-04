@@ -2,7 +2,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import { useEffect } from "react";
 import { LayoutDashboard, Settings, Building2, Shield, Users, ScrollText, KeyRound } from "lucide-react";
 
-import { RequireAuth, RequirePlatformAdmin, RequireSiteAdmin } from "./routes/guards";
+import { RequireAuth, RequirePlatformAdmin, RequirePlatformOrSystemAdmin, RequireSiteAdmin } from "./routes/guards";
 import { useAuthStore } from "./store/authStore";
 import { useThemeStore } from "./store/themeStore";
 import { AdminLayout, type MenuItem } from "./components/layout";
@@ -85,7 +85,7 @@ function ThemeApplier() {
   return null;
 }
 
-function buildMenu(isPlatformAdmin: boolean, isSiteAdmin: boolean): MenuItem[] {
+function buildMenu(isPlatformAdmin: boolean, isSiteAdmin: boolean, isSystemAdmin: boolean): MenuItem[] {
   const items: MenuItem[] = [{ label: "Dashboard", path: "/dashboard", icon: <LayoutDashboard size={18} /> }];
 
   if (isPlatformAdmin) {
@@ -94,7 +94,12 @@ function buildMenu(isPlatformAdmin: boolean, isSiteAdmin: boolean): MenuItem[] {
     items.push({ label: "Audit Logs", path: "/audit/logs", icon: <ScrollText size={18} /> });
   }
 
-  if (isSiteAdmin) {
+  // System Admin sees Sites (to manage Business Admins for their site)
+  if (isSystemAdmin && !isPlatformAdmin) {
+    items.push({ label: "Sites", path: "/platform/sites", icon: <Building2 size={18} /> });
+  }
+
+  if (isSiteAdmin || isSystemAdmin) {
     items.push({ label: "Users", path: "/site/users", icon: <Users size={18} /> });
     items.push({ label: "Site Audit", path: "/site/audit", icon: <Shield size={18} /> });
   }
@@ -109,7 +114,8 @@ export default function App() {
 
   const isPlatform = profile?.roles.includes("platform-admin") ?? false;
   const isSiteAdmin = profile?.roles.includes("site-business-admin") ?? false;
-  const menu = buildMenu(isPlatform, isSiteAdmin);
+  const isSystemAdmin = profile?.roles.includes("system-admin") ?? false;
+  const menu = buildMenu(isPlatform, isSiteAdmin, isSystemAdmin);
 
   return (
     <>
@@ -143,13 +149,13 @@ export default function App() {
         >
           <Route path="/dashboard" element={<DashboardPage />} />
 
-          {/* Platform Admin routes */}
+          {/* Platform Admin + System Admin routes */}
           <Route
             path="/platform/sites"
             element={
-              <RequirePlatformAdmin>
+              <RequirePlatformOrSystemAdmin>
                 <SitesPage />
-              </RequirePlatformAdmin>
+              </RequirePlatformOrSystemAdmin>
             }
           />
           <Route
