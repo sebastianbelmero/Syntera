@@ -316,14 +316,35 @@ public sealed class AuthService : IAuthService
         var hash = SHA256Hex(refreshToken);
 
         // Look in platform DB first (platform admin).
+        // M1: include tokens that are already revoked in the lookup so we can
+        // detect reuse — if a token was already rotated (ReplacedById is set
+        // OR RevokedAt is set) and someone presents it again, that's theft.
         var platformToken = await _platformDb.RefreshTokens
-            .FirstOrDefaultAsync(t => t.TokenHash == hash && t.RevokedAt == null, ct);
+            .FirstOrDefaultAsync(t => t.TokenHash == hash, ct);
         if (platformToken is not null)
         {
+            // M1 — Token reuse detection: if this token was already rotated
+            // or revoked, but someone is presenting it again, the legitimate
+            // user already moved on (rotated to a new token). The presenter
+            // is therefore an attacker using a stolen old token. Revoke the
+            // entire family to invalidate both attacker and (now-also-stolen)
+            // legitimate user — force re-authentication.
+            if (platformToken.RevokedAt is not null || platformToken.ReplacedById is not null)
+            {
+                _log.LogWarning("Refresh token reuse detected (platform scope, family {FamilyId}). Revoking family.", platformToken.FamilyId);
+                await RevokeFamilyAsync(_platformDb.RefreshTokens, platformToken.FamilyId, revokedBy: platformToken.UserId, ct);
+                await _audit.LogAsync(new AuditEntry(
+                    SiteId: null, ActorUserId: platformToken.UserId, ActorEmail: null, ActorIp: ip, ActorUserAgent: userAgent,
+                    Action: "auth.refresh", TargetType: "RefreshToken", TargetId: platformToken.Id.ToString(),
+                    Outcome: "failure", ErrorMessage: "Token reuse detected — family revoked"), ct);
+                throw new AuthenticationException("REFRESH_REUSE_DETECTED",
+                    "Refresh token reuse detected. Please log in again.");
+            }
+
             if (platformToken.ExpiresAt <= DateTime.UtcNow)
                 throw new AuthenticationException("REFRESH_EXPIRED", "Refresh token expired.");
 
-            // Rotate: revoke old, issue new.
+            // Rotate: revoke old, issue new (same family).
             platformToken.RevokedAt = DateTime.UtcNow;
             platformToken.RevokedBy = platformToken.UserId;
             await _platformDb.SaveChangesAsync(ct);
@@ -342,7 +363,8 @@ public sealed class AuthService : IAuthService
                 admin.Id, "platform", null, admin.Email, admin.DisplayName, null,
                 profile.Roles, profile.Permissions, 1, ip, userAgent, ct);
 
-            var newRt = BuildRefreshToken(admin.Id, "platform", null, newRefresh, ip, userAgent);
+            // M1: propagate FamilyId from parent so all tokens in a chain share it.
+            var newRt = BuildRefreshToken(admin.Id, "platform", null, newRefresh, ip, userAgent, familyId: platformToken.FamilyId);
             newRt.ReplacedById = platformToken.Id;
             _platformDb.RefreshTokens.Add(newRt);
             await _platformDb.SaveChangesAsync(ct);
@@ -373,9 +395,24 @@ public sealed class AuthService : IAuthService
             ?? throw new NotFoundException("Site", siteId);
 
         var siteDb = await _siteDbFactory.ResolveForSiteAsync(siteId, ct);
+        // M1: include tokens that are already revoked in the lookup so we can
+        // detect reuse — see RefreshAsync for full explanation.
         var token = await siteDb.RefreshTokens
-            .FirstOrDefaultAsync(t => t.TokenHash == hash && t.RevokedAt == null, ct)
+            .FirstOrDefaultAsync(t => t.TokenHash == hash, ct)
             ?? throw new AuthenticationException("REFRESH_NOT_FOUND", "Refresh token not found.");
+
+        // M1 — Token reuse detection (site scope): same logic as platform.
+        if (token.RevokedAt is not null || token.ReplacedById is not null)
+        {
+            _log.LogWarning("Refresh token reuse detected (site {SiteId}, family {FamilyId}). Revoking family.", siteId, token.FamilyId);
+            await RevokeFamilyAsync(siteDb.RefreshTokens, token.FamilyId, revokedBy: token.UserId, ct);
+            await _audit.LogAsync(new AuditEntry(
+                SiteId: siteId, ActorUserId: token.UserId, ActorEmail: null, ActorIp: ip, ActorUserAgent: ua,
+                Action: "auth.refresh", TargetType: "RefreshToken", TargetId: token.Id.ToString(),
+                Outcome: "failure", ErrorMessage: "Token reuse detected — family revoked"), ct);
+            throw new AuthenticationException("REFRESH_REUSE_DETECTED",
+                "Refresh token reuse detected. Please log in again.");
+        }
 
         if (token.ExpiresAt <= DateTime.UtcNow)
             throw new AuthenticationException("REFRESH_EXPIRED", "Refresh token expired.");
@@ -400,7 +437,8 @@ public sealed class AuthService : IAuthService
             user.Id, "site", site.Id, user.Email, user.DisplayName, user.Title,
             roles, perms, user.PermissionsVersion, ip, ua, ct);
 
-        var newRt = BuildRefreshToken(user.Id, "site", site.Id, newRefresh, ip, ua);
+        // M1: propagate FamilyId from parent.
+        var newRt = BuildRefreshToken(user.Id, "site", site.Id, newRefresh, ip, ua, familyId: token.FamilyId);
         newRt.ReplacedById = token.Id;
         siteDb.RefreshTokens.Add(newRt);
         await siteDb.SaveChangesAsync(ct);
@@ -457,7 +495,7 @@ public sealed class AuthService : IAuthService
         return (access.Token, access.ExpiresAt, refresh);
     }
 
-    private static RefreshToken BuildRefreshToken(Guid userId, string scope, Guid? siteId, string rawToken, string? ip, string? ua)
+    private static RefreshToken BuildRefreshToken(Guid userId, string scope, Guid? siteId, string rawToken, string? ip, string? ua, Guid? familyId = null)
     {
         return new RefreshToken
         {
@@ -469,6 +507,9 @@ public sealed class AuthService : IAuthService
             ExpiresAt = DateTime.UtcNow.AddDays(1),
             CreatedFromIp = ip,
             CreatedUserAgent = ua,
+            // M1: new tokens without an explicit FamilyId start a new family.
+            // Rotation will propagate the parent's FamilyId via the caller.
+            FamilyId = familyId ?? Guid.NewGuid(),
         };
     }
 
@@ -484,6 +525,33 @@ public sealed class AuthService : IAuthService
     {
         var bytes = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(input));
         return Convert.ToHexStringLower(bytes);
+    }
+
+    /// <summary>
+    /// SECURITY (M1): revoke every non-revoked refresh token that shares the
+    /// given family ID. Called when token reuse is detected — see RefreshAsync
+    /// for the rationale. Works against either the Platform DB's RefreshTokens
+    /// DbSet or a Site DB's RefreshTokens DbSet (same entity type).
+    /// </summary>
+    private static async Task RevokeFamilyAsync(
+        Microsoft.EntityFrameworkCore.DbSet<RefreshToken> tokens,
+        Guid? familyId,
+        Guid revokedBy,
+        CancellationToken ct)
+    {
+        if (familyId is null) return;
+        var now = DateTime.UtcNow;
+        // Only revoke tokens that are still active — already-revoked tokens
+        // keep their original RevokedAt/RevokedBy for audit clarity.
+        var active = await tokens
+            .Where(t => t.FamilyId == familyId && t.RevokedAt == null)
+            .ToListAsync(ct);
+        foreach (var t in active)
+        {
+            t.RevokedAt = now;
+            t.RevokedBy = revokedBy;
+        }
+        // Caller is responsible for SaveChangesAsync.
     }
 
     private void BumpFail(string key)

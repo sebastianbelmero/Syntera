@@ -22,7 +22,25 @@ namespace Syntera.Migrations.Platform
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
-            modelBuilder.Entity("Syntera.Models.Entities.AuditLog", b =>
+            modelBuilder.Entity("Syntera.Backend.Data.PlatformSetting", b =>
+                {
+                    b.Property<string>("Key")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Value")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.HasKey("Key");
+
+                    b.ToTable("PlatformSettings", (string)null);
+                });
+
+            modelBuilder.Entity("Syntera.Backend.Models.Entities.AuditLog", b =>
                 {
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
@@ -101,7 +119,7 @@ namespace Syntera.Migrations.Platform
                     b.ToTable("AuditLogs", (string)null);
                 });
 
-            modelBuilder.Entity("Syntera.Models.Entities.PlatformUser", b =>
+            modelBuilder.Entity("Syntera.Backend.Models.Entities.PlatformUser", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -151,7 +169,7 @@ namespace Syntera.Migrations.Platform
                     b.ToTable("PlatformUsers", (string)null);
                 });
 
-            modelBuilder.Entity("Syntera.Models.Entities.RefreshToken", b =>
+            modelBuilder.Entity("Syntera.Backend.Models.Entities.RefreshToken", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -168,6 +186,9 @@ namespace Syntera.Migrations.Platform
 
                     b.Property<DateTime>("ExpiresAt")
                         .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("FamilyId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid?>("ReplacedById")
                         .HasColumnType("uniqueidentifier");
@@ -203,6 +224,8 @@ namespace Syntera.Migrations.Platform
 
                     b.HasKey("Id");
 
+                    b.HasIndex("FamilyId");
+
                     b.HasIndex("TokenHash")
                         .IsUnique();
 
@@ -211,7 +234,7 @@ namespace Syntera.Migrations.Platform
                     b.ToTable("RefreshTokens", (string)null);
                 });
 
-            modelBuilder.Entity("Syntera.Models.Entities.RoleTemplate", b =>
+            modelBuilder.Entity("Syntera.Backend.Models.Entities.RoleTemplate", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -254,7 +277,7 @@ namespace Syntera.Migrations.Platform
                     b.ToTable("RoleTemplates", (string)null);
                 });
 
-            modelBuilder.Entity("Syntera.Models.Entities.RoleTemplatePermission", b =>
+            modelBuilder.Entity("Syntera.Backend.Models.Entities.RoleTemplatePermission", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -282,7 +305,7 @@ namespace Syntera.Migrations.Platform
                     b.ToTable("RoleTemplatePermissions", (string)null);
                 });
 
-            modelBuilder.Entity("Syntera.Models.Entities.Site", b =>
+            modelBuilder.Entity("Syntera.Backend.Models.Entities.Site", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -329,7 +352,7 @@ namespace Syntera.Migrations.Platform
                     b.ToTable("Sites", (string)null);
                 });
 
-            modelBuilder.Entity("Syntera.Models.Entities.SiteLdapConfig", b =>
+            modelBuilder.Entity("Syntera.Backend.Models.Entities.SiteLdapConfig", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -372,7 +395,7 @@ namespace Syntera.Migrations.Platform
                     b.ToTable("SiteLdapConfigs", (string)null);
                 });
 
-            modelBuilder.Entity("Syntera.Models.Entities.SiteLdapDomain", b =>
+            modelBuilder.Entity("Syntera.Backend.Models.Entities.SiteLdapDomain", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -405,7 +428,7 @@ namespace Syntera.Migrations.Platform
                     b.ToTable("SiteLdapDomains", (string)null);
                 });
 
-            modelBuilder.Entity("Syntera.Models.Entities.SiteTheme", b =>
+            modelBuilder.Entity("Syntera.Backend.Models.Entities.SiteTheme", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -447,27 +470,9 @@ namespace Syntera.Migrations.Platform
                     b.ToTable("SiteThemes", (string)null);
                 });
 
-            modelBuilder.Entity("Syntera.Infrastructure.Data.PlatformSetting", b =>
+            modelBuilder.Entity("Syntera.Backend.Models.Entities.RoleTemplatePermission", b =>
                 {
-                    b.Property<string>("Key")
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<string>("Description")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("Value")
-                        .HasMaxLength(2000)
-                        .HasColumnType("nvarchar(2000)");
-
-                    b.HasKey("Key");
-
-                    b.ToTable("PlatformSettings", (string)null);
-                });
-
-            modelBuilder.Entity("Syntera.Models.Entities.RoleTemplatePermission", b =>
-                {
-                    b.HasOne("Syntera.Models.Entities.RoleTemplate", "RoleTemplate")
+                    b.HasOne("Syntera.Backend.Models.Entities.RoleTemplate", "RoleTemplate")
                         .WithMany("Permissions")
                         .HasForeignKey("RoleTemplateId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -476,20 +481,20 @@ namespace Syntera.Migrations.Platform
                     b.Navigation("RoleTemplate");
                 });
 
-            modelBuilder.Entity("Syntera.Models.Entities.SiteLdapConfig", b =>
+            modelBuilder.Entity("Syntera.Backend.Models.Entities.SiteLdapConfig", b =>
                 {
-                    b.HasOne("Syntera.Models.Entities.Site", "Site")
+                    b.HasOne("Syntera.Backend.Models.Entities.Site", "Site")
                         .WithOne("LdapConfig")
-                        .HasForeignKey("Syntera.Models.Entities.SiteLdapConfig", "SiteId")
+                        .HasForeignKey("Syntera.Backend.Models.Entities.SiteLdapConfig", "SiteId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.Navigation("Site");
                 });
 
-            modelBuilder.Entity("Syntera.Models.Entities.SiteLdapDomain", b =>
+            modelBuilder.Entity("Syntera.Backend.Models.Entities.SiteLdapDomain", b =>
                 {
-                    b.HasOne("Syntera.Models.Entities.Site", "Site")
+                    b.HasOne("Syntera.Backend.Models.Entities.Site", "Site")
                         .WithMany("LdapDomains")
                         .HasForeignKey("SiteId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -498,23 +503,23 @@ namespace Syntera.Migrations.Platform
                     b.Navigation("Site");
                 });
 
-            modelBuilder.Entity("Syntera.Models.Entities.SiteTheme", b =>
+            modelBuilder.Entity("Syntera.Backend.Models.Entities.SiteTheme", b =>
                 {
-                    b.HasOne("Syntera.Models.Entities.Site", "Site")
+                    b.HasOne("Syntera.Backend.Models.Entities.Site", "Site")
                         .WithOne("Theme")
-                        .HasForeignKey("Syntera.Models.Entities.SiteTheme", "SiteId")
+                        .HasForeignKey("Syntera.Backend.Models.Entities.SiteTheme", "SiteId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.Navigation("Site");
                 });
 
-            modelBuilder.Entity("Syntera.Models.Entities.RoleTemplate", b =>
+            modelBuilder.Entity("Syntera.Backend.Models.Entities.RoleTemplate", b =>
                 {
                     b.Navigation("Permissions");
                 });
 
-            modelBuilder.Entity("Syntera.Models.Entities.Site", b =>
+            modelBuilder.Entity("Syntera.Backend.Models.Entities.Site", b =>
                 {
                     b.Navigation("LdapConfig");
 

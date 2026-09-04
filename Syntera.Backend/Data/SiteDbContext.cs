@@ -141,6 +141,8 @@ public sealed class SiteDbContext : DbContext
             e.Property(x => x.TokenHash).HasMaxLength(128).IsRequired();
             e.HasIndex(x => x.TokenHash).IsUnique();
             e.Property(x => x.UserScope).HasMaxLength(16).IsRequired();
+            // M1: index FamilyId for fast "revoke entire family" query on token reuse.
+            e.HasIndex(x => x.FamilyId);
         });
     }
 

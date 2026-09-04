@@ -7,10 +7,12 @@
  *   @kalbe.co.id      → LDAP Kalbe
  *   ... (5 more sites)
  *
- * Refresh-token handling:
- *   - Platform admin: POST /api/auth/refresh
- *   - Site user:      POST /api/auth/refresh-site { refreshToken, siteId }
- *   The frontend determines which endpoint to call based on profile.scope.
+ * Refresh-token handling (H7):
+ *   - Refresh token lives in httpOnly cookie set by backend; JS never
+ *     reads or sends it in a request body.
+ *   - Platform admin: POST /api/auth/refresh        (no body needed)
+ *   - Site user:      POST /api/auth/refresh-site   { siteId }
+ *   - The frontend determines which endpoint to call based on profile.scope.
  */
 
 import { post, get } from "./client";
@@ -29,28 +31,29 @@ export async function login(req: LoginRequest): Promise<LoginResponse> {
 }
 
 export async function logout(): Promise<void> {
-  const refreshToken = useAuthStore.getState().refreshToken;
+  // H7: refresh token is sent automatically by the browser via the
+  // httpOnly cookie on /api/auth/logout. We don't need (and don't have)
+  // the token in JS. Send an empty body — backend reads the cookie.
   try {
-    if (refreshToken) {
-      await post("/auth/logout", { refreshToken });
-    }
+    await post("/auth/logout", {});
   } finally {
     useAuthStore.getState().logout();
   }
 }
 
 export async function refresh(): Promise<RefreshResponse> {
-  const { refreshToken, profile } = useAuthStore.getState();
-  if (!refreshToken) throw new Error("NO_REFRESH_TOKEN");
+  const { profile } = useAuthStore.getState();
 
   // Choose endpoint based on scope.
   const url = profile?.scope === "site" && profile.siteId
     ? "/auth/refresh-site"
     : "/auth/refresh";
 
+  // H7: refresh token comes from the httpOnly cookie automatically
+  // (withCredentials=true on axios). Only siteId is sent in the body.
   const body = profile?.scope === "site" && profile.siteId
-    ? { refreshToken, siteId: profile.siteId }
-    : { refreshToken };
+    ? { siteId: profile.siteId }
+    : {};
 
   const data = await post<RefreshResponse>(url, body);
   // Update tokens, profile, AND theme (server may return updated theme
@@ -58,7 +61,6 @@ export async function refresh(): Promise<RefreshResponse> {
   // from their site's SiteTheme record).
   useAuthStore.getState().setTokens({
     accessToken: data.accessToken,
-    refreshToken: data.refreshToken,
     expiresAt: data.expiresAt,
   });
   if (data.profile) {

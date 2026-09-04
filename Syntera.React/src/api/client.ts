@@ -12,8 +12,11 @@
  *
  * Design goals:
  *   - DRY: every endpoint goes through this single instance.
- *   - Safe: tokens live in memory only (no localStorage), refresh
- *     token is opaque to the application code.
+ *   - Safe (H7): refresh token lives in httpOnly cookie set by backend —
+ *     JS cannot read it, XSS cannot exfiltrate it. `withCredentials: true`
+ *     ensures the cookie is sent on cross-origin (Vite dev :5173 → API
+ *     :5296) requests. Access token is short-lived (15 min) and stored in
+ *     localStorage — blast radius of an XSS leak is bounded.
  *   - Transparent: a single request queue prevents refresh-token
  *     thundering herds when multiple requests 401 simultaneously.
  */
@@ -32,7 +35,9 @@ import { useAuthStore } from "../store/authStore";
 
 export const api = axios.create({
   baseURL: "/api",
-  withCredentials: false,
+  // H7: must be true so the httpOnly refresh-token cookie set on /api/auth
+  // is sent on every /api/* request (refresh + logout rely on it).
+  withCredentials: true,
   headers: {
     "Content-Type": "application/json",
     Accept: "application/json",
@@ -134,16 +139,18 @@ api.interceptors.response.use(
 async function acquireFreshAccessToken(): Promise<string> {
   if (refreshPromise) return refreshPromise;
 
-  const { refreshToken, profile } = useAuthStore.getState();
-  if (!refreshToken) throw new Error("NO_REFRESH_TOKEN");
+  const { profile } = useAuthStore.getState();
 
+  // H7: refresh token is sent automatically by the browser as an httpOnly
+  // cookie on /api/auth/* requests (withCredentials=true). We don't read
+  // it from the auth store anymore — it's never stored client-side.
+  //
   // Choose endpoint based on scope — site users need /auth/refresh-site
-  // with siteId. Platform admin uses /auth/refresh.
+  // with siteId in body. Platform admin uses /auth/refresh (no body needed
+  // beyond what the cookie carries).
   const isSiteUser = profile?.scope === "site" && profile.siteId;
   const url = isSiteUser ? "/api/auth/refresh-site" : "/api/auth/refresh";
-  const body = isSiteUser
-    ? { refreshToken, siteId: profile!.siteId }
-    : { refreshToken };
+  const body = isSiteUser ? { siteId: profile!.siteId } : {};
 
   refreshPromise = (async () => {
     try {
@@ -155,12 +162,14 @@ async function acquireFreshAccessToken(): Promise<string> {
           profile: unknown;
           theme: unknown;
         }>
-      >(url, body);
+      >(url, body, { withCredentials: true });
       const data = res.data.data;
       if (!data) throw new Error("REFRESH_FAILED");
       useAuthStore.getState().setTokens({
         accessToken: data.accessToken,
-        refreshToken: data.refreshToken,
+        // H7: backend also returns refreshToken in body for backward compat,
+        // but we deliberately don't store it — the cookie is rotated by the
+        // backend's Set-Cookie header automatically.
         expiresAt: data.expiresAt,
       });
       if (data.theme) {

@@ -122,6 +122,8 @@ public sealed class PlatformDbContext : DbContext
             e.HasIndex(x => x.TokenHash).IsUnique();
             e.Property(x => x.UserScope).HasMaxLength(16).IsRequired();
             e.HasIndex(x => new { x.UserId, x.UserScope });
+            // M1: index FamilyId for fast "revoke entire family" query on token reuse.
+            e.HasIndex(x => x.FamilyId);
         });
 
         modelBuilder.Entity<AuditLog>(e =>

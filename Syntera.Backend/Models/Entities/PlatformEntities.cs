@@ -103,6 +103,20 @@ public class RefreshToken : BaseEntity
     /// <summary>If this token was rotated, the ID of the replacement token. Forms a chain.</summary>
     public Guid? ReplacedById { get; set; }
 
+    /// <summary>
+    /// SECURITY (M1): Family ID — all refresh tokens issued from the same
+    /// initial login share the same FamilyId. When a refresh token is used
+    /// AFTER it has been rotated (i.e., ReplacedById is set), this signals
+    /// token theft: the legitimate client rotated to a new token, but an
+    /// attacker who stole the old token is also using it. Defense: revoke
+    /// the entire family (all tokens with this FamilyId) — both attacker
+    /// and legitimate user are forced to re-authenticate.
+    ///
+    /// For backward compat, nullable. Null = pre-M1 token (treated as its
+    /// own family of size 1 — no reuse detection).
+    /// </summary>
+    public Guid? FamilyId { get; set; }
+
     /// <summary>IP + User Agent of the client that requested this token, for forensic review.</summary>
     public string? CreatedFromIp { get; set; }
 

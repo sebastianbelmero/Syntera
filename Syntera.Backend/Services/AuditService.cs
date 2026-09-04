@@ -172,7 +172,13 @@ public sealed partial class AuditService : IAuditService
 
     private static string ComputeHash(AuditLog log)
     {
-        var payload = $"{log.PreviousHash}|{log.Timestamp:O}|{log.SiteId}|{log.ActorUserId}|{log.ActorEmail}|{log.Action}|{log.TargetType}|{log.TargetId}|{log.Outcome}|{log.ErrorMessage}";
+        // SECURITY (M3): hash MUST include AfterJson (the "after" state snapshot
+        // of the affected entity). Without it, an attacker with DB write access
+        // could tamper with the AfterJson payload (e.g., hide what fields were
+        // actually changed in a user.update) and the chain hash would still
+        // validate. Including AfterJson closes this integrity gap.
+        var afterJson = log.AfterJson ?? "";
+        var payload = $"{log.PreviousHash}|{log.Timestamp:O}|{log.SiteId}|{log.ActorUserId}|{log.ActorEmail}|{log.Action}|{log.TargetType}|{log.TargetId}|{log.Outcome}|{log.ErrorMessage}|{afterJson}";
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(payload)));
     }
 
