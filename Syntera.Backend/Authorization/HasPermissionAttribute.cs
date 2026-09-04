@@ -73,8 +73,50 @@ public sealed class PlatformAdminOnlyAttribute : AuthorizeAttribute, IAuthorizat
 /// <summary>
 /// Restricts an endpoint to Site Business Admin (within their own site).
 /// Platform Admin also passes (they can do anything site admins can do).
+/// System Admin also passes (viewer-level access + admin management).
 /// </summary>
 public sealed class SiteBusinessAdminAttribute : AuthorizeAttribute, IAuthorizationFilter
+{
+    public void OnAuthorization(AuthorizationFilterContext context)
+    {
+        var user = context.HttpContext.User;
+        if (user.Identity?.IsAuthenticated != true)
+        {
+            context.Result = new Microsoft.AspNetCore.Mvc.UnauthorizedResult();
+            return;
+        }
+        // Platform Admin bypasses all checks
+        var isPlatform = user.Claims.Any(c =>
+            c.Type == CurrentUserService.ClaimIsPlatformAdmin && c.Value == "true");
+        if (isPlatform) return;
+        // Site Business Admin
+        var isSiteAdmin = user.Claims.Any(c =>
+            c.Type == CurrentUserService.ClaimIsSiteBusinessAdmin && c.Value == "true");
+        if (isSiteAdmin) return;
+        // System Admin
+        var isSystemAdmin = user.Claims.Any(c =>
+            c.Type == System.Security.Claims.ClaimTypes.Role && c.Value == "system-admin");
+        if (isSystemAdmin) return;
+        // Eng Manager (has user management permissions)
+        var isEngManager = user.Claims.Any(c =>
+            c.Type == System.Security.Claims.ClaimTypes.Role && c.Value == "eng-manager");
+        if (isEngManager) return;
+        // Supervisor / QO Manager
+        var isSupervisor = user.Claims.Any(c =>
+            c.Type == System.Security.Claims.ClaimTypes.Role && c.Value == "supervisor");
+        var isQoManager = user.Claims.Any(c =>
+            c.Type == System.Security.Claims.ClaimTypes.Role && c.Value == "qo-manager");
+        if (isSupervisor || isQoManager) return;
+
+        context.Result = new Microsoft.AspNetCore.Mvc.ForbidResult();
+    }
+}
+
+/// <summary>
+/// Platform Admin OR System Admin — for endpoints that both roles need.
+/// Used for: GET /api/platform/sites (list sites), audit logs, etc.
+/// </summary>
+public sealed class PlatformAdminOrSystemAdminAttribute : AuthorizeAttribute, IAuthorizationFilter
 {
     public void OnAuthorization(AuthorizationFilterContext context)
     {
@@ -87,11 +129,10 @@ public sealed class SiteBusinessAdminAttribute : AuthorizeAttribute, IAuthorizat
         var isPlatform = user.Claims.Any(c =>
             c.Type == CurrentUserService.ClaimIsPlatformAdmin && c.Value == "true");
         if (isPlatform) return;
-        var isSiteAdmin = user.Claims.Any(c =>
-            c.Type == CurrentUserService.ClaimIsSiteBusinessAdmin && c.Value == "true");
-        if (!isSiteAdmin)
-        {
-            context.Result = new Microsoft.AspNetCore.Mvc.ForbidResult();
-        }
+        var isSystemAdmin = user.Claims.Any(c =>
+            c.Type == System.Security.Claims.ClaimTypes.Role && c.Value == "system-admin");
+        if (isSystemAdmin) return;
+
+        context.Result = new Microsoft.AspNetCore.Mvc.ForbidResult();
     }
 }

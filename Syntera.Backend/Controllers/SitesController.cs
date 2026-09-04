@@ -35,12 +35,12 @@ public sealed class SitesController : ApiControllerBase
     // ─── Site Management (Platform Admin only) ──────────────────────
 
     [HttpGet]
-    [PlatformAdminOnly]
+    [PlatformAdminOrSystemAdmin]
     public async Task<IActionResult> List(CancellationToken ct)
         => Ok(await _sites.ListAsync(ct));
 
     [HttpGet("{id:guid}")]
-    [PlatformAdminOnly]
+    [PlatformAdminOrSystemAdmin]
     public async Task<IActionResult> Get(Guid id, CancellationToken ct)
         => Ok(await _sites.GetAsync(id, ct));
 
