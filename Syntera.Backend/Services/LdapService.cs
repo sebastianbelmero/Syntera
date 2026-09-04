@@ -8,12 +8,18 @@ namespace Syntera.Backend.Services;
 /// Result of an LDAP authentication attempt. Either <see cref="IsSuccess"/>
 /// is true (with user details populated) or <see cref="ErrorMessage"/> explains
 /// the failure. Never throws on LDAP protocol errors — the caller decides.
+///
+/// <para><b>DisplayName</b> and <b>Title</b> are <c>null</c> when AD does not return
+/// them (referral, search error, attribute missing). The caller MUST NOT fall back
+/// to <c>Email</c> — that would overwrite the database's existing value during
+/// auto-sync on every login. Leave them null and let the caller keep the DB value.</para>
 /// </summary>
 public record LdapAuthResult(
     bool IsSuccess,
     string? Dn,
     string? Email,
     string? DisplayName,
+    string? Title,
     string? ErrorMessage,
     int LatencyMs);
 
@@ -65,6 +71,7 @@ public sealed class NovellLdapClient : ILdapClient
 {
     private const string AttrEmail = "userPrincipalName";
     private const string AttrDisplayName = "displayName";
+    private const string AttrTitle = "title";
     private const string AttrAccountControl = "userAccountControl";
     private const string AttrMail = "mail";
     private const int UF_ACCOUNTDISABLE = 0x0002;
@@ -170,7 +177,7 @@ public sealed class NovellLdapClient : ILdapClient
 
                 var searchResults = await conn.SearchAsync(
                     endpoint.BaseDn, LdapConnection.ScopeSub, filter,
-                    new[] { AttrEmail, AttrDisplayName, AttrAccountControl, AttrMail },
+                    new[] { AttrEmail, AttrDisplayName, AttrTitle, AttrAccountControl, AttrMail },
                     false, constraints, ct).ConfigureAwait(false);
 
                 await foreach (var entry in searchResults.WithCancellation(ct).ConfigureAwait(false))
@@ -188,32 +195,34 @@ public sealed class NovellLdapClient : ILdapClient
             {
                 // Referral even after auto-follow. Bind already succeeded,
                 // so the user IS authenticated — we just couldn't fetch details.
-                LogWarning("Search returned referral (code=10) but bind succeeded. Returning success with email as displayName.");
-                return new LdapAuthResult(true, null, email, email,
-                    null, (int)sw.Elapsed.TotalMilliseconds);
+                // IMPORTANT: return null (not email) for DisplayName/Title so the
+                // caller's auto-sync logic does NOT overwrite existing DB values.
+                LogWarning("Search returned referral (code=10) but bind succeeded. Authenticated; details unavailable.");
+                return new LdapAuthResult(true, null, email, null, null, null, (int)sw.Elapsed.TotalMilliseconds);
             }
             catch (Exception searchEx)
             {
                 // Any other search failure — bind already succeeded, so treat
                 // as authenticated with minimal info. Better UX than failing.
-                LogWarning("Search failed after successful bind: {Error}. Returning success with email as displayName.", searchEx.Message);
-                return new LdapAuthResult(true, null, email, email,
-                    null, (int)sw.Elapsed.TotalMilliseconds);
+                LogWarning("Search failed after successful bind: {Error}. Authenticated; details unavailable.", searchEx.Message);
+                return new LdapAuthResult(true, null, email, null, null, null, (int)sw.Elapsed.TotalMilliseconds);
             }
 
             if (userEntry is null)
             {
                 // Bind worked but search returned 0 entries. User is authenticated
                 // (bind proved credentials), just no details available.
-                LogWarning("Bind succeeded but search returned 0 matches. Returning success with email as displayName.");
-                return new LdapAuthResult(true, null, email, email,
-                    null, (int)sw.Elapsed.TotalMilliseconds);
+                LogWarning("Bind succeeded but search returned 0 matches. Authenticated; details unavailable.");
+                return new LdapAuthResult(true, null, email, null, null, null, (int)sw.Elapsed.TotalMilliseconds);
             }
 
-            // Extract display name and account status.
+            // Extract display name, mail, and title from the user's entry.
             var attrSet = userEntry.GetAttributeSet();
             string? displayName = attrSet.TryGetValue(AttrDisplayName, out var dnAttr)
                 ? dnAttr.StringValue
+                : null;
+            string? title = attrSet.TryGetValue(AttrTitle, out var titleAttr)
+                ? titleAttr.StringValue
                 : null;
             string? mail = attrSet.TryGetValue(AttrMail, out var mailAttr)
                 ? mailAttr.StringValue
@@ -229,22 +238,26 @@ public sealed class NovellLdapClient : ILdapClient
                 }
             }
 
-            displayName ??= email;
-            LogInfo("LDAP auth SUCCESS: {Email} → {Dn} ({Name})", email, userEntry.Dn, displayName);
-            return new LdapAuthResult(true, userEntry.Dn, mail, displayName, null,
+            // Trim whitespace; treat empty as null so the caller's auto-sync
+            // logic does not overwrite an existing DB value with an empty string.
+            displayName = string.IsNullOrWhiteSpace(displayName) ? null : displayName.Trim();
+            title = string.IsNullOrWhiteSpace(title) ? null : title.Trim();
+
+            LogInfo("LDAP auth SUCCESS: {Email} → {Dn} ({Name}, title={Title})", email, userEntry.Dn, displayName ?? "<none>", title ?? "<none>");
+            return new LdapAuthResult(true, userEntry.Dn, mail, displayName, title, null,
                 (int)sw.Elapsed.TotalMilliseconds);
         }
         catch (LdapException ex)
         {
             LogError(ex, "LDAP server error: {Message} (code={Code})", ex.Message, ex.ResultCode);
-            return new LdapAuthResult(false, null, null, null,
+            return new LdapAuthResult(false, null, null, null, null,
                 $"LDAP server error: {ex.Message} (code={ex.ResultCode})",
                 (int)sw.Elapsed.TotalMilliseconds);
         }
         catch (Exception ex)
         {
             LogError(ex, "LDAP connection failed: {Message}", ex.Message);
-            return new LdapAuthResult(false, null, null, null,
+            return new LdapAuthResult(false, null, null, null, null,
                 $"LDAP connection failed: {ex.Message}",
                 (int)sw.Elapsed.TotalMilliseconds);
         }
@@ -257,7 +270,7 @@ public sealed class NovellLdapClient : ILdapClient
     private LdapAuthResult Fail(string email, string message, System.Diagnostics.Stopwatch sw)
     {
         LogWarning("LDAP auth FAILED for {Email}: {Message}", email, message);
-        return new LdapAuthResult(false, null, email, null, message, (int)sw.Elapsed.TotalMilliseconds);
+        return new LdapAuthResult(false, null, email, null, null, message, (int)sw.Elapsed.TotalMilliseconds);
     }
 
     /// <summary>

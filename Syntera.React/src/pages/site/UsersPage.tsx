@@ -70,8 +70,12 @@ export default function UsersPage() {
                   {u.displayName.charAt(0).toUpperCase()}
                 </div>
                 <div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-medium">{u.displayName}</span>
+                    {u.title && (
+                      <span className="text-xs px-2 py-0.5 rounded"
+                        style={{ backgroundColor: "var(--color-muted)", color: "var(--color-surface)" }}>{u.title}</span>
+                    )}
                     {!u.isEnabled && (
                       <span className="text-xs px-2 py-0.5 rounded-full"
                         style={{ backgroundColor: "var(--color-danger)", color: "white" }}>Disabled</span>
@@ -131,6 +135,7 @@ function UserDrawer({ user, roles, catalog, isPlatformAdmin, onClose }: {
   const [form, setForm] = useState<UserUpsertDto>({
     email: user?.email ?? "",
     displayName: user?.displayName ?? "",
+    title: user?.title ?? null,
     isEnabled: user?.isEnabled ?? true,
   });
   const [assignRoleId, setAssignRoleId] = useState("");
@@ -281,6 +286,9 @@ function UserDrawer({ user, roles, catalog, isPlatformAdmin, onClose }: {
             onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="user@kalventis.com" /></Field>
           <Field label="Display Name"><input className="input" value={form.displayName}
             onChange={(e) => setForm({ ...form, displayName: e.target.value })} /></Field>
+          <Field label="Title (Job Title)"><input className="input" value={form.title ?? ""}
+            onChange={(e) => setForm({ ...form, title: e.target.value || null })}
+            placeholder="Auto-synced from AD on login; manual override here" /></Field>
           <label className="flex items-center gap-2">
             <input type="checkbox" checked={form.isEnabled}
               onChange={(e) => setForm({ ...form, isEnabled: e.target.checked })} />

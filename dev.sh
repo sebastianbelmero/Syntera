@@ -19,9 +19,9 @@ set -uo pipefail
 
 # ─── Config ─────────────────────────────────────────────────────────
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
-API_DIR="$ROOT_DIR/Syntera.Api"
+BACKEND_DIR="$ROOT_DIR/Syntera.Backend"
 REACT_DIR="$ROOT_DIR/Syntera.React"
-API_PORT=5000
+BACKEND_PORT=5296
 REACT_PORT=5173
 
 # Colors (backend=cyan, frontend=magenta, system=yellow)
@@ -37,10 +37,10 @@ PIDS=()
 
 # ─── Helpers ────────────────────────────────────────────────────────
 log()    { echo -e "${YELLOW}[$(date +%H:%M:%S)]${NC} $*"; }
-log_api() { echo -e "${CYAN}[api]${NC} $*"; }
-log_web() { echo -e "${MAGENTA}[web]${NC} $*"; }
-log_err() { echo -e "${RED}[err]${NC} $*" >&2; }
-log_ok()  { echo -e "${GREEN}[ok]${NC} $*"; }
+log_api()  { echo -e "${CYAN}[backend]${NC} $*"; }
+log_web()  { echo -e "${MAGENTA}[web]${NC} $*"; }
+log_err()  { echo -e "${RED}[err]${NC} $*" >&2; }
+log_ok()   { echo -e "${GREEN}[ok]${NC} $*"; }
 
 # Kill any process listening on a given port
 kill_port() {
@@ -103,7 +103,7 @@ if [ "$MODE" = "both" ] || [ "$MODE" = "frontend" ]; then
 fi
 
 # Verify project dirs exist
-[ ! -d "$API_DIR" ] && log_err "API dir not found: $API_DIR" && exit 1
+[ ! -d "$BACKEND_DIR" ] && log_err "Backend dir not found: $BACKEND_DIR" && exit 1
 [ ! -d "$REACT_DIR" ] && log_err "React dir not found: $REACT_DIR" && exit 1
 
 # ─── Pre-flight: check SQL Server ───────────────────────────────────
@@ -123,36 +123,36 @@ else
 fi
 
 # ─── Kill existing processes on ports ───────────────────────────────
-log "Cleaning up ports $API_PORT and $REACT_PORT..."
-kill_port "$API_PORT"
+log "Cleaning up ports $BACKEND_PORT and $REACT_PORT..."
+kill_port "$BACKEND_PORT"
 kill_port "$REACT_PORT"
 
 # ─── Start Backend ──────────────────────────────────────────────────
 start_backend() {
-  log_api "Building API..."
-  (cd "$API_DIR" && dotnet build --nologo -v q 2>&1) | grep -E "error|Build succ" | sed 's/^/[api] /' || true
+  log_api "Building Backend..."
+  (cd "$BACKEND_DIR" && dotnet build --nologo -v q 2>&1) | grep -E "error|Build succ" | sed 's/^/[backend] /' || true
 
-  log_api "Starting API on http://localhost:$API_PORT..."
+  log_api "Starting Backend on http://localhost:$BACKEND_PORT..."
   (
-    cd "$API_DIR"
+    cd "$BACKEND_DIR"
     export ASPNETCORE_ENVIRONMENT=Development
-    exec dotnet run --no-build --no-launch-profile --urls "http://localhost:$API_PORT" 2>&1
+    exec dotnet run --no-build --no-launch-profile --urls "http://localhost:$BACKEND_PORT" 2>&1
   ) | while IFS= read -r line; do
-    echo -e "${CYAN}[api]${NC} $line"
+    echo -e "${CYAN}[backend]${NC} $line"
   done &
   PIDS+=($!)
 
-  # Wait for API to be ready
-  log_api "Waiting for API to start..."
+  # Wait for Backend to be ready
+  log_api "Waiting for Backend to start..."
   for i in {1..30}; do
-    if curl -sf "http://localhost:$API_PORT/health" -o /dev/null 2>&1; then
-      log_ok "API ready at http://localhost:$API_PORT (health: OK)"
-      log_api "Swagger:  http://localhost:$API_PORT/docs"
+    if curl -sf "http://localhost:$BACKEND_PORT/health" -o /dev/null 2>&1; then
+      log_ok "Backend ready at http://localhost:$BACKEND_PORT (health: OK)"
+      log_api "Swagger:  http://localhost:$BACKEND_PORT/docs"
       return 0
     fi
     sleep 1
   done
-  log_err "API failed to start within 30s"
+  log_err "Backend failed to start within 30s"
   return 1
 }
 
@@ -215,9 +215,9 @@ echo -e "${GREEN}═════════════════════
 echo -e "${GREEN}  ✓ Syntera dev stack is running!${NC}"
 echo ""
 echo "  Frontend:  http://localhost:$REACT_PORT"
-echo "  Backend:   http://localhost:$API_PORT"
-echo "  Swagger:   http://localhost:$API_PORT/docs"
-echo "  Health:    http://localhost:$API_PORT/health"
+echo "  Backend:   http://localhost:$BACKEND_PORT"
+echo "  Swagger:   http://localhost:$BACKEND_PORT/docs"
+echo "  Health:    http://localhost:$BACKEND_PORT/health"
 echo ""
 echo -e "${YELLOW}  Press Ctrl+C to stop both${NC}"
 echo -e "${GREEN}════════════════════════════════════════════════════════════════${NC}"

@@ -11,8 +11,9 @@ set -uo pipefail
 # ─── Configuration ──────────────────────────────────────────────────
 CONTAINER="${CONTAINER:-sql-server}"
 SA_PASSWORD="${SA_PASSWORD:-Passwordkuat123!}"
-API_DIR="${API_DIR:-$(cd "$(dirname "$0")/Syntera.Api" && pwd)}"
+BACKEND_DIR="${BACKEND_DIR:-$(cd "$(dirname "$0")/Syntera.Backend" && pwd)}"
 REACT_DIR="${REACT_DIR:-$(cd "$(dirname "$0")/Syntera.React" && pwd)}"
+EXPECTED_BACKEND_PORT="${EXPECTED_BACKEND_PORT:-5296}"
 
 # Colors
 RED='\033[0;31m'
@@ -44,7 +45,7 @@ sql_scalar_db()   { local db="$1"; shift; sql_db "$db" "$1" 2>&1 | head -1 | tr 
 
 # ─── Detect API port ────────────────────────────────────────────────
 detect_api_port() {
-  for port in 5000 5113 5001 7000; do
+  for port in $EXPECTED_BACKEND_PORT 5000 5113 5001 7000; do
     if curl -sf "http://localhost:$port/health" -o /dev/null 2>&1; then
       echo "$port"
       return 0
@@ -57,16 +58,16 @@ API_PORT=$(detect_api_port || echo "")
 if [ -n "$API_PORT" ]; then
   API_URL="http://localhost:$API_PORT"
 else
-  API_URL="${API_URL:-http://localhost:5000}"
+  API_URL="${API_URL:-http://localhost:$EXPECTED_BACKEND_PORT}"
 fi
 
 echo "════════════════════════════════════════════════════════════════"
 echo "  Syntera Diagnostics"
 echo "  Container:  $CONTAINER"
-echo "  SA Pass:    ${SA_PASSWORD:0:3}***"
-echo "  API URL:    $API_URL (auto-detected)"
-echo "  API Dir:    $API_DIR"
-echo "  React Dir:  $REACT_DIR"
+echo "  SA Pass:     ${SA_PASSWORD:0:3}***"
+echo "  API URL:     $API_URL (auto-detected)"
+echo "  Backend Dir: $BACKEND_DIR"
+echo "  React Dir:   $REACT_DIR"
 echo "════════════════════════════════════════════════════════════════"
 
 # ─── 1. Podman ──────────────────────────────────────────────────────
@@ -186,13 +187,13 @@ for db in "syntera_kalventis" "syntera_kalbe" "syntera_fima" "syntera_gof" "synt
 done
 
 # ─── 7. API ────────────────────────────────────────────────────────
-section "7. API Health"
+section "7. Backend Health"
 
 if [ -z "$API_PORT" ]; then
-  check_fail "API not reachable (tried ports 5000, 5113, 5001, 7000)"
+  check_fail "Backend not reachable (tried port $EXPECTED_BACKEND_PORT first, then 5000/5113/5001/7000)"
   echo "      Start with: ./dev.sh backend"
 else
-  check_pass "API reachable at $API_URL (port $API_PORT)"
+  check_pass "Backend reachable at $API_URL (port $API_PORT)"
   HEALTH=$(curl -s "${API_URL}/health" 2>&1)
   echo "      Health: $HEALTH"
 fi
@@ -213,9 +214,9 @@ if [ -f "$REACT_DIR/vite.config.ts" ]; then
   echo "      Vite proxy target: $PROXY_TARGET"
   if [ -n "$API_PORT" ]; then
     if echo "$PROXY_TARGET" | grep -q ":$API_PORT"; then
-      check_pass "Vite proxy target matches API port ($API_PORT)"
+      check_pass "Vite proxy target matches Backend port ($API_PORT)"
     else
-      check_fail "Vite proxy target ($PROXY_TARGET) != API port ($API_PORT)"
+      check_fail "Vite proxy target ($PROXY_TARGET) != Backend port ($API_PORT)"
       echo "      Fix: edit Syntera.React/vite.config.ts → target: 'http://localhost:$API_PORT'"
     fi
   fi
@@ -287,10 +288,10 @@ echo "$LDAP_CONFIGS" | sed 's/^/        /'
 LDAP_COUNT=$(sql_scalar_db syntera_master "SELECT COUNT(*) FROM SiteLdapConfigs WHERE Host IS NOT NULL AND Host <> ''")
 [ "$LDAP_COUNT" -ge 1 ] && check_pass "$LDAP_COUNT site(s) have LDAP configured" || check_warn "No LDAP configs yet — configure via UI"
 
-# ─── 12. Recent API Errors ─────────────────────────────────────────
-section "12. Recent API Errors (last 5)"
+# ─── 12. Recent Backend Errors ──────────────────────────────────────
+section "12. Recent Backend Errors (last 5)"
 
-LATEST_LOG=$(ls -t "$API_DIR"/logs/syntera-api-*.log 2>/dev/null | head -1)
+LATEST_LOG=$(ls -t "$BACKEND_DIR"/logs/syntera-api-*.log 2>/dev/null | head -1)
 if [ -n "$LATEST_LOG" ]; then
   ERRORS=$(tail -200 "$LATEST_LOG" | grep -iE "\[ERR\]|\[FTL\]|exception" | tail -5)
   if [ -n "$ERRORS" ]; then
@@ -300,7 +301,7 @@ if [ -n "$LATEST_LOG" ]; then
     check_pass "No errors in recent logs"
   fi
 else
-  check_warn "No log files in $API_DIR/logs/"
+  check_warn "No log files in $BACKEND_DIR/logs/"
 fi
 
 # ─── Summary ────────────────────────────────────────────────────────

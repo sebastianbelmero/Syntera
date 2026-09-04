@@ -45,7 +45,7 @@ menerima koneksi dari IP Anda.
 ## Step 2: Konfigurasi Backend Secrets
 
 ```bash
-cd Syntera.Api
+cd Syntera.Backend
 
 # Inisialisasi user-secrets (Development environment)
 dotnet user-secrets init
@@ -137,7 +137,7 @@ dotnet run
 [14:35:15 INF]   Platform Admin: admin@syntera.com
 [14:35:15 INF]   Password:       (from Seed:PlatformAdminPassword in appsettings)
 [14:35:15 INF]
-[14:35:15 INF]   Next: cd ../Syntera.Api && dotnet run
+[14:35:15 INF]   Next: cd ../Syntera.Backend && dotnet run
 [14:35:15 INF] ════════════════════════════════════════════════════════════════
 ```
 
@@ -182,18 +182,18 @@ SELECT Code, DisplayName, IsEnabled FROM Sites ORDER BY Code;
 ## Step 4: Jalankan Backend
 
 ```bash
-cd Syntera.Api
+cd Syntera.Backend
 export ASPNETCORE_ENVIRONMENT=Development
 dotnet run
 ```
 
 Output yang benar:
 ```
-[11:20:12 INF] Now listening on: http://localhost:5000
+[11:20:12 INF] Now listening on: http://localhost:5296
 [11:20:12 INF] Application started. Press Ctrl+C to shut down.
 ```
 
-Swagger UI: http://localhost:5000/docs
+Swagger UI: http://localhost:5296/docs
 
 ---
 
@@ -202,7 +202,7 @@ Swagger UI: http://localhost:5000/docs
 Dari terminal lain:
 
 ```bash
-curl -X POST http://localhost:5000/api/auth/login \
+curl -X POST http://localhost:5296/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{
     "email": "admin@syntera.com",
@@ -283,7 +283,7 @@ Klik **Test** dengan email user LDAP yang valid. Jika berhasil, klik **Save**.
 
 ```bash
 # Login sebagai platform admin, dapatkan token
-TOKEN=$(curl -s -X POST http://localhost:5000/api/auth/login \
+TOKEN=$(curl -s -X POST http://localhost:5296/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"admin@syntera.com","password":"ChangeMe!Strong#1"}' \
   | jq -r '.data.accessToken')
@@ -371,7 +371,7 @@ Gunakan error handling di dalam `queryFn` atau pakai `useMutation` untuk writes.
 
 ```bash
 # Backend dev
-cd Syntera.Api
+cd Syntera.Backend
 export ASPNETCORE_ENVIRONMENT=Development
 dotnet run
 
@@ -386,11 +386,11 @@ cd Syntera.React && bun run lint
 cd Syntera.React && bun run typecheck
 
 # Build production
-cd Syntera.Api && dotnet publish -c Release -o ./publish
+cd Syntera.Backend && dotnet publish -c Release -o ./publish
 cd Syntera.React && bun run build
 
 # Migration baru (kalau ada perubahan entity)
-cd Syntera.Api
+cd Syntera.Backend
 dotnet ef migrations add <Name> --context PlatformDbContext --output-dir Migrations/Platform
 dotnet ef migrations add <Name> --context SiteDbContext --output-dir Migrations/Site
 

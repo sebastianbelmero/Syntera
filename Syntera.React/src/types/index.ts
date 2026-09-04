@@ -42,6 +42,7 @@ export interface UserProfile {
   userId: string;
   email: string;
   displayName: string;
+  title: string | null;
   scope: "platform" | "site" | "anonymous";
   siteId: string | null;
   siteCode: string | null;
@@ -176,6 +177,7 @@ export interface UserDto {
   id: string;
   email: string;
   displayName: string;
+  title: string | null;
   isEnabled: boolean;
   lastLoginAt: string | null;
   permissionsVersion: number;
@@ -210,6 +212,7 @@ export interface DirectPermissionDto {
 export interface UserUpsertDto {
   email: string;
   displayName: string;
+  title: string | null;
   isEnabled: boolean;
 }
 

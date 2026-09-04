@@ -4,6 +4,7 @@ public record UserDto(
     Guid Id,
     string Email,
     string DisplayName,
+    string? Title,
     bool IsEnabled,
     DateTime? LastLoginAt,
     long PermissionsVersion,
@@ -35,6 +36,7 @@ public record DirectPermissionDto(
 public record UserUpsertDto(
     string Email,
     string DisplayName,
+    string? Title,
     bool IsEnabled);
 
 public record AssignRoleDto(

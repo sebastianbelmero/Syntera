@@ -22,6 +22,7 @@ public record UserProfileDto(
     Guid UserId,
     string Email,
     string DisplayName,
+    string? Title,
     string Scope,        // "platform" | "site"
     Guid? SiteId,
     string? SiteCode,

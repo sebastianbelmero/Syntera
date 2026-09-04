@@ -14,11 +14,11 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     proxy: {
-      // All API calls go through Vite's dev proxy → /api → http://localhost:5113
+      // All API calls go through Vite's dev proxy → /api → http://localhost:5296
       // This keeps cookies/CORS simple in dev and lets the React app
       // hardcode /api/* in code without knowing the backend port.
       '/api': {
-        target: 'http://localhost:5000',
+        target: 'http://localhost:5296',
         changeOrigin: true,
         // Note: rewrite is NOT applied — the .NET routes are already
         // prefixed with /api/, so we want the full path preserved.

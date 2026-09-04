@@ -15,7 +15,7 @@ namespace Syntera.Backend.Services;
 ///
 /// The JWT carries:
 /// - sub (user ID)
-/// - email, display_name
+/// - email, display_name, title (title may be absent for platform admins)
 /// - scope (platform | site)
 /// - site_id, site_code (null for platform)
 /// - perm_ver (for stale-perm detection)
@@ -27,6 +27,7 @@ public interface ITokenService
 {
     (string Token, DateTime ExpiresAt) IssueFor(
         Guid userId, string scope, Guid? siteId, string email, string displayName,
+        string? title,
         IEnumerable<string> roles, IEnumerable<string> permissions, long permissionsVersion);
 
     ClaimsPrincipal? Validate(string token);
@@ -51,6 +52,7 @@ public sealed class JwtTokenService : ITokenService
 
     public (string Token, DateTime ExpiresAt) IssueFor(
         Guid userId, string scope, Guid? siteId, string email, string displayName,
+        string? title,
         IEnumerable<string> roles, IEnumerable<string> permissions, long permissionsVersion)
     {
         var now = DateTime.UtcNow;
@@ -65,6 +67,13 @@ public sealed class JwtTokenService : ITokenService
             new("scope", scope),
             new("perm_ver", permissionsVersion.ToString(CultureInfo.InvariantCulture)),
         };
+
+        // Title is optional — AD may not have it populated for every user.
+        // We add the claim only when we actually have a value, so the
+        // AuthController.Profile() can tell the difference between "no title
+        // set" and "title claim missing" (both surface as null in the DTO).
+        if (!string.IsNullOrWhiteSpace(title))
+            claims.Add(new Claim("title", title));
 
         if (siteId is not null)
         {

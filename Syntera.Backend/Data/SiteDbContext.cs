@@ -35,6 +35,7 @@ public sealed class SiteDbContext : DbContext
             e.Property(x => x.Email).HasMaxLength(160).IsRequired();
             e.HasIndex(x => x.Email).IsUnique();
             e.Property(x => x.DisplayName).HasMaxLength(160).IsRequired();
+            e.Property(x => x.Title).HasMaxLength(160);
             e.HasQueryFilter(x => !x.IsDeleted);
         });
 

@@ -47,7 +47,7 @@ Syntera is a **single monorepo with two projects**:
 
 | Project | Path | Stack | Purpose |
 | ------- | ---- | ----- | ------- |
-| `Syntera.Api` | `Syntera.Api/` | .NET 10 ASP.NET Core | REST API + EF Core 10 + JWT + LDAP |
+| `Syntera.Backend` | `Syntera.Backend/` | .NET 10 ASP.NET Core | REST API + EF Core 10 + JWT + LDAP |
 | `Syntera.React` | `Syntera.React/` | React 19 + Vite 8 + Tailwind v4 | SPA front-end for admin UI |
 
 **Key design principles:**
@@ -273,7 +273,7 @@ Fine-grained, namespace-scoped keys: `resource.action[.scope]`
 ### Backend
 
 ```bash
-cd Syntera.Api
+cd Syntera.Backend
 
 # Set required secrets (Development only — use env vars in production)
 dotnet user-secrets set "Jwt:SigningKey" "your-32-char-min-secret-key-here-xxxxxxx"
@@ -286,8 +286,8 @@ dotnet user-secrets set "ConnectionStrings:Platform" "Server=localhost,1433;Data
 dotnet run
 ```
 
-The API will be available at `http://localhost:5000` (or as configured in `launchSettings.json`).
-Swagger UI at `http://localhost:5000/docs`.
+The API will be available at `http://localhost:5296` (or as configured in `launchSettings.json`).
+Swagger UI at `http://localhost:5296/docs`.
 
 ### Frontend
 
@@ -346,7 +346,7 @@ In Development, the API auto-creates the platform database on startup via
 `EnsureCreatedAsync()`. For Production, use EF Core migrations:
 
 ```bash
-cd Syntera.Api
+cd Syntera.Backend
 dotnet ef migrations add InitialPlatform --context PlatformDbContext --output-dir Migrations/Platform
 dotnet ef database update --context PlatformDbContext
 ```
@@ -392,7 +392,7 @@ Generate the bcrypt hash via your favorite tool (e.g., `htpasswd -bnBC 12 "" "pa
 
 ```bash
 # Terminal 1: Backend
-cd Syntera.Api
+cd Syntera.Backend
 dotnet run
 
 # Terminal 2: Frontend
@@ -404,9 +404,9 @@ bun run dev
 
 ```bash
 # Backend
-cd Syntera.Api
+cd Syntera.Backend
 dotnet publish -c Release -o ./publish
-./publish/Syntera.Api
+./publish/Syntera.Backend
 
 # Frontend
 cd Syntera.React
@@ -428,7 +428,7 @@ Syntera/
 │       ├── 03_multi_tenant_db.png
 │       └── 04_role_hierarchy.png
 │
-├── Syntera.Api/
+├── Syntera.Backend/
 │   ├── Api/
 │   │   ├── Controllers/
 │   │   │   ├── Auth/AuthController.cs        # login, refresh, logout, profile

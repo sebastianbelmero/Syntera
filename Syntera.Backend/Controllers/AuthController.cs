@@ -120,6 +120,7 @@ public sealed class AuthController : ApiControllerBase
             UserId: Guid.TryParse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, out var uid) ? uid : Guid.Empty,
             Email: User.FindFirst("email")?.Value ?? "",
             DisplayName: User.FindFirst("display_name")?.Value ?? "",
+            Title: User.FindFirst("title")?.Value,
             Scope: User.FindFirst("scope")?.Value ?? "anonymous",
             SiteId: Guid.TryParse(User.FindFirst("site_id")?.Value, out var sid) ? sid : null,
             SiteCode: User.FindFirst("site_code")?.Value,

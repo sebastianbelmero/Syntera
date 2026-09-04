@@ -115,6 +115,7 @@ public sealed class UserManagementService : IUserManagementService
         {
             Email = email,
             DisplayName = dto.DisplayName,
+            Title = dto.Title,
             IsEnabled = dto.IsEnabled,
             SiteId = _current.SiteId ?? Guid.Empty,
             PermissionsVersion = 1,
@@ -143,6 +144,7 @@ public sealed class UserManagementService : IUserManagementService
             ?? throw new NotFoundException("User", userId);
 
         user.DisplayName = dto.DisplayName;
+        user.Title = string.IsNullOrWhiteSpace(dto.Title) ? null : dto.Title.Trim();
         user.IsEnabled = dto.IsEnabled;
         await db.SaveChangesAsync(ct);
         return Map(user);
@@ -325,6 +327,7 @@ public sealed class UserManagementService : IUserManagementService
             {
                 Email = email,
                 DisplayName = string.IsNullOrWhiteSpace(displayName) ? email : displayName,
+                Title = null,
                 IsEnabled = true,
                 SiteId = siteId,
                 PermissionsVersion = 1,
@@ -392,7 +395,7 @@ public sealed class UserManagementService : IUserManagementService
     }
 
     private static UserDto Map(User u) => new(
-        Id: u.Id, Email: u.Email, DisplayName: u.DisplayName,
+        Id: u.Id, Email: u.Email, DisplayName: u.DisplayName, Title: u.Title,
         IsEnabled: u.IsEnabled, LastLoginAt: u.LastLoginAt,
         PermissionsVersion: u.PermissionsVersion,
         Roles: u.UserRoles.Select(ur => new RoleAssignmentDto(
@@ -529,6 +532,7 @@ public sealed class UserManagementService : IUserManagementService
             {
                 Email = email,
                 DisplayName = string.IsNullOrWhiteSpace(displayName) ? email : displayName,
+                Title = null,
                 IsEnabled = true,
                 SiteId = siteId,
                 PermissionsVersion = 1,

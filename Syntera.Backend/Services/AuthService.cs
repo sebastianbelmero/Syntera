@@ -136,14 +136,14 @@ public sealed class AuthService : IAuthService
         await _platformDb.SaveChangesAsync(ct);
 
         var profile = new UserProfileDto(
-            UserId: admin.Id, Email: admin.Email, DisplayName: admin.DisplayName,
+            UserId: admin.Id, Email: admin.Email, DisplayName: admin.DisplayName, Title: null,
             Scope: "platform", SiteId: null, SiteCode: null, SiteDisplayName: null,
             Roles: PlatformAdminRoleClaim,
             Permissions: _permissions.GetPlatformAdminPermissions());
 
         var (access, exp, refresh) = await IssueTokensAsync(
             userId: admin.Id, scope: "platform", siteId: null,
-            email: admin.Email, displayName: admin.DisplayName,
+            email: admin.Email, displayName: admin.DisplayName, title: null,
             roles: profile.Roles, permissions: profile.Permissions,
             version: 1, ip: ip, ua: ua, ct: ct);
 
@@ -240,14 +240,28 @@ public sealed class AuthService : IAuthService
                 $"Account locked until {user.LockedUntil.Value:u}.");
         }
 
-        // ── Update display name from LDAP (sync) ──────────────────────
+        // ── Auto-sync DisplayName + Title from LDAP on every login ─────
+        // LDAP returns null when AD doesn't have the attribute (referral, search
+        // error, or attribute simply missing). We must NOT overwrite the DB value
+        // with null/empty — that would erase the manual value the Business Admin
+        // set during pre-provisioning. Only update when LDAP gives us real data
+        // AND it differs from the current DB value.
+        var changed = false;
         if (!string.IsNullOrEmpty(result.DisplayName) && result.DisplayName != user.DisplayName)
         {
             user.DisplayName = result.DisplayName;
+            changed = true;
+        }
+        if (result.Title is not null && result.Title != user.Title)
+        {
+            user.Title = result.Title;
+            changed = true;
         }
         user.FailedLoginCount = 0;
         user.LockedUntil = null;
         user.LastLoginAt = DateTime.UtcNow;
+        if (changed)
+            _log.LogInformation("LDAP sync: user {Email} DisplayName/Title updated from AD", email);
         await siteDb.SaveChangesAsync(ct);
 
         // ── Resolve effective permissions ─────────────────────────────
@@ -255,13 +269,13 @@ public sealed class AuthService : IAuthService
         var siteDisplay = site.DisplayName;
 
         var profile = new UserProfileDto(
-            UserId: user.Id, Email: user.Email, DisplayName: user.DisplayName,
+            UserId: user.Id, Email: user.Email, DisplayName: user.DisplayName, Title: user.Title,
             Scope: "site", SiteId: site.Id, SiteCode: site.Code, SiteDisplayName: siteDisplay,
             Roles: roles, Permissions: perms);
 
         var (access, exp, refresh) = await IssueTokensAsync(
             userId: user.Id, scope: "site", siteId: site.Id,
-            email: user.Email, displayName: user.DisplayName,
+            email: user.Email, displayName: user.DisplayName, title: user.Title,
             roles: roles, permissions: perms,
             version: user.PermissionsVersion, ip: ip, ua: ua, ct: ct);
 
@@ -310,13 +324,13 @@ public sealed class AuthService : IAuthService
                 throw new AuthenticationException("USER_NOT_FOUND", "Platform admin no longer exists.");
 
             var profile = new UserProfileDto(
-                UserId: admin.Id, Email: admin.Email, DisplayName: admin.DisplayName,
+                UserId: admin.Id, Email: admin.Email, DisplayName: admin.DisplayName, Title: null,
                 Scope: "platform", SiteId: null, SiteCode: null, SiteDisplayName: null,
                 Roles: PlatformAdminRoleClaim,
                 Permissions: _permissions.GetPlatformAdminPermissions());
 
             var (access, exp, newRefresh) = await IssueTokensAsync(
-                admin.Id, "platform", null, admin.Email, admin.DisplayName,
+                admin.Id, "platform", null, admin.Email, admin.DisplayName, null,
                 profile.Roles, profile.Permissions, 1, ip, userAgent, ct);
 
             var newRt = BuildRefreshToken(admin.Id, "platform", null, newRefresh, ip, userAgent);
@@ -369,12 +383,12 @@ public sealed class AuthService : IAuthService
 
         var (roles, perms) = await _permissions.ResolveForUserAsync(siteDb, user.Id, ct);
         var profile = new UserProfileDto(
-            UserId: user.Id, Email: user.Email, DisplayName: user.DisplayName,
+            UserId: user.Id, Email: user.Email, DisplayName: user.DisplayName, Title: user.Title,
             Scope: "site", SiteId: site.Id, SiteCode: site.Code, SiteDisplayName: site.DisplayName,
             Roles: roles, Permissions: perms);
 
         var (access, exp, newRefresh) = await IssueTokensAsync(
-            user.Id, "site", site.Id, user.Email, user.DisplayName,
+            user.Id, "site", site.Id, user.Email, user.DisplayName, user.Title,
             roles, perms, user.PermissionsVersion, ip, ua, ct);
 
         var newRt = BuildRefreshToken(user.Id, "site", site.Id, newRefresh, ip, ua);
@@ -425,10 +439,11 @@ public sealed class AuthService : IAuthService
 
     private async Task<(string AccessToken, DateTime ExpiresAt, string RefreshToken)> IssueTokensAsync(
         Guid userId, string scope, Guid? siteId, string email, string displayName,
+        string? title,
         IReadOnlyCollection<string> roles, IReadOnlyCollection<string> permissions,
         long version, string? ip, string? ua, CancellationToken ct)
     {
-        var access = _tokens.IssueFor(userId, scope, siteId, email, displayName, roles, permissions, version);
+        var access = _tokens.IssueFor(userId, scope, siteId, email, displayName, title, roles, permissions, version);
         var refresh = GenerateRefreshToken();
         return (access.Token, access.ExpiresAt, refresh);
     }

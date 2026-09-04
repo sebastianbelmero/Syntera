@@ -21,6 +21,9 @@ public class User : SoftDeletableEntity
     /// <summary>Display name (synced from LDAP <c>displayName</c> on login if available).</summary>
     public string DisplayName { get; set; } = string.Empty;
 
+    /// <summary>Job title (synced from LDAP <c>title</c> attribute on login if available, e.g., "Senior QA Officer"). Nullable — may not be set in AD.</summary>
+    public string? Title { get; set; }
+
     /// <summary>Site this user belongs to (always the site that owns this database).</summary>
     public Guid SiteId { get; set; }
 
