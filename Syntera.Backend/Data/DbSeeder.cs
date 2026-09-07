@@ -95,7 +95,7 @@ public static class DbSeeder
             permissions: QoManagerPermissions);
 
         // ── 6 fixed sites ──────────────────────────────────────────────
-        await EnsureSitesAsync(db, config, logger);
+        await EnsureSitesAsync(db, config, logger, protector);
 
         // ── Default Platform Admin user ────────────────────────────────
         var adminEmail = config["Seed:PlatformAdminEmail"] ?? "admin@syntera.com";
