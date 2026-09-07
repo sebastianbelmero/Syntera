@@ -168,23 +168,39 @@ finally
 /// <summary>
 /// Creates the database if it doesn't exist. Connects to the server (using
 /// the master database) and runs CREATE DATABASE. Idempotent.
+///
+/// <para><b>BUG FIX (Network protocol preservation):</b> the previous
+/// implementation rebuilt the connection string via a second
+/// <see cref="SqlConnectionStringBuilder"/>, which <b>strips the protocol
+/// prefix</b> (e.g., <c>tcp:</c> or <c>np:</c>) from <c>DataSource</c>.
+/// On Windows, the resulting connection fell back to Shared Memory /
+/// Named Pipes — and timed out (Win32 258) when the SQL Server doesn't
+/// have those protocols enabled. SSMS works because it preserves the
+/// protocol prefix from the user's connection string.</para>
+///
+/// <para><b>Fix:</b> instead of rebuilding the connection string, do a
+/// string <c>Replace</c> on the original (preserving the protocol prefix
+/// and every other setting) — only swap <c>Database=X</c> to
+/// <c>Database=master</c>. This keeps <c>tcp:localhost</c> intact so
+/// SqlClient connects via TCP/IP as intended.</para>
 /// </summary>
 static void EnsureDatabaseExists(string connStr, string dbName)
 {
     Log.Information("  Ensuring database '{Db}' exists...", dbName);
 
+    // Parse to discover the original Initial Catalog (so the Replace
+    // is exact, not a guess). SqlConnectionStringBuilder is read-only
+    // here — we never use it to rebuild the connection string.
     var builder = new SqlConnectionStringBuilder(connStr);
-    var serverConnStr = new SqlConnectionStringBuilder
-    {
-        DataSource = builder.DataSource,
-        UserID = builder.UserID,
-        Password = builder.Password,
-        InitialCatalog = "master",
-        TrustServerCertificate = builder.TrustServerCertificate,
-        ConnectTimeout = 10,
-    }.ConnectionString;
+    var originalDb = builder.InitialCatalog ?? string.Empty;
 
-    using var conn = new SqlConnection(serverConnStr);
+    // Preserve EVERYTHING in the original connection string — only swap
+    // the database name. This keeps the 'tcp:' protocol prefix intact.
+    var masterConnStr = string.IsNullOrEmpty(originalDb)
+        ? connStr + (connStr.EndsWith(';') ? "" : ";") + "Database=master"
+        : connStr.Replace($"Database={originalDb}", "Database=master", StringComparison.OrdinalIgnoreCase);
+
+    using var conn = new SqlConnection(masterConnStr);
     conn.Open();
 
     using var cmd = conn.CreateCommand();
