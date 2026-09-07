@@ -22,10 +22,12 @@
   <!-- COMPLIANCE (Sprint 2.6): explicit DI + DataProtection packages for
        the minimal DI container set up in Program.cs to resolve
        IConnectionStringProtector. Backend's web SDK provides these transitively,
-       but adding them explicitly here avoids potential resolution issues. -->
+       but adding them explicitly here avoids potential resolution issues.
+       Versions MUST match the Backend's transitive versions (10.0.11) to
+       avoid NU1605 downgrade errors — Backend pulls 10.0.11 via EF Core. -->
   <ItemGroup>
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.0" />
-    <PackageReference Include="Microsoft.AspNetCore.DataProtection" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.11" />
+    <PackageReference Include="Microsoft.AspNetCore.DataProtection" Version="10.0.11" />
   </ItemGroup>
 
   <!-- Copy appsettings.json from the Backend project so the setup tool reads the
