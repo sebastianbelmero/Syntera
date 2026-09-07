@@ -48,6 +48,7 @@ try
         .UseSqlServer(platformConn, sql => sql
             .MigrationsAssembly(typeof(PlatformDbContext).Assembly.FullName)
             .MigrationsHistoryTable("__EFMigrationsHistory_Platform"))
+        .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning))
         .Options;
 
     using (var platformDb = new PlatformDbContext(platformOptions))
@@ -73,6 +74,7 @@ try
             .UseSqlServer(siteConn, sql => sql
                 .MigrationsAssembly(typeof(SiteDbContext).Assembly.FullName)
                 .MigrationsHistoryTable("__EFMigrationsHistory_Site"))
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning))
             .Options;
 
         using var siteDb = new SiteDbContext(siteOptions);
@@ -123,6 +125,7 @@ try
                 .UseSqlServer(siteConn, sql => sql
                     .MigrationsAssembly(typeof(SiteDbContext).Assembly.FullName)
                     .MigrationsHistoryTable("__EFMigrationsHistory_Site"))
+                .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning))
                 .Options;
             using var siteDb = new SiteDbContext(siteOpts);
             await ComplianceMigrator.ApplySiteAsync(siteDb, logger);

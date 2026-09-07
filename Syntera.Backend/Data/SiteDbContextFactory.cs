@@ -98,6 +98,7 @@ public sealed class SiteDbContextFactory : ISiteDbContextFactory, IDisposable, I
         var options = new DbContextOptionsBuilder<SiteDbContext>()
             .UseSqlServer(connectionString,
                 sql => sql.MigrationsHistoryTable("__EFMigrationsHistory_Site"))
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning))
             .Options;
 
         _resolved = new SiteDbContext(options);

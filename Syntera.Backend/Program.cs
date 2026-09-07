@@ -94,7 +94,8 @@ try
         opt.UseSqlServer(
             builder.Configuration.GetConnectionString("Platform")
                 ?? throw new InvalidOperationException("ConnectionStrings:Platform is required."),
-            sql => sql.MigrationsHistoryTable("__EFMigrationsHistory_Platform")));
+            sql => sql.MigrationsHistoryTable("__EFMigrationsHistory_Platform"))
+        .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning)));
 
     builder.Services.AddScoped<Syntera.Backend.Data.ISiteDbContextFactory, SiteDbContextFactory>();
 
