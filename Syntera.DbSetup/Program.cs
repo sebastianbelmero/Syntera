@@ -1,9 +1,12 @@
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Serilog;
 using Syntera.Backend.Data;
+using Syntera.Backend.Services;
 
 // ─── Bootstrap Serilog (matches API style) ─────────────────────────
 Log.Logger = new LoggerConfiguration()
@@ -88,7 +91,23 @@ try
         using var loggerFactory = LoggerFactory.Create(b => b.AddSerilog(Log.Logger));
         var logger = loggerFactory.CreateLogger("DbSeeder");
 
-        await DbSeeder.SeedPlatformAsync(platformDb, config, logger);
+        // COMPLIANCE (Sprint 2.6): set up a minimal DI container so we can
+        // resolve IConnectionStringProtector (which depends on
+        // IDataProtectionProvider). When ConnectionProtection:Enabled=true
+        // in config, the seeder will encrypt connection strings at rest.
+        // When false (dev default), the protector is a no-op.
+        var services = new ServiceCollection();
+        services.AddDataProtection()
+            .PersistKeysToFileSystem(new DirectoryInfo(config["DataProtection:KeyPath"] ?? "./keys"));
+        // ConnectionStringProtector needs both IDataProtectionProvider
+        // (auto-registered by AddDataProtection) and IConfiguration.
+        // Singleton is fine — DbSetup is single-threaded.
+        services.AddSingleton<IConfiguration>(_ => config);
+        services.AddSingleton<IConnectionStringProtector, ConnectionStringProtector>();
+        var sp = services.BuildServiceProvider();
+        var protector = sp.GetRequiredService<IConnectionStringProtector>();
+
+        await DbSeeder.SeedPlatformAsync(platformDb, config, logger, protector);
 
         // COMPLIANCE (Sprint 2.2): apply compliance schema additions (MFA,
         // PasswordHistory, RefreshToken.LastUsedAt, AuditLog.SignatureMeaning,
