@@ -20,6 +20,10 @@ import type {
   RoleTemplateUpsertDto,
   PermissionCatalogDto,
   UserDto,
+  PublishResultDto,
+  RoleTemplateApprovalDto,
+  ApprovePublishRequest,
+  RejectPublishRequest,
 } from "../types";
 
 const BASE = "/platform";
@@ -77,6 +81,28 @@ export const roleTemplatesApi = {
   create: (dto: RoleTemplateUpsertDto) => post<RoleTemplateDto>(`${BASE}/role-templates`, dto),
   update: (id: string, dto: RoleTemplateUpsertDto) =>
     put<RoleTemplateDto>(`${BASE}/role-templates/${id}`, dto),
-  publish: (id: string) => post<{ success: boolean }>(`${BASE}/role-templates/${id}/publish`),
+
+  /**
+   * Publish a role template. Behavior branches on backend config:
+   *   - TwoPerson:Enabled=false (default) → `{ status: "published" }`
+   *     (or the legacy shape `{ success: true }` — backward compat).
+   *   - TwoPerson:Enabled=true            → `{ status: "pending", approvalId }`
+   *     (a second Platform Admin must call `approve` to complete).
+   */
+  publish: (id: string) => post<PublishResultDto>(`${BASE}/role-templates/${id}/publish`),
   permissionCatalog: () => get<PermissionCatalogDto>(`${BASE}/role-templates/permission-catalog`),
+
+  // ── Sprint 2.7: Two-person approval workflow ─────────────────────────
+  /** List ALL approvals (any status). Frontend filters `status === "pending"`. */
+  listApprovals: () =>
+    get<RoleTemplateApprovalDto[]>(`${BASE}/role-templates/approvals`),
+  /** Get one approval by id (any status). */
+  getApproval: (id: string) =>
+    get<RoleTemplateApprovalDto>(`${BASE}/role-templates/approvals/${id}`),
+  /** Approve a pending publish request. Service rejects self-approval (409 SELF_APPROVAL_FORBIDDEN). */
+  approve: (templateId: string, req: ApprovePublishRequest) =>
+    post<{ success: true; status: "approved" }>(`${BASE}/role-templates/${templateId}/approve`, req),
+  /** Reject a pending publish request. Self-rejection IS allowed (requester can withdraw). */
+  reject: (templateId: string, req: RejectPublishRequest) =>
+    post<{ success: true; status: "rejected" }>(`${BASE}/role-templates/${templateId}/reject`, req),
 };

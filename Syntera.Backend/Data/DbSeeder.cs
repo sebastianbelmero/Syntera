@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Syntera.Backend.Models.Entities;
 using Syntera.Backend.Data;
+using Syntera.Backend.Services;
 
 // Seeder runs once at startup — LoggerMessage delegate optimization
 // (CA1848, CA1873) is not worth the complexity for these infrequent calls.
@@ -28,10 +29,21 @@ public static class DbSeeder
     /// <param name="db">Platform DB context.</param>
     /// <param name="config">App configuration (for site connection strings &amp; admin creds).</param>
     /// <param name="logger">Optional logger.</param>
+    /// <param name="protector">
+    /// Optional connection-string protector (COMPLIANCE Sprint 2.6). When
+    /// provided AND <c>ConnectionProtection:Enabled=true</c> in config, the
+    /// seeder encrypts new writes and auto-migrates existing plaintext
+    /// rows in the Sites table to encrypted form (idempotent — never
+    /// re-encrypts an already-encrypted value). When null (e.g. tests, or
+    /// the protector service is not registered), the seeder falls back to
+    /// storing plaintext connection strings (original pre-Sprint-2.6
+    /// behavior — preserves backward compat).
+    /// </param>
     public static async Task SeedPlatformAsync(
         PlatformDbContext db,
         IConfiguration config,
-        ILogger? logger = null)
+        ILogger? logger = null,
+        IConnectionStringProtector? protector = null)
     {
         // ── Default platform settings ──────────────────────────────────
         await EnsureSetting(db, "AuditRetentionYears", "10", "Audit log retention period in years (compliance).");
@@ -125,8 +137,24 @@ public static class DbSeeder
     /// already exists (by code), its connection string and theme are
     /// updated to match config — this lets operators change DB passwords
     /// via config without touching the DB.
+    ///
+    /// <para>COMPLIANCE (Sprint 2.6): when <paramref name="protector"/> is
+    /// supplied AND <c>ConnectionProtection:Enabled=true</c> in config, the
+    /// seeder encrypts the connection string before writing it. Existing
+    /// plaintext rows are auto-migrated on the next seeder run — the
+    /// migration is idempotent: rows whose value already starts with
+    /// <c>"ENC:"</c> are left untouched. The protector itself is also
+    /// idempotent (Protect short-circuits on <c>ENC:</c> input), but we
+    /// additionally decrypt-and-compare plaintexts to skip no-op
+    /// ciphertext rotations that would bump UpdatedAt on every seeder
+    /// run (DPAPI uses a random IV — identical plaintexts produce
+    /// different ciphertexts each call).</para>
     /// </summary>
-    private static async Task EnsureSitesAsync(PlatformDbContext db, IConfiguration config, ILogger? logger)
+    private static async Task EnsureSitesAsync(
+        PlatformDbContext db,
+        IConfiguration config,
+        ILogger? logger,
+        IConnectionStringProtector? protector)
     {
         var siteConfigs = config.GetSection("Sites").Get<SiteSeedConfig[]>() ?? Array.Empty<SiteSeedConfig>();
 
@@ -145,11 +173,20 @@ public static class DbSeeder
 
             if (site is null)
             {
+                // COMPLIANCE (Sprint 2.6): encrypt the connection string
+                // before storing it on a NEW site row. When the protector is
+                // null or ConnectionProtection:Enabled=false, Protect returns
+                // the plaintext as-is (no-op) — backward-compat with the
+                // pre-Sprint-2.6 behavior.
+                var storedConnStr = protector is not null && !string.IsNullOrWhiteSpace(connStr)
+                    ? protector.Protect(connStr!)
+                    : connStr ?? "";
+
                 site = new Site
                 {
                     Code = sc.Code,
                     DisplayName = sc.DisplayName,
-                    DatabaseConnectionString = connStr ?? "",
+                    DatabaseConnectionString = storedConnStr,
                     DefaultThemeKey = $"{sc.Code}-default",
                     IsEnabled = !string.IsNullOrWhiteSpace(connStr),
                     Notes = $"Pre-seeded site ({sc.Code}).",
@@ -170,8 +207,62 @@ public static class DbSeeder
             }
             else
             {
-                // Update connection string from config (allows password rotation).
-                site.DatabaseConnectionString = connStr ?? site.DatabaseConnectionString;
+                // COMPLIANCE (Sprint 2.6): sync the stored connection string
+                // from config (allows password rotation) AND auto-migrate
+                // any legacy plaintext row to encrypted form. The stored
+                // value may already be plaintext (legacy DB) or encrypted
+                // (already migrated). We need to:
+                //   1. If config provides a fresh value → it's the source of
+                //      truth. Decrypt the stored value and compare
+                //      plaintexts; only write back if different (avoids a
+                //      no-op UpdatedAt bump — DPAPI uses a random IV).
+                //   2. Else if the stored value is plaintext AND encryption
+                //      is enabled → migrate it in place (one-time).
+                //   3. Else → leave the stored value alone.
+                var fromConfig = connStr ?? "";
+                var stored = site.DatabaseConnectionString ?? "";
+                var nextStored = stored; // default: keep what's there
+
+                if (protector is not null)
+                {
+                    if (!string.IsNullOrWhiteSpace(fromConfig))
+                    {
+                        // Config provides a value — compare plaintexts to
+                        // skip no-op writes (password unchanged).
+                        var storedPlaintext = SafeUnprotect(protector, stored, logger, sc.Code);
+                        if (!string.Equals(storedPlaintext, fromConfig, StringComparison.Ordinal))
+                        {
+                            nextStored = protector.Protect(fromConfig);
+                        }
+                    }
+                    else if (!string.IsNullOrWhiteSpace(stored) && !protector.IsEncrypted(stored))
+                    {
+                        // No config value, but stored is plaintext — migrate
+                        // it to encrypted form. Idempotent: subsequent seeder
+                        // runs see IsEncrypted==true and skip this branch.
+                        nextStored = protector.Protect(stored);
+                    }
+                    // else: no config + already encrypted → nothing to do.
+                }
+                else
+                {
+                    // Protector not registered / ConnectionProtection:Enabled=false.
+                    // Preserve the original pre-Sprint-2.6 behavior: store
+                    // the config value verbatim (no encryption).
+                    nextStored = !string.IsNullOrWhiteSpace(fromConfig) ? fromConfig : stored;
+                }
+
+                if (!string.Equals(nextStored, stored, StringComparison.Ordinal))
+                {
+                    site.DatabaseConnectionString = nextStored;
+                    if (logger is not null && protector is not null)
+                    {
+                        logger.LogInformation(
+                            "Site {Code}: connection string updated (encrypted={Encrypted}).",
+                            sc.Code, protector.IsEncrypted(nextStored));
+                    }
+                }
+
                 site.DisplayName = sc.DisplayName;
                 site.DefaultThemeKey = $"{sc.Code}-default";
 
@@ -188,6 +279,41 @@ public static class DbSeeder
 
             // Upsert theme for this site.
             await EnsureSiteThemeAsync(db, site, sc);
+        }
+    }
+
+    /// <summary>
+    /// Wraps <see cref="IConnectionStringProtector.Unprotect"/> with a
+    /// try/catch so a corrupted or undecryptable stored value does not
+    /// crash the seeder. On failure, logs the error and returns the raw
+    /// stored value — the caller (EnsureSitesAsync) treats this as a
+    /// plaintext mismatch and overwrites with the config value (the
+    /// documented recovery path: operator re-enters the password in
+    /// appsettings.json and restarts, then the seeder re-encrypts it).
+    /// </summary>
+    private static string SafeUnprotect(
+        IConnectionStringProtector protector,
+        string value,
+        ILogger? logger,
+        string siteCode)
+    {
+        if (string.IsNullOrEmpty(value)) return value;
+        try
+        {
+            return protector.Unprotect(value);
+        }
+        catch (Exception ex)
+        {
+            logger?.LogError(ex,
+                "Failed to decrypt the stored connection string for site {Code} during the seeder run. " +
+                "Will fall back to the config value (the documented recovery path). " +
+                "Verify the DPAPI key ring at DataProtection:KeyPath.",
+                siteCode);
+            // Return the raw value — the caller compares it to the config
+            // plaintext, finds them different (the raw ciphertext is not
+            // the plaintext), and overwrites with the freshly-encrypted
+            // config value.
+            return value;
         }
     }
 

@@ -123,11 +123,13 @@ public sealed class UserManagementService : IUserManagementService
         db.Users.Add(user);
         await db.SaveChangesAsync(ct);
 
-        await _audit.LogAsync(new AuditEntry(
+        await _audit.LogCriticalAsync(new AuditEntry(
             SiteId: _current.SiteId, ActorUserId: createdBy, ActorEmail: _current.Email,
             ActorIp: null, ActorUserAgent: null,
             Action: "user.create", TargetType: "User", TargetId: user.Id.ToString(),
-            Outcome: "success", AfterJson: System.Text.Json.JsonSerializer.Serialize(new { user.Email, user.DisplayName })), ct);
+            Outcome: "success",
+            AfterJson: System.Text.Json.JsonSerializer.Serialize(new { user.Email, user.DisplayName, user.Title, user.IsEnabled }),
+            SignatureMeaning: "User provisioning (pre-provisioning before LDAP login)."), ct);
 
         return Map(user);
     }
@@ -143,10 +145,43 @@ public sealed class UserManagementService : IUserManagementService
         var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId, ct)
             ?? throw new NotFoundException("User", userId);
 
+        // COMPLIANCE (Sprint 1.3): capture BEFORE state for audit. Previously,
+        // user.update had NO audit entry — a Business Admin could change
+        // DisplayName/Title/IsEnabled with no audit trail. This violated
+        // 21 CFR Part 11 §11.10(e) and ALCOA+ "Complete" + "Original".
+        var beforeJson = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            user.Email,
+            user.DisplayName,
+            user.Title,
+            user.IsEnabled,
+        });
+
         user.DisplayName = dto.DisplayName;
         user.Title = string.IsNullOrWhiteSpace(dto.Title) ? null : dto.Title.Trim();
         user.IsEnabled = dto.IsEnabled;
         await db.SaveChangesAsync(ct);
+
+        var afterJson = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            user.Email,
+            user.DisplayName,
+            user.Title,
+            user.IsEnabled,
+        });
+
+        // Use LogCriticalAsync so a failure to record the audit trail
+        // surfaces as a 500 to the client — the business operation cannot
+        // be considered complete without a reliable audit record.
+        await _audit.LogCriticalAsync(new AuditEntry(
+            SiteId: _current.SiteId, ActorUserId: _current.UserId, ActorEmail: _current.Email,
+            ActorIp: null, ActorUserAgent: null,
+            Action: "user.update", TargetType: "User", TargetId: user.Id.ToString(),
+            Outcome: "success",
+            BeforeJson: beforeJson,
+            AfterJson: afterJson,
+            SignatureMeaning: "User record update (data integrity per 21 CFR Part 11 §11.10(e))."), ct);
+
         return Map(user);
     }
 
@@ -160,14 +195,27 @@ public sealed class UserManagementService : IUserManagementService
         var db = await _siteDbFactory.ResolveAsync(ct);
         var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId, ct)
             ?? throw new NotFoundException("User", userId);
+
+        // COMPLIANCE: capture before-state for audit.
+        var beforeJson = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            user.Email,
+            user.DisplayName,
+            user.IsEnabled,
+            user.PermissionsVersion,
+        });
+
         user.IsEnabled = false;
         user.PermissionsVersion++;
         await db.SaveChangesAsync(ct);
-        await _audit.LogAsync(new AuditEntry(
+        await _audit.LogCriticalAsync(new AuditEntry(
             SiteId: _current.SiteId, ActorUserId: disabledBy, ActorEmail: _current.Email,
             ActorIp: null, ActorUserAgent: null,
             Action: "user.disable", TargetType: "User", TargetId: userId.ToString(),
-            Outcome: "success"), ct);
+            Outcome: "success",
+            BeforeJson: beforeJson,
+            AfterJson: System.Text.Json.JsonSerializer.Serialize(new { user.IsEnabled, user.PermissionsVersion }),
+            SignatureMeaning: "User disable (access revocation)."), ct);
     }
 
     public async Task<UserDto> AssignRoleAsync(AssignRoleDto dto, Guid assignedBy, CancellationToken ct = default)
@@ -208,12 +256,13 @@ public sealed class UserManagementService : IUserManagementService
         user.PermissionsVersion++;
         await db.SaveChangesAsync(ct);
 
-        await _audit.LogAsync(new AuditEntry(
+        await _audit.LogCriticalAsync(new AuditEntry(
             SiteId: _current.SiteId, ActorUserId: assignedBy, ActorEmail: _current.Email,
             ActorIp: null, ActorUserAgent: null,
             Action: "user_role.assign", TargetType: "User", TargetId: user.Id.ToString(),
             Outcome: "success",
-            AfterJson: System.Text.Json.JsonSerializer.Serialize(new { role.Key, dto.ExpiresAt })), ct);
+            AfterJson: System.Text.Json.JsonSerializer.Serialize(new { role.Key, dto.ExpiresAt, dto.Reason }),
+            SignatureMeaning: "Role assignment (privilege grant)."), ct);
 
         return await GetAsync(dto.UserId, ct);
     }
@@ -235,12 +284,33 @@ public sealed class UserManagementService : IUserManagementService
 
         var ur = await db.UserRoles.FirstOrDefaultAsync(x => x.UserId == dto.UserId && x.RoleId == dto.RoleId, ct)
             ?? throw new NotFoundException("UserRole", $"{dto.UserId}/{dto.RoleId}");
+
+        // COMPLIANCE: capture before-state for audit (previously unaudited).
+        var beforeRole = await db.Roles.AsNoTracking().FirstOrDefaultAsync(r => r.Id == dto.RoleId, ct);
+        var beforeJson = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            RoleKey = beforeRole?.Key ?? "unknown",
+            RoleDisplayName = beforeRole?.DisplayName ?? "",
+            AssignedBy = ur.AssignedBy,
+            AssignedAt = ur.CreatedAt,
+            ExpiresAt = ur.ExpiresAt,
+        });
+
         db.UserRoles.Remove(ur);
 
         var user = await db.Users.FirstOrDefaultAsync(u => u.Id == dto.UserId, ct);
         if (user is not null) user.PermissionsVersion++;
 
         await db.SaveChangesAsync(ct);
+
+        await _audit.LogCriticalAsync(new AuditEntry(
+            SiteId: _current.SiteId, ActorUserId: _current.UserId, ActorEmail: _current.Email,
+            ActorIp: null, ActorUserAgent: null,
+            Action: "user_role.revoke", TargetType: "User", TargetId: dto.UserId.ToString(),
+            Outcome: "success",
+            BeforeJson: beforeJson,
+            AfterJson: System.Text.Json.JsonSerializer.Serialize(new { Revoked = true, RoleKey = beforeRole?.Key }),
+            SignatureMeaning: "Role revocation (privilege removal)."), ct);
     }
 
     public async Task<UserDto> GrantDirectPermissionAsync(GrantDirectPermissionDto dto, Guid approvedBy, CancellationToken ct = default)
@@ -278,12 +348,13 @@ public sealed class UserManagementService : IUserManagementService
         user.PermissionsVersion++;
         await db.SaveChangesAsync(ct);
 
-        await _audit.LogAsync(new AuditEntry(
+        await _audit.LogCriticalAsync(new AuditEntry(
             SiteId: _current.SiteId, ActorUserId: approvedBy, ActorEmail: _current.Email,
             ActorIp: null, ActorUserAgent: null,
             Action: "permission.grant", TargetType: "User", TargetId: user.Id.ToString(),
             Outcome: "success",
-            AfterJson: System.Text.Json.JsonSerializer.Serialize(new { perm.Key, dto.Reason, dto.ExpiresAt, dto.IsDeny })), ct);
+            AfterJson: System.Text.Json.JsonSerializer.Serialize(new { perm.Key, dto.Reason, dto.ExpiresAt, dto.IsDeny }),
+            SignatureMeaning: "Direct permission grant (temporary elevated access — 21 CFR Part 11 §11.10(j))."), ct);
 
         return await GetAsync(dto.UserId, ct);
     }
@@ -293,6 +364,19 @@ public sealed class UserManagementService : IUserManagementService
         var db = await _siteDbFactory.ResolveAsync(ct);
         var up = await db.UserPermissions.FirstOrDefaultAsync(x => x.Id == dto.UserPermissionId, ct)
             ?? throw new NotFoundException("UserPermission", dto.UserPermissionId);
+
+        // COMPLIANCE: capture before-state for audit (previously unaudited).
+        var perm = await db.Permissions.AsNoTracking().FirstOrDefaultAsync(p => p.Id == up.PermissionId, ct);
+        var beforeJson = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            PermissionKey = perm?.Key ?? "unknown",
+            up.Reason,
+            up.ExpiresAt,
+            up.IsDeny,
+            up.IsRevoked,
+            GrantedAt = up.CreatedAt,
+        });
+
         up.IsRevoked = true;
         up.RevokedAt = DateTime.UtcNow;
 
@@ -300,6 +384,15 @@ public sealed class UserManagementService : IUserManagementService
         if (user is not null) user.PermissionsVersion++;
 
         await db.SaveChangesAsync(ct);
+
+        await _audit.LogCriticalAsync(new AuditEntry(
+            SiteId: _current.SiteId, ActorUserId: _current.UserId, ActorEmail: _current.Email,
+            ActorIp: null, ActorUserAgent: null,
+            Action: "permission.revoke", TargetType: "User", TargetId: up.UserId.ToString(),
+            Outcome: "success",
+            BeforeJson: beforeJson,
+            AfterJson: System.Text.Json.JsonSerializer.Serialize(new { Revoked = true, RevokedAt = up.RevokedAt, PermissionKey = perm?.Key }),
+            SignatureMeaning: "Direct permission revocation (privilege removal)."), ct);
     }
 
     /// <summary>
@@ -333,12 +426,13 @@ public sealed class UserManagementService : IUserManagementService
                 PermissionsVersion = 1,
             };
             db.Users.Add(user);
-            await _audit.LogAsync(new AuditEntry(
+            await _audit.LogCriticalAsync(new AuditEntry(
                 SiteId: siteId, ActorUserId: assignedBy, ActorEmail: _current.Email,
                 ActorIp: null, ActorUserAgent: null,
                 Action: "user.create", TargetType: "User", TargetId: email,
                 Outcome: "success",
-                AfterJson: System.Text.Json.JsonSerializer.Serialize(new { email, displayName })), ct);
+                AfterJson: System.Text.Json.JsonSerializer.Serialize(new { email, displayName }),
+                SignatureMeaning: "User auto-provisioned during Business Admin assignment."), ct);
         }
 
         // 2. Find the site-business-admin role (cloned from template during publish).
@@ -376,12 +470,13 @@ public sealed class UserManagementService : IUserManagementService
             });
             user.PermissionsVersion++;
 
-            await _audit.LogAsync(new AuditEntry(
+            await _audit.LogCriticalAsync(new AuditEntry(
                 SiteId: siteId, ActorUserId: assignedBy, ActorEmail: _current.Email,
                 ActorIp: null, ActorUserAgent: null,
                 Action: "business_admin.assign", TargetType: "User", TargetId: user.Id.ToString(),
                 Outcome: "success",
-                AfterJson: System.Text.Json.JsonSerializer.Serialize(new { email, role.Key })), ct);
+                AfterJson: System.Text.Json.JsonSerializer.Serialize(new { email, role.Key }),
+                SignatureMeaning: "Business Admin delegation (delegated administration)."), ct);
         }
 
         await db.SaveChangesAsync(ct);
@@ -460,11 +555,12 @@ public sealed class UserManagementService : IUserManagementService
 
         await db.SaveChangesAsync(ct);
 
-        await _audit.LogAsync(new AuditEntry(
+        await _audit.LogCriticalAsync(new AuditEntry(
             SiteId: siteId, ActorUserId: revokedBy, ActorEmail: _current.Email,
             ActorIp: null, ActorUserAgent: null,
             Action: "business_admin.revoke", TargetType: "User", TargetId: userId.ToString(),
-            Outcome: "success"), ct);
+            Outcome: "success",
+            SignatureMeaning: "Business Admin revocation (delegated administration removal)."), ct);
     }
 
     /// <summary>
@@ -570,12 +666,13 @@ public sealed class UserManagementService : IUserManagementService
 
         await db.SaveChangesAsync(ct);
 
-        await _audit.LogAsync(new AuditEntry(
+        await _audit.LogCriticalAsync(new AuditEntry(
             SiteId: siteId, ActorUserId: assignedBy, ActorEmail: _current.Email,
             ActorIp: null, ActorUserAgent: null,
             Action: "system_admin.assign", TargetType: "User", TargetId: user.Id.ToString(),
             Outcome: "success",
-            AfterJson: System.Text.Json.JsonSerializer.Serialize(new { email, role.Key })), ct);
+            AfterJson: System.Text.Json.JsonSerializer.Serialize(new { email, role.Key }),
+            SignatureMeaning: "System Admin delegation (per-site delegated administration)."), ct);
 
         var fresh = await db.Users.AsNoTracking()
             .Include(u => u.UserRoles).ThenInclude(ur => ur.Role)
@@ -615,11 +712,12 @@ public sealed class UserManagementService : IUserManagementService
         if (user is not null) user.PermissionsVersion++;
         await db.SaveChangesAsync(ct);
 
-        await _audit.LogAsync(new AuditEntry(
+        await _audit.LogCriticalAsync(new AuditEntry(
             SiteId: siteId, ActorUserId: revokedBy, ActorEmail: _current.Email,
             ActorIp: null, ActorUserAgent: null,
             Action: "system_admin.revoke", TargetType: "User", TargetId: userId.ToString(),
-            Outcome: "success"), ct);
+            Outcome: "success",
+            SignatureMeaning: "System Admin revocation (delegated administration removal)."), ct);
     }
 
     private async Task<Role> AutoCloneRoleFromTemplateAsync(

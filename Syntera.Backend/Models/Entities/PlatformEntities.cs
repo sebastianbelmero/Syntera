@@ -68,6 +68,29 @@ public class PlatformUser : BaseEntity
     public int FailedLoginCount { get; set; }
 
     public DateTime? LockedUntil { get; set; }
+
+    /// <summary>
+    /// COMPLIANCE (Sprint 2.3): TOTP secret (Base32-encoded) for MFA.
+    /// Null = MFA not enabled for this user. Stored encrypted via
+    /// ASP.NET Core Data Protection (IDataProtector) — see TotpService.
+    /// </summary>
+    public string? TotpSecret { get; set; }
+
+    /// <summary>
+    /// COMPLIANCE (Sprint 2.3): True if MFA (TOTP) has been verified and is
+    /// required for login. When true, login flow requires both password AND
+    /// a valid TOTP code. Defaults to false (opt-in) for backward compat.
+    /// </summary>
+    public bool TotpEnabled { get; set; }
+
+    /// <summary>
+    /// COMPLIANCE (Sprint 2.4): Timestamp of last successful password
+    /// change. Used to enforce password max-age (e.g., 90 days) per
+    /// 21 CFR Part 11 §11.300(c). Null = never changed (or pre-feature).
+    /// On first login (or migration), seeded to CreatedAt to avoid
+    /// forcing immediate password change for existing users.
+    /// </summary>
+    public DateTime? PasswordChangedAt { get; set; }
 }
 
 /// <summary>
@@ -121,6 +144,83 @@ public class RefreshToken : BaseEntity
     public string? CreatedFromIp { get; set; }
 
     public string? CreatedUserAgent { get; set; }
+
+    /// <summary>
+    /// COMPLIANCE (Sprint 2.5): Timestamp of the last time this refresh
+    /// token was used (rotated to a new token, or validated via a refresh
+    /// endpoint). Used for idle session timeout enforcement per
+    /// 21 CFR Part 11 §11.300(d) — automatic logoff after a period of
+    /// inactivity. On refresh, the service checks that
+    /// <c>LastUsedAt &gt;= UtcNow - Session:IdleMinutes</c>; otherwise the
+    /// session is treated as expired and the refresh is rejected with
+    /// <c>SESSION_IDLE_TIMEOUT</c>. Null on first creation; treated as
+    /// "just used" so a brand-new token isn't immediately idle-expired.
+    /// </summary>
+    public DateTime? LastUsedAt { get; set; }
+}
+
+/// <summary>
+/// COMPLIANCE (Sprint 2.4): Password history entry for Platform Admin.
+/// Stores BCrypt hashes of the last N passwords (default 10). When the
+/// Platform Admin attempts to change their password, the new password is
+/// checked against this history — if it matches any previous hash, the
+/// change is rejected with <c>PASSWORD_REUSE_FORBIDDEN</c>. This enforces
+/// 21 CFR Part 11 §11.300(c) (periodic password change) without enabling
+/// trivial rotation back to the same password.
+/// </summary>
+public class PasswordHistory : BaseEntity
+{
+    public Guid PlatformUserId { get; set; }
+
+    /// <summary>BCrypt hash of the historical password. Never store plaintext.</summary>
+    public string PasswordHash { get; set; } = string.Empty;
+
+    /// <summary>When this password was set (denormalized from CreatedAt for query convenience).</summary>
+    public DateTime SetAt { get; set; }
+}
+
+/// <summary>
+/// COMPLIANCE (Sprint 2.7): Two-person rule approval request for
+/// publishing a role template. When two-person control is enabled
+/// (<c>TwoPerson:Enabled=true</c> in config), <c>PublishAsync</c> creates
+/// a <c>RoleTemplateApproval</c> row in <c>Pending</c> status instead of
+/// immediately publishing. A second Platform Admin (different from the
+/// requester) must call <c>POST /api/platform/role-templates/{id}/approve</c>
+/// to actually trigger the publish. The requester cannot self-approve.
+///
+/// If two-person is disabled (default), <c>PublishAsync</c> proceeds
+/// immediately as before — the approval workflow is opt-in for
+/// regulated environments that require dual control for privilege
+/// propagation.
+/// </summary>
+public class RoleTemplateApproval : BaseEntity
+{
+    public Guid RoleTemplateId { get; set; }
+
+    /// <summary>The Platform Admin who requested the publish.</summary>
+    public Guid RequestedBy { get; set; }
+
+    public DateTime RequestedAt { get; set; } = DateTime.UtcNow;
+
+    /// <summary>Snapshot of the requested permission keys + display name + isSiteAdminRole at request time.</summary>
+    public string RequestedSnapshotJson { get; set; } = string.Empty;
+
+    /// <summary>Status: "pending", "approved", "rejected", "superseded".</summary>
+    public string Status { get; set; } = "pending";
+
+    /// <summary>The Platform Admin who approved/rejected (different from RequestedBy).</summary>
+    public Guid? ActionBy { get; set; }
+
+    public DateTime? ActionAt { get; set; }
+
+    /// <summary>Optional reason for rejection.</summary>
+    public string? RejectionReason { get; set; }
+
+    /// <summary>Signature meaning captured at request time (for audit).</summary>
+    public string? RequesterSignatureMeaning { get; set; }
+
+    /// <summary>Signature meaning captured at approval time (for audit).</summary>
+    public string? ApproverSignatureMeaning { get; set; }
 }
 
 #pragma warning restore CA1711

@@ -57,11 +57,21 @@ public class AuditLog
     /// <summary>Optional error message (for failures).</summary>
     public string? ErrorMessage { get; set; }
 
-    /// <summary>SHA-256 hash of (PreviousHash + canonical JSON of this row). Forms the chain.</summary>
+    /// <summary>SHA-256 hash of (PreviousHash + canonical fields + BeforeJson + AfterJson + SignatureMeaning). Forms the chain.</summary>
     public string Hash { get; set; } = string.Empty;
 
     /// <summary>Hash of the previous AuditLog row in the same scope. Empty for the first row.</summary>
     public string PreviousHash { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 21 CFR Part 11 §11.50 — Signature manifestation. Records the meaning
+    /// the actor associated with this action (e.g., "I approve this role
+    /// template for publication", "I authorize this direct permission grant",
+    /// "I sign off on this user disable action"). Default "action performed"
+    /// for backward compatibility with non-explicit-signature events.
+    /// Included in the hash chain so it cannot be retroactively altered.
+    /// </summary>
+    public string? SignatureMeaning { get; set; }
 }
 
 /// <summary>

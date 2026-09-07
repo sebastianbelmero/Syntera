@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Plus, Pencil, Send } from "lucide-react";
 import { roleTemplatesApi } from "../../api/platform";
 import { ApiError } from "../../api/client";
-import type { RoleTemplateDto, RoleTemplateUpsertDto, PermissionCatalogDto, PermissionGroupDto } from "../../types";
+import type { RoleTemplateDto, RoleTemplateUpsertDto, PermissionCatalogDto, PermissionGroupDto, PublishResultDto } from "../../types";
 
 const TEMPLATES_KEY = ["role-templates"] as const;
 
@@ -67,12 +68,24 @@ export default function RoleTemplatesPage() {
 
 function TemplateRow({ template, onEdit }: { template: RoleTemplateDto; onEdit: () => void }) {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   const publishMutation = useMutation({
     mutationFn: () => roleTemplatesApi.publish(template.id),
-    onSuccess: () => {
-      toast.success("Template published");
-      void queryClient.invalidateQueries({ queryKey: TEMPLATES_KEY });
+    onSuccess: (result: PublishResultDto) => {
+      // Backward-compat branch:
+      //   - TwoPerson:Enabled=false (default) → status === "published"
+      //     (or, for legacy responses, no `status` field at all → undefined).
+      //   - TwoPerson:Enabled=true            → status === "pending" with approvalId.
+      if (result && result.status === "pending") {
+        toast.success("Publish request submitted. A second Platform Admin must approve it. See the Approval Queue page.");
+        void queryClient.invalidateQueries({ queryKey: TEMPLATES_KEY });
+        void queryClient.invalidateQueries({ queryKey: ["role-template-approvals"] });
+      } else {
+        // status === "published" OR legacy shape ({ success: true } only).
+        toast.success("Template published to all sites.");
+        void queryClient.invalidateQueries({ queryKey: TEMPLATES_KEY });
+      }
     },
     onError: (err) => toast.error(err instanceof ApiError ? err.message : "Failed"),
   });
@@ -81,6 +94,8 @@ function TemplateRow({ template, onEdit }: { template: RoleTemplateDto; onEdit: 
     if (!confirm(`Publish role template "${template.key}"? This will clone/update the role in every enabled site.`)) return;
     publishMutation.mutate();
   };
+
+  const goToApprovalQueue = () => navigate("/platform/approvals");
 
   return (
     <div className="rounded-xl p-4"
@@ -123,6 +138,21 @@ function TemplateRow({ template, onEdit }: { template: RoleTemplateDto; onEdit: 
             <span key={p} className="text-xs px-2 py-0.5 rounded"
               style={{ backgroundColor: "var(--color-background)" }}>{p}</span>
           ))}
+        </div>
+      )}
+      {/* Inline link shown only when the most-recent publish became a pending
+          approval request (TwoPerson:Enabled=true). Lets the requester jump
+          straight to the approval queue. */}
+      {publishMutation.isSuccess && publishMutation.data?.status === "pending" && (
+        <div className="mt-3">
+          <button
+            type="button"
+            onClick={goToApprovalQueue}
+            className="text-xs px-2.5 py-1 rounded-lg"
+            style={{ border: "1px solid var(--color-border)", color: "var(--color-primary)" }}
+          >
+            View in Approval Queue →
+          </button>
         </div>
       )}
     </div>

@@ -11,8 +11,13 @@ namespace Syntera.Backend.Data;
 /// (no site_id claim) never resolve a SiteDbContext — attempting to do so
 /// throws, which fails-closed for tenant safety.
 ///
-/// The connection string is fetched from the Platform DB's <see cref="Site"/>
+/// <para>The connection string is fetched from the Platform DB's <see cref="Site"/>
 /// table on first access per request and cached for the request lifetime.
+/// COMPLIANCE (Sprint 2.6): the stored value may be encrypted via DPAPI
+/// (prefixed with <c>"ENC:"</c>); <see cref="IConnectionStringProtector.Unprotect"/>
+/// is called before passing the value to <c>UseSqlServer</c>. Plaintext
+/// values (no <c>ENC:</c> prefix) are returned as-is by the protector —
+/// backward compat with existing DBs that have not yet been migrated.</para>
 /// </summary>
 public interface ISiteDbContextFactory
 {
@@ -39,13 +44,18 @@ public sealed class SiteDbContextFactory : ISiteDbContextFactory, IDisposable, I
 {
     private readonly IServiceProvider _services;
     private readonly ICurrentUserService _currentUser;
+    private readonly IConnectionStringProtector _protector;
     private SiteDbContext? _resolved;
     private bool _disposed;
 
-    public SiteDbContextFactory(IServiceProvider services, ICurrentUserService currentUser)
+    public SiteDbContextFactory(
+        IServiceProvider services,
+        ICurrentUserService currentUser,
+        IConnectionStringProtector protector)
     {
         _services = services;
         _currentUser = currentUser;
+        _protector = protector;
     }
 
     public async Task<SiteDbContext> ResolveAsync(CancellationToken ct = default)
@@ -74,9 +84,19 @@ public sealed class SiteDbContextFactory : ISiteDbContextFactory, IDisposable, I
         if (!site.IsEnabled)
             throw new InvalidOperationException($"Site '{site.Code}' is disabled.");
 
+        // COMPLIANCE (Sprint 2.6): decrypt the connection string before
+        // handing it to SiteDbContext. Handles both ENC:-prefixed
+        // (encrypted) and bare (plaintext) values — the protector returns
+        // plaintext values verbatim, so existing DBs that have not yet
+        // been migrated by the seeder continue to resolve correctly.
+        // Throws InvalidOperationException if the key ring is missing or
+        // the ciphertext is corrupted — surfaces as a 500 to the Platform
+        // Admin (fail closed — we never fall back to a partial string).
+        var connectionString = _protector.Unprotect(site.DatabaseConnectionString);
+
         // Build a fresh SiteDbContext using the resolved connection string.
         var options = new DbContextOptionsBuilder<SiteDbContext>()
-            .UseSqlServer(site.DatabaseConnectionString,
+            .UseSqlServer(connectionString,
                 sql => sql.MigrationsHistoryTable("__EFMigrationsHistory_Site"))
             .Options;
 

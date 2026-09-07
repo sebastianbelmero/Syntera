@@ -19,7 +19,9 @@ public sealed class PlatformDbContext : DbContext
     public DbSet<SiteTheme> Themes => Set<SiteTheme>();
     public DbSet<RoleTemplate> RoleTemplates => Set<RoleTemplate>();
     public DbSet<RoleTemplatePermission> RoleTemplatePermissions => Set<RoleTemplatePermission>();
+    public DbSet<RoleTemplateApproval> RoleTemplateApprovals => Set<RoleTemplateApproval>();
     public DbSet<PlatformUser> PlatformUsers => Set<PlatformUser>();
+    public DbSet<PasswordHistory> PasswordHistory => Set<PasswordHistory>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
@@ -112,6 +114,12 @@ public sealed class PlatformDbContext : DbContext
             e.HasIndex(x => x.Email).IsUnique();
             e.Property(x => x.PasswordHash).HasMaxLength(255).IsRequired();
             e.Property(x => x.DisplayName).HasMaxLength(160).IsRequired();
+            // COMPLIANCE (Sprint 2.3): TOTP secret — encrypted via IDataProtector,
+            // stored as base64-encoded ciphertext. MaxLength 512 covers
+            // AES-CBC ciphertext + IV + tag.
+            e.Property(x => x.TotpSecret).HasMaxLength(512);
+            e.Property(x => x.TotpEnabled).HasDefaultValue(false);
+            e.Property(x => x.PasswordChangedAt);
         });
 
         modelBuilder.Entity<RefreshToken>(e =>
@@ -124,6 +132,31 @@ public sealed class PlatformDbContext : DbContext
             e.HasIndex(x => new { x.UserId, x.UserScope });
             // M1: index FamilyId for fast "revoke entire family" query on token reuse.
             e.HasIndex(x => x.FamilyId);
+            // COMPLIANCE (Sprint 2.5): LastUsedAt for idle session timeout.
+            e.Property(x => x.LastUsedAt);
+        });
+
+        // COMPLIANCE (Sprint 2.4): PasswordHistory — stores last N hashes
+        // to prevent password reuse.
+        modelBuilder.Entity<PasswordHistory>(e =>
+        {
+            e.ToTable("PasswordHistory");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.PasswordHash).HasMaxLength(255).IsRequired();
+            e.HasIndex(x => new { x.PlatformUserId, x.SetAt });
+        });
+
+        // COMPLIANCE (Sprint 2.7): RoleTemplateApproval — two-person rule.
+        modelBuilder.Entity<RoleTemplateApproval>(e =>
+        {
+            e.ToTable("RoleTemplateApprovals");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.RequestedSnapshotJson).HasMaxLength(8192).IsRequired();
+            e.Property(x => x.Status).HasMaxLength(16).IsRequired();
+            e.HasIndex(x => new { x.RoleTemplateId, x.Status });
+            e.Property(x => x.RejectionReason).HasMaxLength(2000);
+            e.Property(x => x.RequesterSignatureMeaning).HasMaxLength(500);
+            e.Property(x => x.ApproverSignatureMeaning).HasMaxLength(500);
         });
 
         modelBuilder.Entity<AuditLog>(e =>
@@ -144,6 +177,12 @@ public sealed class PlatformDbContext : DbContext
             e.Property(x => x.Outcome).HasMaxLength(16).IsRequired();
             e.Property(x => x.Hash).HasMaxLength(128).IsRequired();
             e.Property(x => x.PreviousHash).HasMaxLength(128).IsRequired();
+            // COMPLIANCE (Sprint 1.6): BeforeJson + AfterJson exposed in DTO.
+            // Stored as NVARCHAR(MAX) — full state snapshots can be large.
+            e.Property(x => x.BeforeJson).HasColumnType("NVARCHAR(MAX)");
+            e.Property(x => x.AfterJson).HasColumnType("NVARCHAR(MAX)");
+            // COMPLIANCE (Sprint 2.8): 21 CFR Part 11 §11.50 signature meaning.
+            e.Property(x => x.SignatureMeaning).HasMaxLength(500);
             // NOTE: AuditLog rows are append-only. We do NOT register any
             // UPDATE/DELETE handler — the SaveChanges pipeline explicitly
             // throws if any AuditLog entry is in Modified/Deleted state.

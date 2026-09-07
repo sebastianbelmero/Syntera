@@ -114,3 +114,86 @@ public sealed class AssignRoleDtoValidator : AbstractValidator<Models.Dtos.Users
             .WithMessage("Reason must not exceed 500 characters.");
     }
 }
+
+// ── COMPLIANCE (Sprint 2.3): MFA (TOTP) validators ─────────────────────
+
+/// <summary>
+/// Validator for the MFA login completion request (POST /api/auth/login-mfa).
+/// SECURITY (L1):
+/// <list type="bullet">
+///   <item>MfaChallengeToken: required (non-empty). The challenge token is
+///     a short-lived JWT; without it the MFA flow cannot resume.</item>
+///   <item>Code: required, exactly 6 digits. We don't enforce digit-only
+///     here because TotpService normalizes whitespace/case, but we cap
+///     the length to prevent garbage reaching the TOTP verifier.</item>
+/// </list>
+/// </summary>
+public sealed class LoginMfaRequestValidator : AbstractValidator<LoginMfaRequest>
+{
+    public LoginMfaRequestValidator()
+    {
+        RuleFor(x => x.MfaChallengeToken)
+            .NotEmpty().WithMessage("MFA challenge token is required.");
+
+        RuleFor(x => x.Code)
+            .NotEmpty().WithMessage("Authentication code is required.")
+            .MaximumLength(20).WithMessage("Authentication code must not exceed 20 characters.");
+    }
+}
+
+/// <summary>
+/// Validator for the MFA confirm request (POST /api/auth/mfa/confirm).
+/// The TOTP code must be a non-empty string; TotpService normalizes
+/// whitespace and validates the format (6 digits) inside VerifyCodeAsync.
+/// </summary>
+public sealed class ConfirmMfaRequestValidator : AbstractValidator<ConfirmMfaRequest>
+{
+    public ConfirmMfaRequestValidator()
+    {
+        RuleFor(x => x.Code)
+            .NotEmpty().WithMessage("Authentication code is required.")
+            .MaximumLength(20).WithMessage("Authentication code must not exceed 20 characters.");
+    }
+}
+
+/// <summary>
+/// Validator for the MFA disable request (POST /api/auth/mfa/disable).
+/// Same shape and rules as <see cref="ConfirmMfaRequestValidator"/> — the
+/// user must present a current valid TOTP code to disable MFA.
+/// </summary>
+public sealed class DisableMfaRequestValidator : AbstractValidator<DisableMfaRequest>
+{
+    public DisableMfaRequestValidator()
+    {
+        RuleFor(x => x.Code)
+            .NotEmpty().WithMessage("Authentication code is required.")
+            .MaximumLength(20).WithMessage("Authentication code must not exceed 20 characters.");
+    }
+}
+
+/// <summary>
+/// Validator for the change-password request. SECURITY (L1):
+/// <list type="bullet">
+///   <item>NewPassword: required, max 256 chars (matches the bcrypt
+///     upper bound in the password policy — bcrypt truncates at 72 bytes
+///     anyway, but enforcing the cap defends against CPU-waste DoS).</item>
+///   <item>Either CurrentPassword OR PasswordChangeChallengeToken must
+///     be present. The AuthService validates whichever is supplied.</item>
+/// </list>
+/// </summary>
+public sealed class ChangePasswordRequestValidator : AbstractValidator<ChangePasswordRequest>
+{
+    public ChangePasswordRequestValidator()
+    {
+        RuleFor(x => x.NewPassword)
+            .NotEmpty().WithMessage("New password is required.")
+            .MaximumLength(256).WithMessage("New password must not exceed 256 characters.");
+
+        // Either currentPassword or the challenge token must be present.
+        // The controller also enforces this — kept here as defense in depth.
+        RuleFor(x => x)
+            .Must(x => !string.IsNullOrWhiteSpace(x.CurrentPassword)
+                       || !string.IsNullOrWhiteSpace(x.PasswordChangeChallengeToken))
+            .WithMessage("Either the current password or a password-change challenge token is required.");
+    }
+}

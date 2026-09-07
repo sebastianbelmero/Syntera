@@ -80,7 +80,7 @@ try
 
     // ─── Step 3: Seed platform data ──────────────────────────────────
     Log.Information("");
-    Log.Information("▶ Step 3/3: Seed platform data (admin user, role templates, 6 sites, themes)");
+    Log.Information("▶ Step 3/3: Seed platform data + compliance schema migration");
     Log.Information("");
 
     using (var platformDb = new PlatformDbContext(platformOptions))
@@ -89,7 +89,27 @@ try
         var logger = loggerFactory.CreateLogger("DbSeeder");
 
         await DbSeeder.SeedPlatformAsync(platformDb, config, logger);
-        Log.Information("  ✓ Seeding complete");
+
+        // COMPLIANCE (Sprint 2.2): apply compliance schema additions (MFA,
+        // PasswordHistory, RefreshToken.LastUsedAt, AuditLog.SignatureMeaning,
+        // RoleTemplateApprovals) to Platform DB + all enabled site DBs.
+        // Idempotent — safe to run on every invocation.
+        Log.Information("  Applying compliance schema additions (MFA, PasswordHistory, etc.) to Platform DB...");
+        await ComplianceMigrator.ApplyPlatformAsync(platformDb, logger);
+
+        foreach (var (siteCode, siteConn) in siteConns)
+        {
+            Log.Information("  Applying compliance schema to site {Code}...", siteCode);
+            var siteOpts = new DbContextOptionsBuilder<SiteDbContext>()
+                .UseSqlServer(siteConn, sql => sql
+                    .MigrationsAssembly(typeof(SiteDbContext).Assembly.FullName)
+                    .MigrationsHistoryTable("__EFMigrationsHistory_Site"))
+                .Options;
+            using var siteDb = new SiteDbContext(siteOpts);
+            await ComplianceMigrator.ApplySiteAsync(siteDb, logger);
+        }
+
+        Log.Information("  ✓ Seeding + compliance migration complete");
     }
 
     // ─── Summary ─────────────────────────────────────────────────────

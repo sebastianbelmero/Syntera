@@ -15,7 +15,18 @@ public class Site : BaseEntity
     /// <summary>Display name, e.g., "PT Kalventis Surya Pratama".</summary>
     public string DisplayName { get; set; } = string.Empty;
 
-    /// <summary>SQL Server connection string for this site's database. Stored encrypted via DPAPI.</summary>
+    /// <summary>
+    /// SQL Server connection string for this site's database.
+    /// COMPLIANCE (Sprint 2.6): stored encrypted at rest via ASP.NET Core
+    /// Data Protection (purpose <c>"Syntera.ConnectionString.v1"</c>) when
+    /// <c>ConnectionProtection:Enabled=true</c> in appsettings.json. The
+    /// encrypted form is prefixed with <c>"ENC:"</c> so the read path
+    /// (SiteDbContextFactory) can detect already-encrypted values and skip
+    /// the no-op decrypt. Plaintext values (no <c>ENC:</c> prefix) are
+    /// still readable — backward compat with DBs that have not yet been
+    /// migrated by the seeder. See <c>ConnectionStringProtector.cs</c> for
+    /// the key-ring backup requirement.
+    /// </summary>
     public string DatabaseConnectionString { get; set; } = string.Empty;
 
     /// <summary>Default theme palette key, e.g., "kalventis-navy". Resolved against SiteTheme table.</summary>

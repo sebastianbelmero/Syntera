@@ -75,6 +75,18 @@ public sealed class SiteManagementService : ISiteManagementService
     /// Updates the editable fields of a site: DisplayName and LdapDomains.
     /// Code, DatabaseConnectionString, and IsEnabled are NOT editable from
     /// the frontend — they are managed via backend configuration.
+    ///
+    /// <para>COMPLIANCE (Sprint 2.6): DatabaseConnectionString is now encrypted
+    /// at rest via <see cref="IConnectionStringProtector"/>. Should a future
+    /// endpoint be added that writes <c>DatabaseConnectionString</c> directly,
+    /// it MUST call <c>IConnectionStringProtector.Protect(...)</c> before
+    /// assigning to the entity — otherwise the value would be stored as
+    /// plaintext (bypassing the encryption requirement) and the next seeder
+    /// run would have to migrate it. The read path (SiteDbContextFactory)
+    /// already calls <see cref="IConnectionStringProtector.Unprotect"/> on
+    /// every resolution and handles both <c>ENC:</c>-prefixed (encrypted) and
+    /// bare (plaintext) values gracefully — so a stray plaintext value does
+    /// NOT break login, it only fails the compliance check.</para>
     /// </summary>
     public async Task<SiteDto> UpdateAsync(Guid id, SiteUpdateDto dto, Guid updatedBy, CancellationToken ct = default)
     {
@@ -82,6 +94,13 @@ public sealed class SiteManagementService : ISiteManagementService
             .Include(s => s.LdapDomains)
             .FirstOrDefaultAsync(s => s.Id == id, ct)
             ?? throw new NotFoundException("Site", id);
+
+        // COMPLIANCE: capture before-state for audit.
+        var beforeJson = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            site.DisplayName,
+            Domains = site.LdapDomains.Select(d => d.Domain).ToList(),
+        });
 
         site.DisplayName = dto.DisplayName;
 
@@ -103,11 +122,13 @@ public sealed class SiteManagementService : ISiteManagementService
 
         await _db.SaveChangesAsync(ct);
 
-        await _audit.LogAsync(new AuditEntry(
+        await _audit.LogCriticalAsync(new AuditEntry(
             SiteId: null, ActorUserId: updatedBy, ActorEmail: null, ActorIp: null, ActorUserAgent: null,
             Action: "site.update", TargetType: "Site", TargetId: site.Id.ToString(),
             Outcome: "success", ErrorMessage: null,
-            AfterJson: System.Text.Json.JsonSerializer.Serialize(new { site.DisplayName, Domains = newDomains })), ct);
+            BeforeJson: beforeJson,
+            AfterJson: System.Text.Json.JsonSerializer.Serialize(new { site.DisplayName, Domains = newDomains }),
+            SignatureMeaning: "Site configuration update (affects authentication routing)."), ct);
 
         return MapSite(site);
     }
@@ -134,6 +155,14 @@ public sealed class SiteManagementService : ISiteManagementService
 
         var cfg = await _db.LdapConfigs.FirstOrDefaultAsync(c => c.SiteId == siteId, ct);
         var isNew = cfg is null;
+
+        // COMPLIANCE: capture before-state for audit (null if new).
+        string? beforeJson = null;
+        if (!isNew)
+        {
+            beforeJson = System.Text.Json.JsonSerializer.Serialize(new { cfg!.Host, cfg.Port, cfg.UseStartTls, cfg.BaseDn, cfg.UpnDomain });
+        }
+
         cfg ??= new SiteLdapConfig { SiteId = siteId };
 
         cfg.Host = dto.Host;
@@ -145,11 +174,13 @@ public sealed class SiteManagementService : ISiteManagementService
         if (isNew) _db.LdapConfigs.Add(cfg);
         await _db.SaveChangesAsync(ct);
 
-        await _audit.LogAsync(new AuditEntry(
+        await _audit.LogCriticalAsync(new AuditEntry(
             SiteId: siteId, ActorUserId: updatedBy, ActorEmail: null, ActorIp: null, ActorUserAgent: null,
             Action: "ldap.write", TargetType: "SiteLdapConfig", TargetId: siteId.ToString(),
             Outcome: "success", ErrorMessage: null,
-            AfterJson: System.Text.Json.JsonSerializer.Serialize(new { cfg.Host, cfg.Port, cfg.UseStartTls, cfg.BaseDn, cfg.UpnDomain })), ct);
+            BeforeJson: beforeJson,
+            AfterJson: System.Text.Json.JsonSerializer.Serialize(new { cfg.Host, cfg.Port, cfg.UseStartTls, cfg.BaseDn, cfg.UpnDomain }),
+            SignatureMeaning: "LDAP configuration change (affects authentication path)."), ct);
 
         return MapLdapConfig(cfg);
     }
@@ -165,6 +196,7 @@ public sealed class SiteManagementService : ISiteManagementService
 
         // L2: audit log every test attempt — success OR failure. Never
         // log the test password (only the email that was probed).
+        // Non-critical audit (test result is observable via API response).
         await _audit.LogAsync(new AuditEntry(
             SiteId: null,
             ActorUserId: actorUserId == Guid.Empty ? null : actorUserId,
@@ -174,7 +206,8 @@ public sealed class SiteManagementService : ISiteManagementService
             TargetType: "LdapConfig",
             TargetId: req.TestEmail,
             Outcome: result.IsSuccess ? "success" : "failure",
-            ErrorMessage: result.IsSuccess ? null : result.ErrorMessage), ct);
+            ErrorMessage: result.IsSuccess ? null : result.ErrorMessage,
+            SignatureMeaning: "LDAP connection test (credential probe — never logs password)."), ct);
 
         return new LdapTestResult(
             Success: result.IsSuccess,
@@ -204,11 +237,12 @@ public sealed class SiteManagementService : ISiteManagementService
 
         await _themes.InvalidateCacheAsync(siteId);
 
-        await _audit.LogAsync(new AuditEntry(
+        await _audit.LogCriticalAsync(new AuditEntry(
             SiteId: siteId, ActorUserId: updatedBy, ActorEmail: null, ActorIp: null, ActorUserAgent: null,
             Action: "theme.write", TargetType: "SiteTheme", TargetId: siteId.ToString(),
             Outcome: "success", ErrorMessage: null,
-            AfterJson: System.Text.Json.JsonSerializer.Serialize(new { dto.ThemeKey })), ct);
+            AfterJson: System.Text.Json.JsonSerializer.Serialize(new { dto.ThemeKey }),
+            SignatureMeaning: "Site theme change (UI visual configuration)."), ct);
 
         return await _themes.GetThemeAsync(siteId, ct);
     }

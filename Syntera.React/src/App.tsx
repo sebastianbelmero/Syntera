@@ -1,6 +1,6 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 import { useEffect } from "react";
-import { LayoutDashboard, Settings, Building2, Shield, Users, ScrollText, KeyRound } from "lucide-react";
+import { LayoutDashboard, Settings, Building2, Shield, Users, ScrollText, KeyRound, ClipboardCheck } from "lucide-react";
 
 import { RequireAuth, RequirePlatformAdmin, RequirePlatformOrSystemAdmin, RequireSiteAdmin } from "./routes/guards";
 import { useAuthStore } from "./store/authStore";
@@ -11,6 +11,7 @@ import LoginPage from "./pages/auth/LoginPage";
 import DashboardPage from "./pages/dashboard/DashboardPage";
 import SitesPage from "./pages/platform/SitesPage";
 import RoleTemplatesPage from "./pages/platform/RoleTemplatesPage";
+import ApprovalQueuePage from "./pages/platform/ApprovalQueuePage";
 import UsersPage from "./pages/site/UsersPage";
 import AuditLogsPage from "./pages/audit/AuditLogsPage";
 import SettingsPage from "./pages/settings/SettingsPage";
@@ -91,6 +92,7 @@ function buildMenu(isPlatformAdmin: boolean, isSiteAdmin: boolean, isSystemAdmin
   if (isPlatformAdmin) {
     items.push({ label: "Sites", path: "/platform/sites", icon: <Building2 size={18} /> });
     items.push({ label: "Role Templates", path: "/platform/role-templates", icon: <KeyRound size={18} /> });
+    items.push({ label: "Approval Queue", path: "/platform/approvals", icon: <ClipboardCheck size={18} /> });
     items.push({ label: "Audit Logs", path: "/audit/logs", icon: <ScrollText size={18} /> });
   }
 
@@ -163,6 +165,14 @@ export default function App() {
             element={
               <RequirePlatformAdmin>
                 <RoleTemplatesPage />
+              </RequirePlatformAdmin>
+            }
+          />
+          <Route
+            path="/platform/approvals"
+            element={
+              <RequirePlatformAdmin>
+                <ApprovalQueuePage />
               </RequirePlatformAdmin>
             }
           />

@@ -124,6 +124,11 @@ public sealed class SiteDbContext : DbContext
             e.Property(x => x.Outcome).HasMaxLength(16).IsRequired();
             e.Property(x => x.Hash).HasMaxLength(128).IsRequired();
             e.Property(x => x.PreviousHash).HasMaxLength(128).IsRequired();
+            // COMPLIANCE (Sprint 1.6): BeforeJson + AfterJson exposed in DTO.
+            e.Property(x => x.BeforeJson).HasColumnType("NVARCHAR(MAX)");
+            e.Property(x => x.AfterJson).HasColumnType("NVARCHAR(MAX)");
+            // COMPLIANCE (Sprint 2.8): 21 CFR Part 11 §11.50 signature meaning.
+            e.Property(x => x.SignatureMeaning).HasMaxLength(500);
         });
 
         modelBuilder.Entity<UserSyncHistory>(e =>
@@ -143,6 +148,8 @@ public sealed class SiteDbContext : DbContext
             e.Property(x => x.UserScope).HasMaxLength(16).IsRequired();
             // M1: index FamilyId for fast "revoke entire family" query on token reuse.
             e.HasIndex(x => x.FamilyId);
+            // COMPLIANCE (Sprint 2.5): LastUsedAt for idle session timeout.
+            e.Property(x => x.LastUsedAt);
         });
     }
 

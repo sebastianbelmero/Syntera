@@ -424,3 +424,130 @@ Instalasi baru dan penambahan migration berikutnya tetap lewat jalur normal.
 ```bash
 export SYNTERA_Seed__PlatformAdminPassword="YourStrongProductionPa55!"
 ```
+
+---
+
+## Compliance Hardening (Sprint 1-3)
+
+Syntera IAM sekarang menerapkan kontrol compliance berikut (additive — semua fitur opt-in via config, tidak mengganggu fungsi yang ada):
+
+### 21 CFR Part 11
+
+| Kontrol | Status | Aktifasi |
+|---------|--------|---------|
+| §11.10(e) Audit trail tamper-evident (hash-chained SHA-256, append-only) | ✅ Default ON | – |
+| §11.10(e) Reliable audit (LogCriticalAsync throws on failure untuk operasi sensitif) | ✅ Default ON | – |
+| §11.10(c) Records retention + audit of purge actions | ✅ Default OFF | `Audit:EnforceRetention=true` |
+| §11.10(j) All actions recorded (termasuk `user.update`, `role_template.update`, `user_role.revoke`, `permission.revoke`) | ✅ Default ON | – |
+| §11.50 Signature manifestation (SignatureMeaning field di audit log) | ✅ Default ON | – |
+| §11.200(a)(1) Two distinct MFA components (TOTP + password) | ✅ Default OFF | User meng-enable via Settings → MFA |
+| §11.300(c) Periodic password change (max-age) + password history (no reuse) | ✅ Default OFF | `PasswordPolicy:MaxAgeDays=90`, `PasswordPolicy:HistorySize=10` |
+| §11.300(d) Automatic logoff (idle timeout + max session length) | ✅ Default ON | `Session:IdleMinutes=30`, `Session:MaxHours=8` |
+| Two-person rule (dual approval untuk role template publish) | ✅ Default OFF | `TwoPerson:Enabled=true` |
+
+### ISO 27001
+
+| Kontrol | Status | Aktifasi |
+|---------|--------|---------|
+| A.9.4.2 Secure logon (MFA TOTP) | ✅ Opt-in | User via Settings |
+| A.9.4.3 Password management (history + max-age + composition) | ✅ Default ON | `PasswordPolicy:*` |
+| A.10 Cryptography (DPAPI encryption untuk Site.DatabaseConnectionString) | ✅ Opt-in | `ConnectionProtection:Enabled=true` |
+| A.16 Incident management (audit trail as forensic source) | ✅ Default ON | – |
+
+### Data Integrity (ALCOA+)
+
+| Prinsip | Implementasi |
+|---------|-------------|
+| **A**ttributable | ActorEmail + ActorIp + ActorUserAgent di setiap audit entry |
+| **L**egible | JSON + human-readable DTO |
+| **C**ontemporaneous | `DateTime.UtcNow` saat event, dalam hash chain |
+| **O**riginal | Capture `BeforeJson` + `AfterJson` (keduanya masuk hash chain) |
+| **A**ccurate | FluentValidation + DomainException |
+| **C**omplete | Semua operasi material diaudit (termasuk update + revoke yang sebelumnya gap) |
+| **C**onsistent | Hash chain SHA-256 (PreviousHash + Before + After + SignatureMeaning) |
+| **E**nduring | Retensi 10 tahun default, archive-then-delete dengan audit.purge entry |
+| **A**vailable | Queryable via `/api/audit/logs` + BeforeJson/AfterJson ekspos di DTO |
+
+### Config Keys Baru (appsettings.json)
+
+```json
+{
+  "PasswordPolicy": {
+    "MinLength": 12,
+    "MaxLength": 256,
+    "RequireUpper": true,
+    "RequireLower": true,
+    "RequireDigit": true,
+    "RequireSymbol": true,
+    "HistorySize": 10,
+    "MaxAgeDays": 90
+  },
+  "Session": {
+    "IdleMinutes": 30,
+    "MaxHours": 8
+  },
+  "Mfa": {
+    "Issuer": "Syntera IAM"
+  },
+  "TwoPerson": {
+    "Enabled": false,
+    "ApplyToPublish": true
+  },
+  "ConnectionProtection": {
+    "Enabled": true
+  }
+}
+```
+
+### Migrasi Otomatis (ComplianceMigrator)
+
+Pertama kali Backend atau DbSetup dijalankan setelah update ini, `ComplianceMigrator` (idempotent SQL) akan menambahkan:
+- `PlatformUsers.TotpSecret`, `TotpEnabled`, `PasswordChangedAt` (kolom MFA + password age)
+- `RefreshTokens.LastUsedAt` (di Platform + semua Site DB)
+- `AuditLogs.BeforeJson`, `AfterJson`, `SignatureMeaning` (di Platform + semua Site DB — beberapa mungkin sudah ada)
+- `PasswordHistory` table (Platform DB)
+- `RoleTemplateApprovals` table (Platform DB)
+
+Tidak ada intervensi manual — jalankan `./setup-db.sh` atau `dotnet run` seperti biasa.
+
+### Aktifasi Compliance Penuh untuk Production Regulated Environment
+
+```bash
+# Set environment variables untuk Production
+export SYNTERA_Audit__EnforceRetention=true
+export SYNTERA_Audit__RetentionYears=10
+export SYNTERA_PasswordPolicy__MaxAgeDays=90
+export SYNTERA_PasswordPolicy__HistorySize=10
+export SYNTERA_Session__IdleMinutes=15
+export SYNTERA_Session__MaxHours=8
+export SYNTERA_TwoPerson__Enabled=true
+export SYNTERA_ConnectionProtection__Enabled=true
+```
+
+Setelah login sebagai Platform Admin, aktifkan MFA via Settings → Multi-Factor Authentication. Tanpa MFA, account Platform Admin tidak memenuhi §11.200(a)(1).
+
+### Verifikasi Compliance
+
+Setelah setup, jalankan diagnostic:
+```bash
+./diagnose.sh
+```
+
+Atau query audit trail untuk verifikasi hash chain:
+```sql
+USE syntera_master;
+-- Cek chain terakhir
+SELECT TOP 5 Id, Action, Timestamp, Hash, PreviousHash, SignatureMeaning
+FROM AuditLogs ORDER BY Id DESC;
+
+-- Verifikasi chain (pseudocode — implementasi tool verifikasi terpisah)
+-- Untuk setiap row, recompute Hash dan bandingkan dengan stored Hash.
+-- Mismatch = indikasi tampering.
+```
+
+### Catatan untuk Auditor
+
+1. **DPAPI Key Ring Backup**: direktori `DataProtection:KeyPath` (default `/var/lib/syntera/keys`) WAJIB di-backup. Jika hilang, semua secret terenkripsi (TOTP secrets + connection strings) tidak bisa didekripsi.
+2. **Audit Log Backup**: Platform DB + semua Site DB berisi audit logs. Backup semua DB secara independen (lihat Operational Runbook di README.md).
+3. **Two-Person Approval**: ketika `TwoPerson:Enabled=true`, semua publish role template memerlukan approval dari Platform Admin kedua yang berbeda dari requester (self-approval dilarang — `SELF_APPROVAL_FORBIDDEN`).
+4. **Session Timeout**: idle 30 menit + max 8 jam — diatur agar sesuai SOP. Untuk audit FDA, dokumentasikan nilai spesifik yang digunakan.

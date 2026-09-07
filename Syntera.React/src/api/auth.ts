@@ -29,6 +29,9 @@ import { post, get } from "./client";
 import type {
   LoginRequest,
   LoginResponse,
+  LoginMfaRequest,
+  MfaSetupResponse,
+  ChangePasswordRequest,
   RefreshResponse,
   UserProfile,
 } from "../types";
@@ -36,8 +39,93 @@ import { useAuthStore } from "../store/authStore";
 
 export async function login(req: LoginRequest): Promise<LoginResponse> {
   const data = await post<LoginResponse>("/auth/login", req);
+  // Sprint 3.2: only commit tokens to the store when the response is a
+  // full, usable login. If the backend signals `requiresMfa` or
+  // `requiresPasswordChange`, the response carries a single-use
+  // challenge token instead of an access token — the caller (LoginPage)
+  // must drive the next step before we mark the user "authenticated".
+  if (!data.requiresMfa && !data.requiresPasswordChange) {
+    useAuthStore.getState().login(data);
+  }
+  return data;
+}
+
+/**
+ * Sprint 3.2 — complete login after an MFA challenge.
+ *
+ * Call this with the `mfaChallengeToken` returned from `/auth/login`
+ * (when `requiresMfa === true`) plus the 6-digit TOTP code from the
+ * user's authenticator app. On success the backend returns the full
+ * `LoginResponse` (with a real access token this time) and we commit
+ * it to the auth store — same path as a normal `login()` success.
+ */
+export async function loginMfa(req: LoginMfaRequest): Promise<LoginResponse> {
+  const data = await post<LoginResponse>("/auth/login-mfa", req);
   useAuthStore.getState().login(data);
   return data;
+}
+
+/**
+ * Sprint 3.2 — start MFA enrollment.
+ *
+ * Requires an active session (Bearer token). The backend generates a
+ * new TOTP secret, stores it in `UserMfaSecret` (status: Pending) and
+ * returns both an otpauth:// URL (`qrCodeUrl`) and the `plaintextSecret`
+ * for manual entry. The secret is NOT yet active until `confirmMfa`
+ * succeeds with a valid 6-digit code.
+ *
+ * SECURITY: the plaintext secret must never be persisted client-side
+ * (no localStorage, no console log, no error reporting). The SettingsPage
+ * keeps it in component state only for the duration of the setup flow
+ * and clears it on unmount / cancel.
+ */
+export async function setupMfa(): Promise<MfaSetupResponse> {
+  return await post<MfaSetupResponse>("/auth/mfa/setup", {});
+}
+
+/**
+ * Sprint 3.2 — confirm MFA enrollment.
+ *
+ * After `setupMfa`, the user enters a 6-digit code from their
+ * authenticator app. The backend verifies it against the pending
+ * secret and, on success, flips `UserMfaSecret.Status` to `Active`.
+ * On failure the pending secret stays and the user can retry (or the
+ * setup token times out, at which point a fresh `setupMfa` call is
+ * needed).
+ */
+export async function confirmMfa(code: string): Promise<void> {
+  await post("/auth/mfa/confirm", { code });
+}
+
+/**
+ * Sprint 3.2 — disable MFA.
+ *
+ * Requires the user's current 6-digit TOTP code as a proof-of-possession
+ * check (so an attacker who briefly borrows an unlocked browser can't
+ * silently strip MFA protection). On success the backend marks the
+ * secret as Disabled.
+ */
+export async function disableMfa(code: string): Promise<void> {
+  await post("/auth/mfa/disable", { code });
+}
+
+/**
+ * Sprint 3.2 — change password.
+ *
+ * Two call shapes:
+ *   - Authenticated change (SettingsPage): send `currentPassword` +
+ *     `newPassword`. The Bearer token authorises the request.
+ *   - Forced change on login (LoginPage, after `requiresPasswordChange`
+ *     === true): send `passwordChangeChallengeToken` + `newPassword`.
+ *     No Bearer token is available — the challenge token substitutes
+ *     for it.
+ *
+ * The new password MUST satisfy the backend's PasswordPolicy
+ * (12–256 chars, upper, lower, digit, symbol). Client-side validation
+ * runs first to avoid a roundtrip; the backend re-validates.
+ */
+export async function changePassword(req: ChangePasswordRequest): Promise<void> {
+  await post("/auth/change-password", req);
 }
 
 export async function logout(): Promise<void> {

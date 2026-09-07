@@ -39,6 +39,14 @@ public sealed class AuthController : ApiControllerBase
     /// <summary>
     /// Authenticate by email + password. Email domain determines auth method:
     /// @syntera.com → Platform Admin (local), anything else → site LDAP.
+    ///
+    /// <para>COMPLIANCE (Sprint 2.3): the response may now carry
+    /// <see cref="LoginResponse.RequiresMfa"/> or
+    /// <see cref="LoginResponse.RequiresPasswordChange"/> instead of a
+    /// full token pair. When either is true, <c>AccessToken</c> and
+    /// <c>RefreshToken</c> are empty and the client MUST follow the
+    /// corresponding challenge token (call POST /api/auth/login-mfa or
+    /// POST /api/auth/change-password, respectively).</para>
     /// </summary>
     [HttpPost("login")]
     [AllowAnonymous]
@@ -62,7 +70,62 @@ public sealed class AuthController : ApiControllerBase
             // cross-site CSRF on auth endpoints. Secure=true in Production
             // (HTTPS only). Path=/api/auth scopes the cookie to auth routes
             // only — business API calls don't carry it.
-            SetRefreshCookie(result.RefreshToken, result.Profile.Scope);
+            //
+            // COMPLIANCE (Sprint 2.3): only set the cookie when we actually
+            // issued a refresh token. Challenge responses (MFA / forced
+            // password change) return an empty refresh token and must NOT
+            // overwrite any existing cookie with an empty value (which would
+            // effectively log the user out of an existing valid session).
+            if (!result.RequiresMfa && !result.RequiresPasswordChange
+                && !string.IsNullOrEmpty(result.RefreshToken))
+            {
+                SetRefreshCookie(result.RefreshToken, result.Profile.Scope);
+            }
+            return Ok(result);
+        }
+        catch (Models.DomainException ex)
+        {
+            return ex is Models.AuthenticationException
+                ? Unauthorized(ApiResponse<object>.Fail(ex.Code, ex.Message))
+                : BadRequest(ApiResponse<object>.Fail(ex.Code, ex.Message));
+        }
+    }
+
+    /// <summary>
+    /// COMPLIANCE (Sprint 2.3): complete the login flow after the user
+    /// provided a valid password but had MFA enabled. Accepts the MFA
+    /// challenge token (issued by POST /api/auth/login with
+    /// <see cref="LoginResponse.RequiresMfa"/> = true) and a 6-digit TOTP
+    /// code from the user's authenticator app. On success, returns the
+    /// full access + refresh tokens (same shape as a normal login
+    /// response). On failure, returns 401 with INVALID_MFA_CODE (or
+    /// INVALID_MFA_CHALLENGE if the challenge token itself is bad).
+    /// </summary>
+    [HttpPost("login-mfa")]
+    [AllowAnonymous]
+    [EnableRateLimiting("auth")]
+    [ProducesResponseType(typeof(ApiResponse<LoginResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> LoginMfa([FromBody] LoginMfaRequest? req, CancellationToken ct)
+    {
+        if (req is null
+            || string.IsNullOrWhiteSpace(req.MfaChallengeToken)
+            || string.IsNullOrWhiteSpace(req.Code))
+            return BadRequest(ApiResponse<object>.Fail("INVALID_INPUT",
+                "MFA challenge token and code are required."));
+
+        var ip = HttpContext.Connection.RemoteIpAddress?.ToString();
+        var ua = Request.Headers.UserAgent.ToString();
+
+        try
+        {
+            var result = await _auth.LoginMfaAsync(req, ip, ua, ct);
+            // MFA-success path that returns a password-change challenge (the
+            // admin had both MFA enabled AND an expired password) returns no
+            // refresh token; don't touch the cookie in that case.
+            if (!result.RequiresPasswordChange && !string.IsNullOrEmpty(result.RefreshToken))
+                SetRefreshCookie(result.RefreshToken, result.Profile.Scope);
             return Ok(result);
         }
         catch (Models.DomainException ex)
@@ -169,30 +232,142 @@ public sealed class AuthController : ApiControllerBase
     /// M7: change the calling Platform Admin's password. Enforces password
     /// policy (length, complexity), verifies current password, refuses
     /// no-op rotation. Site users change their password in AD, not here.
+    ///
+    /// <para>COMPLIANCE (Sprint 2.3): the endpoint is anonymous so the
+    /// FORCED password-change flow can use the password-change challenge
+    /// token (issued by POST /api/auth/login with
+    /// <see cref="LoginResponse.RequiresPasswordChange"/> = true) when the
+    /// password has exceeded its max-age. The AuthService enforces
+    /// authentication via either the bearer JWT (voluntary change while
+    /// authenticated) OR the challenge token (forced change). At least one
+    /// of <see cref="ChangePasswordRequest.CurrentPassword"/> or
+    /// <see cref="ChangePasswordRequest.PasswordChangeChallengeToken"/>
+    /// must be present — when only the challenge token is present, the
+    /// current-password check is skipped (the challenge token already
+    /// proves identity via JWT signature).</para>
     /// </summary>
     [HttpPost("change-password")]
-    [Authorize]
+    [AllowAnonymous]
+    [EnableRateLimiting("auth")]
     public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest? req, CancellationToken ct)
     {
-        if (req is null
-            || string.IsNullOrWhiteSpace(req.CurrentPassword)
-            || string.IsNullOrWhiteSpace(req.NewPassword))
+        // Allow either currentPassword (voluntary) or challenge token (forced).
+        // The AuthService validates whichever path is taken.
+        if (req is null || string.IsNullOrWhiteSpace(req.NewPassword))
             return BadRequest(ApiResponse<object>.Fail("INVALID_INPUT",
-                "Current and new passwords are required."));
+                "New password is required."));
+        if (string.IsNullOrWhiteSpace(req.CurrentPassword)
+            && string.IsNullOrWhiteSpace(req.PasswordChangeChallengeToken))
+            return BadRequest(ApiResponse<object>.Fail("INVALID_INPUT",
+                "Either current password or a password-change challenge token is required."));
 
         var ip = HttpContext.Connection.RemoteIpAddress?.ToString();
         var ua = Request.Headers.UserAgent.ToString();
 
         try
         {
-            await _auth.ChangePasswordAsync(req.CurrentPassword, req.NewPassword, ip, ua, ct);
+            await _auth.ChangePasswordAsync(
+                currentPassword: req.CurrentPassword ?? "",
+                newPassword: req.NewPassword,
+                ip: ip,
+                userAgent: ua,
+                ct: ct,
+                passwordChangeChallengeToken: req.PasswordChangeChallengeToken);
             return Ok(ApiResponse<object>.Ok(null, "Password changed."));
         }
         catch (Models.DomainException ex)
         {
+            // Authorization + BusinessRule + Authentication exceptions
+            // (NOT_PLATFORM_ADMIN, WRONG_CURRENT_PASSWORD,
+            // PASSWORD_POLICY_VIOLATION, INVALID_CHALLENGE, etc.) —
+            // surface as 400 (or 401 for AuthenticationException) with
+            // the structured envelope.
+            return ex is Models.AuthenticationException
+                ? Unauthorized(ApiResponse<object>.Fail(ex.Code, ex.Message))
+                : BadRequest(ApiResponse<object>.Fail(ex.Code, ex.Message));
+        }
+    }
+
+    // ── COMPLIANCE (Sprint 2.3): MFA (TOTP) endpoints ────────────────────
+
+    /// <summary>
+    /// COMPLIANCE (Sprint 2.3): Begin MFA (TOTP) enrollment for the
+    /// authenticated Platform Admin. Returns an otpauth:// URL (for QR
+    /// code generation) and the plaintext Base32 secret (for manual entry
+    /// on devices without a camera). MFA is NOT enabled until the user
+    /// confirms via POST /api/auth/mfa/confirm with a valid TOTP code.
+    /// </summary>
+    [HttpPost("mfa/setup")]
+    [Authorize]
+    [ProducesResponseType(typeof(ApiResponse<MfaSetupResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> MfaSetup(CancellationToken ct)
+    {
+        try
+        {
+            var result = await _auth.SetupMfaAsync(ct);
+            return Ok(result);
+        }
+        catch (Models.DomainException ex)
+        {
+            return BadRequest(ApiResponse<object>.Fail(ex.Code, ex.Message));
+        }
+    }
+
+    /// <summary>
+    /// COMPLIANCE (Sprint 2.3): Confirm MFA enrollment. Verifies the
+    /// supplied TOTP code against the secret generated by POST
+    /// /api/auth/mfa/setup; on success enables MFA for the calling
+    /// Platform Admin. From this point forward, login requires both
+    /// password AND a valid TOTP code.
+    /// </summary>
+    [HttpPost("mfa/confirm")]
+    [Authorize]
+    public async Task<IActionResult> MfaConfirm([FromBody] ConfirmMfaRequest? req, CancellationToken ct)
+    {
+        if (req is null || string.IsNullOrWhiteSpace(req.Code))
+            return BadRequest(ApiResponse<object>.Fail("INVALID_INPUT",
+                "Authentication code is required."));
+
+        try
+        {
+            await _auth.ConfirmMfaAsync(req.Code, ct);
+            return Ok(ApiResponse<object>.Ok(null, "MFA enabled."));
+        }
+        catch (Models.DomainException ex)
+        {
             // Authorization + BusinessRule exceptions (NOT_PLATFORM_ADMIN,
-            // WRONG_CURRENT_PASSWORD, PASSWORD_POLICY_VIOLATION, etc.)
-            // — surface as 400 with structured envelope.
+            // MFA_NOT_SETUP, INVALID_MFA_CODE, etc.) — surface as 400.
+            // AuditWriteException (from LogCriticalAsync) is a runtime
+            // exception that bubbles up to the global exception middleware
+            // and surfaces as a 5xx (compliance: a failed audit write
+            // MUST fail the business operation).
+            return BadRequest(ApiResponse<object>.Fail(ex.Code, ex.Message));
+        }
+    }
+
+    /// <summary>
+    /// COMPLIANCE (Sprint 2.3): Disable MFA for the authenticated Platform
+    /// Admin. Requires a current valid TOTP code (re-verifies the user has
+    /// the authenticator device) to prevent accidental or
+    /// attacker-initiated disable. On success, clears the stored secret
+    /// and sets TotpEnabled=false.
+    /// </summary>
+    [HttpPost("mfa/disable")]
+    [Authorize]
+    public async Task<IActionResult> MfaDisable([FromBody] DisableMfaRequest? req, CancellationToken ct)
+    {
+        if (req is null || string.IsNullOrWhiteSpace(req.Code))
+            return BadRequest(ApiResponse<object>.Fail("INVALID_INPUT",
+                "Authentication code is required to disable MFA."));
+
+        try
+        {
+            await _auth.DisableMfaAsync(req.Code, ct);
+            return Ok(ApiResponse<object>.Ok(null, "MFA disabled."));
+        }
+        catch (Models.DomainException ex)
+        {
             return BadRequest(ApiResponse<object>.Fail(ex.Code, ex.Message));
         }
     }
@@ -264,8 +439,8 @@ public sealed class AuthController : ApiControllerBase
 
 public record RefreshSiteRequest(string RefreshToken, Guid SiteId);
 
-/// <summary>
-/// M7: request body for POST /api/auth/change-password. The caller must be
-/// an authenticated Platform Admin (site users change their password in AD).
-/// </summary>
-public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
+// NOTE: ChangePasswordRequest has moved to Models/Dtos/Auth/AuthDtos.cs
+// (Sprint 2.3) so it can carry the optional PasswordChangeChallengeToken
+// field used by the forced-change flow. The DTO is in the
+// Syntera.Backend.Models.Dtos.Auth namespace, which this controller
+// already imports.

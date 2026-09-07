@@ -22,12 +22,79 @@ export interface LoginRequest {
   password: string;
 }
 
+/**
+ * Sprint 3.2 — MFA + forced password-change support.
+ *
+ * The four new optional fields default to `false` / `null` on the backend,
+ * so existing JSON clients (pre-MFA) continue to deserialize the response
+ * without any client-side change. A forward-compatible client (this one)
+ * reads them to drive a multi-step login flow:
+ *
+ *   1. `requiresMfa === true`         → step = "mfa"          (loginMfa)
+ *   2. `requiresPasswordChange === true` → step = "passwordChange" (changePassword)
+ *   3. otherwise                       → normal dashboard navigation
+ *
+ * IMPORTANT: when either `requiresMfa` or `requiresPasswordChange` is true,
+ * the response DOES NOT contain a usable access token — `accessToken` is
+ * empty/omitted, `profile` may be empty, and `useAuthStore.login(data)`
+ * must NOT be called. The backend instead hands back a short-lived
+ * single-use challenge token (`mfaChallengeToken` / `passwordChangeChallengeToken`)
+ * that the client must replay with the corresponding `/api/auth/login-mfa`
+ * or `/api/auth/change-password` call to obtain a real access token.
+ */
 export interface LoginResponse {
   accessToken: string;
   expiresAt: string;
   refreshToken: string;
   profile: UserProfile;
   theme: ThemeBundle;
+  /** True when the user has MFA enabled and must supply a TOTP code. */
+  requiresMfa?: boolean;
+  /** Single-use token to send to /api/auth/login-mfa; null when MFA not required. */
+  mfaChallengeToken?: string | null;
+  /** True when the user's password has expired and must be rotated before login. */
+  requiresPasswordChange?: boolean;
+  /** Single-use token to send to /api/auth/change-password; null when not required. */
+  passwordChangeChallengeToken?: string | null;
+}
+
+/** Body for POST /api/auth/login-mfa — completes login after MFA challenge. */
+export interface LoginMfaRequest {
+  mfaChallengeToken: string;
+  code: string;
+}
+
+/** Response from POST /api/auth/mfa/setup — contains QR URL + plaintext secret. */
+export interface MfaSetupResponse {
+  qrCodeUrl: string;
+  plaintextSecret: string;
+}
+
+/** Body for POST /api/auth/mfa/confirm — verifies TOTP + enables MFA. */
+export interface ConfirmMfaRequest {
+  code: string;
+}
+
+/** Body for POST /api/auth/mfa/disable — verifies TOTP + disables MFA. */
+export interface DisableMfaRequest {
+  code: string;
+}
+
+/**
+ * Body for POST /api/auth/change-password.
+ *
+ * Two paths:
+ *   - Normal authenticated change (logged in user): send `currentPassword` only.
+ *   - Forced change on login (challenge token path): send
+ *     `passwordChangeChallengeToken` instead of `currentPassword`.
+ *
+ * `newPassword` is always required and must satisfy PasswordPolicy
+ * (12-256 chars, ≥1 upper, ≥1 lower, ≥1 digit, ≥1 symbol).
+ */
+export interface ChangePasswordRequest {
+  currentPassword?: string;
+  newPassword: string;
+  passwordChangeChallengeToken?: string;
 }
 
 export interface RefreshResponse {
@@ -172,6 +239,62 @@ export interface PermissionGroupDto {
   permissions: PermissionDto[];
 }
 
+// ── Role Template Publish Approvals (Sprint 2.7 — Two-Person Rule) ────
+// When TwoPerson:Enabled=true on the backend, POST /role-templates/{id}/publish
+// creates a pending approval instead of publishing immediately. A second
+// Platform Admin must call /approve (or /reject) to complete the workflow.
+// Per 21 CFR Part 11 §11.10(g) the requester cannot self-approve.
+
+/**
+ * Result of POST /api/platform/role-templates/{id}/publish.
+ *
+ * - `status === "published"` (or, for backward compat, no status field at
+ *   all): the publish completed immediately (TwoPerson:Enabled=false, the
+ *   default). `approvalId` is undefined.
+ * - `status === "pending"`: a pending approval row was created. `approvalId`
+ *   points to it; the frontend should redirect to the approval review page.
+ */
+export interface PublishResultDto {
+  success?: boolean; // Present in the legacy shape; ignored by the frontend.
+  status: "published" | "pending";
+  approvalId?: string;
+}
+
+/**
+ * Denormalized view of a RoleTemplateApproval row joined with the role
+ * template (key + display name) and platform users (requester/approver
+ * emails). `requestedSnapshotJson` is the template's state at request
+ * time, so the reviewer can detect if the requester edited the template
+ * between request and approval.
+ */
+export interface RoleTemplateApprovalDto {
+  id: string;
+  roleTemplateId: string;
+  roleTemplateKey: string;
+  roleTemplateDisplayName: string;
+  requestedBy: string;
+  requestedByEmail: string;
+  requestedAt: string;
+  requestedSnapshotJson: string;
+  status: "pending" | "approved" | "rejected" | "superseded";
+  actionBy: string | null;
+  actionByEmail: string | null;
+  actionAt: string | null;
+  rejectionReason: string | null;
+  requesterSignatureMeaning: string | null;
+  approverSignatureMeaning: string | null;
+}
+
+/** Body for POST /api/platform/role-templates/{id}/approve. 21 CFR Part 11 §11.50. */
+export interface ApprovePublishRequest {
+  signatureMeaning: string;
+}
+
+/** Body for POST /api/platform/role-templates/{id}/reject. Self-rejection allowed. */
+export interface RejectPublishRequest {
+  reason: string;
+}
+
 // ── Users ──────────────────────────────────────────────
 export interface UserDto {
   id: string;
@@ -273,6 +396,12 @@ export interface AuditLogDto {
   targetId: string | null;
   outcome: "success" | "failure";
   errorMessage: string | null;
+  /** Previous state snapshot (for update events). NULL for create/disable events. */
+  beforeJson: string | null;
+  /** Post-state snapshot (or new entity representation). NULL for delete/disable events. */
+  afterJson: string | null;
+  /** 21 CFR Part 11 §11.50 signature meaning (e.g., "I approve this role grant"). NULL → "action performed". */
+  signatureMeaning: string | null;
 }
 
 export interface AuditLogQuery {

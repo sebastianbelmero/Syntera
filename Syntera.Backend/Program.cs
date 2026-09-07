@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -59,6 +60,35 @@ try
     builder.Services.AddSynteraOpenApi();
     builder.Services.AddSynteraSecurity(builder.Configuration);
 
+    // ─── DI: Data Protection (DPAPI key ring) ─────────────────────────
+    // COMPLIANCE (Sprint 2.3): TOTP secrets are encrypted at rest via
+    // ASP.NET Core Data Protection. The key ring must be persisted to a
+    // stable location so that secrets remain decryptable across app
+    // restarts. In dev the path falls back to a local "keys" folder
+    // (created on demand); in production the path comes from
+    // DataProtection:KeyPath (default /var/lib/syntera/keys) and MUST be
+    // a durable, backed-up location — losing the key ring invalidates
+    // every MFA secret and forces every platform admin to re-enroll.
+    var dpKeyPath = builder.Configuration["DataProtection:KeyPath"] ?? "/var/lib/syntera/keys";
+    var dpKeyDir = new DirectoryInfo(dpKeyPath);
+    if (!dpKeyDir.Exists)
+    {
+        try { dpKeyDir.Create(); }
+        catch
+        {
+            // Fall back to a local "keys" folder if the configured path is
+            // not writable (typical in dev sandboxes). We log but do not
+            // throw — the default DataProtection behavior (ephemeral keys)
+            // would still let the app start, but MFA secrets wouldn't
+            // survive a restart.
+            dpKeyDir = new DirectoryInfo(Path.Combine(AppContext.BaseDirectory, "keys"));
+            dpKeyDir.Create();
+        }
+    }
+    builder.Services.AddDataProtection()
+        .PersistKeysToFileSystem(dpKeyDir)
+        .SetApplicationName("Syntera");
+
     // ─── DI: DbContexts ─────────────────────────────────────────────
     builder.Services.AddDbContext<PlatformDbContext>(opt =>
         opt.UseSqlServer(
@@ -67,6 +97,18 @@ try
             sql => sql.MigrationsHistoryTable("__EFMigrationsHistory_Platform")));
 
     builder.Services.AddScoped<Syntera.Backend.Data.ISiteDbContextFactory, SiteDbContextFactory>();
+
+    // COMPLIANCE (Sprint 2.6): encrypts per-site SQL Server connection
+    // strings at rest via ASP.NET Core Data Protection. Scoped because
+    // SiteDbContextFactory (also Scoped) consumes it directly, and
+    // because the protector's IsEnabled check reads IConfiguration on
+    // every call — making it Scoped (not Singleton) keeps the door open
+    // for a per-request decrypt cache in the future without changing
+    // the registration. Backed by the same DPAPI key ring registered
+    // above (purpose "Syntera.ConnectionString.v1"). The key ring at
+    // DataProtection:KeyPath MUST be backed up — losing it makes every
+    // encrypted connection string undecryptable.
+    builder.Services.AddScoped<IConnectionStringProtector, ConnectionStringProtector>();
 
     // ─── DI: Services ─────────────────────────────────────────────
     builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
@@ -84,6 +126,11 @@ try
     // (Platform Admin). Site users authenticate via LDAP — their policy
     // is AD's, not ours.
     builder.Services.AddSingleton<IPasswordPolicy, PasswordPolicy>();
+    // COMPLIANCE (Sprint 2.3): TOTP (MFA) service. Singleton — stateless
+    // after construction (the IDataProtector is the only state and is
+    // thread-safe). The DPAPI key ring is owned by the
+    // IDataProtectionProvider, which is itself a singleton.
+    builder.Services.AddSingleton<ITotpService, TotpService>();
 
     // ─── M5: background audit log retention sweeper ────────────────
     // Daily pass that deletes audit log rows older than Audit:RetentionYears.
@@ -124,10 +171,11 @@ try
     app.MapControllers();
     app.MapHealthChecks("/health");
 
-    // ─── Database init ───────────────────────────────────────────
+    // ─── Database init ───────────────────────────────────────────────────
     using (var scope = app.Services.CreateScope())
     {
         var platformDb = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+        var siteDbFactory = scope.ServiceProvider.GetRequiredService<ISiteDbContextFactory>();
         var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
 
         if (app.Environment.IsDevelopment())
@@ -135,7 +183,18 @@ try
             await DatabaseInitializer.MigrateOrBaselineAsync(platformDb, logger);
         }
 
-        await DbSeeder.SeedPlatformAsync(platformDb, app.Configuration, logger);
+        await DbSeeder.SeedPlatformAsync(
+            platformDb,
+            app.Configuration,
+            logger,
+            scope.ServiceProvider.GetService<IConnectionStringProtector>());
+
+        // COMPLIANCE (Sprint 2.2): apply compliance schema additions (MFA,
+        // PasswordHistory, RefreshToken.LastUsedAt, AuditLog.SignatureMeaning,
+        // RoleTemplateApprovals) to Platform DB + all enabled site DBs.
+        // Idempotent — safe to run on every startup.
+        await ComplianceMigrator.ApplyPlatformAsync(platformDb, logger);
+        await ComplianceMigrator.ApplyAllSitesAsync(platformDb, siteDbFactory, logger);
     }
 
     app.Run();

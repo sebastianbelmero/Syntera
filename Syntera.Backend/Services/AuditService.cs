@@ -11,18 +11,50 @@ namespace Syntera.Backend.Services;
 
 /// <summary>
 /// Append-only, hash-chained audit log writer. Each entry's hash is
-/// computed over (PreviousHash + canonical JSON of the entry). The chain
-/// makes any retroactive tampering detectable: a verifier recomputes the
-/// chain from row 1 and compares.
+/// computed over (PreviousHash + canonical fields + BeforeJson + AfterJson).
+/// The chain makes any retroactive tampering detectable: a verifier
+/// recomputes the chain from row 1 and compares.
 ///
-/// Retention: controlled by Platform setting <c>Audit:RetentionYears</c>
-/// (default 10). A monthly background job archives rows older than the
-/// retention window to cold storage and prunes them from the hot table.
-/// Archived rows are kept indefinitely in cold storage for compliance.
+/// <para><b>COMPLIANCE (M3-fix):</b> Both <c>BeforeJson</c> AND <c>AfterJson</c>
+/// are now included in the hash payload. Previously only <c>AfterJson</c>
+/// was hashed — an attacker with DB write access could tamper with
+/// <c>BeforeJson</c> (the "previous state" snapshot in an update event)
+/// and the chain hash would still validate. This closes the integrity
+/// gap for full ALCOA+ "Original" + "Consistent" compliance.</para>
+///
+/// <para><b>COMPLIANCE (Critical audit writes):</b> <see cref="LogCriticalAsync"/>
+/// throws <see cref="AuditWriteException"/> on failure. Sensitive operations
+/// (user.update, role_template.update, permission.grant, role_template.publish,
+/// business_admin.assign, system_admin.assign) MUST use this method to
+/// ensure the business operation is treated as failed if its audit trail
+/// cannot be written. The regular <see cref="LogAsync"/> retains its
+/// best-effort, never-throw behavior for non-critical events.</para>
+///
+/// <para>Retention: controlled by <c>Audit:RetentionYears</c> (default 10).
+/// The <c>AuditRetentionService</c> archives old rows: it first writes an
+/// <c>audit.purge</c> entry recording what is being purged (count, oldest
+/// timestamp, newest timestamp, last hash before purge), then performs
+/// the raw SQL DELETE. The chain remains verifiable because the
+/// <c>audit.purge</c> entry's <c>PreviousHash</c> references the last
+/// surviving entry's hash.</para>
 /// </summary>
 public interface IAuditService
 {
-    Task LogAsync(AuditEntry entry, CancellationToken ct = default);
+    /// <summary>
+    /// Best-effort audit log write. Returns <c>true</c> on success,
+    /// <c>false</c> on failure (failure is logged but never thrown).
+    /// Use this for non-critical events where the business operation
+    /// should succeed even if the audit trail write fails.
+    /// </summary>
+    Task<bool> LogAsync(AuditEntry entry, CancellationToken ct = default);
+
+    /// <summary>
+    /// Critical audit log write — throws <see cref="AuditWriteException"/>
+    /// on failure. Sensitive operations MUST use this to ensure that
+    /// a missing audit trail is treated as a failed business operation
+    /// (21 CFR Part 11 §11.10(e) "reliable audit trails").
+    /// </summary>
+    Task LogCriticalAsync(AuditEntry entry, CancellationToken ct = default);
 
     /// <summary>Read audit logs. Filtered by site scope automatically based on current user.</summary>
     Task<IReadOnlyList<AuditLogDto>> QueryAsync(AuditQuery query, CancellationToken ct = default);
@@ -40,7 +72,14 @@ public sealed record AuditEntry(
     string Outcome,
     string? ErrorMessage = null,
     string? BeforeJson = null,
-    string? AfterJson = null);
+    string? AfterJson = null,
+    /// <summary>
+    /// 21 CFR Part 11 §11.50 — signature manifestation. The meaning
+    /// associated with the recorded action (e.g., "I approve this role
+    /// template for publication", "I authorize this direct permission
+    /// grant"). Default "action performed" for backward compatibility.
+    /// </summary>
+    string? SignatureMeaning = null);
 
 public sealed record AuditLogDto(
     long Id,
@@ -54,7 +93,13 @@ public sealed record AuditLogDto(
     string? TargetType,
     string? TargetId,
     string Outcome,
-    string? ErrorMessage);
+    string? ErrorMessage,
+    /// <summary>Previous state snapshot (for update events). NULL for create/disable events.</summary>
+    string? BeforeJson,
+    /// <summary>Post-state snapshot (or new entity representation). NULL for delete/disable events.</summary>
+    string? AfterJson,
+    /// <summary>21 CFR Part 11 §11.50 signature meaning.</summary>
+    string? SignatureMeaning);
 
 public sealed record AuditQuery(
     DateTime? From = null,
@@ -65,6 +110,26 @@ public sealed record AuditQuery(
     int Skip = 0,
     int Take = 50);
 
+/// <summary>
+/// Thrown when a critical audit log write fails. Sensitive operations
+/// that use <see cref="IAuditService.LogCriticalAsync"/> MUST propagate
+/// this exception to the caller — the business operation is treated as
+/// failed because its audit trail cannot be guaranteed (21 CFR Part 11
+/// §11.10(e) compliance).
+/// </summary>
+public sealed class AuditWriteException : Exception
+{
+    public AuditWriteException(string action, Exception inner)
+        : base($"Critical audit log write failed for action '{action}'. " +
+               $"The business operation cannot be considered complete without a reliable " +
+               $"audit trail (21 CFR Part 11 §11.10(e)). See inner exception for details.", inner)
+    {
+        Action = action;
+    }
+
+    public string Action { get; }
+}
+
 public sealed partial class AuditService : IAuditService
 {
     private readonly PlatformDbContext _platformDb;
@@ -74,6 +139,9 @@ public sealed partial class AuditService : IAuditService
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Failed to write audit log entry: {Action}")]
     private partial void LogAuditWriteFailure(Exception exception, string action);
+
+    [LoggerMessage(Level = LogLevel.Critical, Message = "CRITICAL audit write failure for action {Action} — business operation will be rolled back. Inner: {InnerMessage}")]
+    private partial void LogCriticalAuditWriteFailure(string action, string innerMessage);
 
     public AuditService(
         PlatformDbContext platformDb,
@@ -87,50 +155,74 @@ public sealed partial class AuditService : IAuditService
         _log = log;
     }
 
-    public async Task LogAsync(AuditEntry entry, CancellationToken ct = default)
+    public async Task<bool> LogAsync(AuditEntry entry, CancellationToken ct = default)
     {
         try
         {
-            var log = new AuditLog
-            {
-                Timestamp = DateTime.UtcNow,
-                SiteId = entry.SiteId,
-                ActorUserId = entry.ActorUserId,
-                ActorEmail = entry.ActorEmail,
-                ActorIp = entry.ActorIp,
-                ActorUserAgent = entry.ActorUserAgent,
-                Action = entry.Action,
-                TargetType = entry.TargetType,
-                TargetId = entry.TargetId,
-                Outcome = entry.Outcome,
-                ErrorMessage = entry.ErrorMessage,
-                BeforeJson = entry.BeforeJson,
-                AfterJson = entry.AfterJson,
-            };
-
-            // Write to the correct DB.
-            if (entry.SiteId is null)
-            {
-                // Platform-level audit → master DB.
-                log.PreviousHash = await GetLastHashAsync(_platformDb.AuditLogs, ct);
-                log.Hash = ComputeHash(log);
-                _platformDb.AuditLogs.Add(log);
-                await _platformDb.SaveChangesAsync(ct);
-            }
-            else
-            {
-                // Site-level audit → site DB.
-                var siteDb = await _siteDbFactory.ResolveAsync(ct);
-                log.PreviousHash = await GetLastHashAsync(siteDb.AuditLogs, ct);
-                log.Hash = ComputeHash(log);
-                siteDb.AuditLogs.Add(log);
-                await siteDb.SaveChangesAsync(ct);
-            }
+            await WriteAsync(entry, ct);
+            return true;
         }
         catch (Exception ex)
         {
-            // Audit log must NEVER cause a request to fail.
+            // Audit log must NEVER cause a request to fail (for non-critical events).
             LogAuditWriteFailure(ex, entry.Action);
+            return false;
+        }
+    }
+
+    public async Task LogCriticalAsync(AuditEntry entry, CancellationToken ct = default)
+    {
+        try
+        {
+            await WriteAsync(entry, ct);
+        }
+        catch (Exception ex)
+        {
+            // Critical audit failure — alert and re-throw so the caller can
+            // roll back the business operation. The caller MUST treat this
+            // as a failed operation (return 5xx to the client).
+            LogCriticalAuditWriteFailure(entry.Action, ex.Message);
+            throw new AuditWriteException(entry.Action, ex);
+        }
+    }
+
+    private async Task WriteAsync(AuditEntry entry, CancellationToken ct)
+    {
+        var log = new AuditLog
+        {
+            Timestamp = DateTime.UtcNow,
+            SiteId = entry.SiteId,
+            ActorUserId = entry.ActorUserId,
+            ActorEmail = entry.ActorEmail,
+            ActorIp = entry.ActorIp,
+            ActorUserAgent = entry.ActorUserAgent,
+            Action = entry.Action,
+            TargetType = entry.TargetType,
+            TargetId = entry.TargetId,
+            Outcome = entry.Outcome,
+            ErrorMessage = entry.ErrorMessage,
+            BeforeJson = entry.BeforeJson,
+            AfterJson = entry.AfterJson,
+            SignatureMeaning = entry.SignatureMeaning,
+        };
+
+        // Write to the correct DB.
+        if (entry.SiteId is null)
+        {
+            // Platform-level audit → master DB.
+            log.PreviousHash = await GetLastHashAsync(_platformDb.AuditLogs, ct);
+            log.Hash = ComputeHash(log);
+            _platformDb.AuditLogs.Add(log);
+            await _platformDb.SaveChangesAsync(ct);
+        }
+        else
+        {
+            // Site-level audit → site DB.
+            var siteDb = await _siteDbFactory.ResolveAsync(ct);
+            log.PreviousHash = await GetLastHashAsync(siteDb.AuditLogs, ct);
+            log.Hash = ComputeHash(log);
+            siteDb.AuditLogs.Add(log);
+            await siteDb.SaveChangesAsync(ct);
         }
     }
 
@@ -172,13 +264,22 @@ public sealed partial class AuditService : IAuditService
 
     private static string ComputeHash(AuditLog log)
     {
-        // SECURITY (M3): hash MUST include AfterJson (the "after" state snapshot
-        // of the affected entity). Without it, an attacker with DB write access
-        // could tamper with the AfterJson payload (e.g., hide what fields were
-        // actually changed in a user.update) and the chain hash would still
-        // validate. Including AfterJson closes this integrity gap.
+        // SECURITY (M3-fix): hash MUST include BOTH BeforeJson AND AfterJson.
+        // - AfterJson: the "after" state snapshot of the affected entity.
+        // - BeforeJson: the "previous" state snapshot (for update events).
+        //
+        // Without BeforeJson in the hash, an attacker with DB write access
+        // could tamper with the "previous state" payload (e.g., hide what
+        // fields were actually changed in a user.update) and the chain
+        // hash would still validate. Including both closes this integrity
+        // gap for full ALCOA+ "Original" + "Consistent" compliance.
+        //
+        // SignatureMeaning is also included to prevent tampering with the
+        // 21 CFR Part 11 §11.50 signature manifestation record.
+        var beforeJson = log.BeforeJson ?? "";
         var afterJson = log.AfterJson ?? "";
-        var payload = $"{log.PreviousHash}|{log.Timestamp:O}|{log.SiteId}|{log.ActorUserId}|{log.ActorEmail}|{log.Action}|{log.TargetType}|{log.TargetId}|{log.Outcome}|{log.ErrorMessage}|{afterJson}";
+        var signatureMeaning = log.SignatureMeaning ?? "";
+        var payload = $"{log.PreviousHash}|{log.Timestamp:O}|{log.SiteId}|{log.ActorUserId}|{log.ActorEmail}|{log.Action}|{log.TargetType}|{log.TargetId}|{log.Outcome}|{log.ErrorMessage}|{beforeJson}|{afterJson}|{signatureMeaning}";
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(payload)));
     }
 
@@ -194,5 +295,8 @@ public sealed partial class AuditService : IAuditService
         TargetType: x.TargetType,
         TargetId: x.TargetId,
         Outcome: x.Outcome,
-        ErrorMessage: x.ErrorMessage);
+        ErrorMessage: x.ErrorMessage,
+        BeforeJson: x.BeforeJson,
+        AfterJson: x.AfterJson,
+        SignatureMeaning: x.SignatureMeaning);
 }
