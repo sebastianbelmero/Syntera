@@ -188,17 +188,38 @@ static void EnsureDatabaseExists(string connStr, string dbName)
 {
     Log.Information("  Ensuring database '{Db}' exists...", dbName);
 
+    // DEBUG: log a sanitized view of the connection string so we can see
+    // exactly what EnsureDatabaseExists is sending to SqlClient. We hide
+    // any Password=... value to avoid leaking credentials in logs.
+    // This is critical for diagnosing protocol/instance-resolution issues.
+    var sanitized = System.Text.RegularExpressions.Regex.Replace(
+        connStr,
+        @"(Password|Pwd)\s*=\s*[^;]+",
+        "$1=***REDACTED***",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+    Log.Information("  [DEBUG] Original connection string: {Conn}", sanitized);
+
     // Parse to discover the original Initial Catalog (so the Replace
     // is exact, not a guess). SqlConnectionStringBuilder is read-only
     // here — we never use it to rebuild the connection string.
     var builder = new SqlConnectionStringBuilder(connStr);
     var originalDb = builder.InitialCatalog ?? string.Empty;
+    Log.Information("  [DEBUG] Parsed DataSource='{DataSource}', OriginalCatalog='{Catalog}'",
+        builder.DataSource, originalDb);
 
     // Preserve EVERYTHING in the original connection string — only swap
-    // the database name. This keeps the 'tcp:' protocol prefix intact.
+    // the database name. This keeps any protocol prefix (tcp:, np:, lpc:)
+    // intact so SqlClient uses the protocol the operator specified.
     var masterConnStr = string.IsNullOrEmpty(originalDb)
         ? connStr + (connStr.EndsWith(';') ? "" : ";") + "Database=master"
         : connStr.Replace($"Database={originalDb}", "Database=master", StringComparison.OrdinalIgnoreCase);
+
+    var sanitizedMaster = System.Text.RegularExpressions.Regex.Replace(
+        masterConnStr,
+        @"(Password|Pwd)\s*=\s*[^;]+",
+        "$1=***REDACTED***",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+    Log.Information("  [DEBUG] Master connection string: {Conn}", sanitizedMaster);
 
     using var conn = new SqlConnection(masterConnStr);
     conn.Open();
