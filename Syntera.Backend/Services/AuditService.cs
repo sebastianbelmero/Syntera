@@ -218,7 +218,19 @@ public sealed partial class AuditService : IAuditService
         else
         {
             // Site-level audit → site DB.
-            var siteDb = await _siteDbFactory.ResolveAsync(ct);
+            // COMPLIANCE FIX (Sprint 1.5 follow-up): use ResolveForSiteAsync
+            // with entry.SiteId.Value (provided by the caller) instead of
+            // ResolveAsync() (which reads from JWT _current.SiteId). The
+            // previous code broke Platform-Admin-initiated site-scoped
+            // audits (e.g. ldap.write, theme.write, business_admin.assign)
+            // because Platform Admin has no site_id in their JWT —
+            // ResolveAsync() threw InvalidOperationException. This bug was
+            // masked for years by LogAsync swallowing exceptions; Sprint
+            // 1.5 changed sensitive callers to LogCriticalAsync (which
+            // throws), exposing the latent bug. Use the explicit siteId
+            // from the AuditEntry — the caller knows which site it's
+            // auditing for.
+            var siteDb = await _siteDbFactory.ResolveForSiteAsync(entry.SiteId.Value, ct);
             log.PreviousHash = await GetLastHashAsync(siteDb.AuditLogs, ct);
             log.Hash = ComputeHash(log);
             siteDb.AuditLogs.Add(log);
