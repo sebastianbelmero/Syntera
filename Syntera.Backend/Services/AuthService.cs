@@ -1304,6 +1304,14 @@ public sealed class AuthService : IAuthService
             // M1: new tokens without an explicit FamilyId start a new family.
             // Rotation will propagate the parent's FamilyId via the caller.
             FamilyId = familyId ?? Guid.NewGuid(),
+            // COMPLIANCE (Sprint 2.5 fix): set LastUsedAt = UtcNow on creation
+            // so the idle-timeout check has a baseline. Previously, fresh
+            // login tokens had LastUsedAt = null which made the idle check
+            // silently skip — meaning a user could login, idle for 24h
+            // (well past IdleMinutes=30), then reload and still get refreshed
+            // (because LastUsedAt was null → check skipped). With this fix,
+            // the timer starts at login, so idle timeout applies uniformly.
+            LastUsedAt = DateTime.UtcNow,
         };
     }
 

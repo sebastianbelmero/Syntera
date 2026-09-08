@@ -431,8 +431,21 @@ public sealed class AuthController : ApiControllerBase
     /// </summary>
     private string? ReadRefreshToken(string? bodyToken)
     {
-        if (Request.Cookies.TryGetValue(RefreshCookieName, out var cookieToken) && !string.IsNullOrWhiteSpace(cookieToken))
+        // DEBUG (Sprint 2.5 fix): log whether the cookie was received so we
+        // can diagnose silent-refresh-on-reload issues. The cookie is
+        // httpOnly so the browser can't read it; we log only whether it
+        // was received (not the value itself) — that's enough to tell
+        // cookie-missing from cookie-revoked.
+        var hasCookie = Request.Cookies.TryGetValue(RefreshCookieName, out var cookieToken)
+                        && !string.IsNullOrWhiteSpace(cookieToken);
+        if (hasCookie)
+        {
+            _log.LogDebug("Refresh cookie received (length={Len}, scope={Scope})",
+                cookieToken!.Length, bodyToken is null ? "cookie-only" : "cookie+body");
             return cookieToken;
+        }
+        _log.LogDebug("Refresh cookie NOT received (fallback to body token: {HasBody})",
+            bodyToken is not null);
         return bodyToken;
     }
 }
