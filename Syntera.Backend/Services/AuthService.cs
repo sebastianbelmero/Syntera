@@ -1308,10 +1308,23 @@ public sealed class AuthService : IAuthService
 
     private RefreshToken BuildRefreshToken(Guid userId, string scope, Guid? siteId, string rawToken, string? ip, string? ua, Guid? familyId = null)
     {
+        // COMPLIANCE FIX (Sprint 2.5 — refresh-token hash mismatch):
+        // The previous code hashed the FULL rawToken (random.signature) via
+        // SHA256Hex(rawToken). But the verify path (RefreshAsync, RefreshSiteAsync,
+        // LogoutAsync) hashes ONLY the random part: SHA256Hex(TokenRandomPart(token)).
+        // This mismatch caused FirstOrDefaultAsync(t => t.TokenHash == hash) to
+        // ALWAYS return null → REFRESH_NOT_FOUND on every reload. The bug was
+        // masked for years because LogAsync swallowed audit-write failures
+        // silently (and the login flow itself didn't need to verify the hash
+        // — only refresh/logout did). Sprint 1.5's LogCriticalAsync + Sprint
+        // 2.5's cookie/body fallback exposed the latent bug.
+        //
+        // FIX: hash ONLY the random part, matching the verify path. Both
+        // sides now use SHA256Hex(TokenRandomPart(token)) consistently.
         return new RefreshToken
         {
             Token = rawToken,
-            TokenHash = SHA256Hex(rawToken),
+            TokenHash = SHA256Hex(TokenRandomPart(rawToken)),
             UserId = userId,
             UserScope = scope,
             SiteId = siteId,
