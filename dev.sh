@@ -4,8 +4,10 @@
 #
 # Starts backend (dotnet run) and frontend (bun dev) together.
 # Automatically:
-#   - Checks prerequisites
-#   - Kills any process already on port 5000 or 5173
+#   - Checks prerequisites (.NET 10 SDK, bun/npm)
+#   - Verifies SQL Server is reachable via Windows Auth (matches
+#     appsettings.Development.json connection string)
+#   - Kills any process already on port 5296 or 5173
 #   - Starts both processes in parallel
 #   - Forwards Ctrl+C to kill both cleanly
 #   - Colors output for easy distinction
@@ -106,20 +108,46 @@ fi
 [ ! -d "$BACKEND_DIR" ] && log_err "Backend dir not found: $BACKEND_DIR" && exit 1
 [ ! -d "$REACT_DIR" ] && log_err "React dir not found: $REACT_DIR" && exit 1
 
-# ─── Pre-flight: check SQL Server ───────────────────────────────────
-if podman ps --format '{{.Names}}' 2>/dev/null | grep -q "^sql-server$"; then
-  log_ok "Podman container 'sql-server' is running"
+# ─── Pre-flight: check SQL Server (local, Windows Auth) ─────────────
+# The connection string in appsettings.Development.json now uses
+# Integrated Security=True (Windows Authentication) + Data Source=localhost,
+# matching the user's local SSMS setup. We no longer need a podman/docker
+# container — we just need to verify SQL Server is reachable.
+#
+# Strategy: try a lightweight ADO.NET ping via dotnet-script is overkill;
+# instead we use PowerShell's SqlServer module if available, or fall back
+# to a port check on the SQL Browser service / named-pipe probe. Simplest
+# reliable cross-machine approach: invoke sqlcmd if available (usually
+# installed with SSMS), else just warn and let dotnet run fail with a
+# clear SqlClient error if the server isn't up.
+
+log "Checking SQL Server connectivity (Windows Auth, localhost)..."
+
+if command -v sqlcmd >/dev/null 2>&1; then
+  # sqlcmd is available (typically installed with SSMS) — try a trusted
+  # connection. -E = Windows Auth, -Q runs a query, -h -1 suppresses
+  # header, -W trims trailing whitespace.
+  if sqlcmd -S localhost -E -Q "SELECT 1" -h -1 -W 2>/dev/null | grep -q "^1$"; then
+    log_ok "SQL Server reachable via Windows Auth (sqlcmd probe: OK)"
+  else
+    log_err "SQL Server is NOT reachable via Windows Auth (sqlcmd probe failed)."
+    echo ""
+    echo "  The connection string in appsettings.Development.json is:"
+    echo "    Data Source=localhost;Integrated Security=True;..."
+    echo ""
+    echo "  Verify in SSMS that you can connect with 'localhost' using"
+    echo "  Windows Authentication. If you usually connect to a named"
+    echo "  instance like 'localhost\\SQLEXPRESS', update"
+    echo "  'Data Source=' in appsettings.Development.json to match."
+    echo ""
+    exit 1
+  fi
 else
-  log_err "Podman container 'sql-server' is NOT running!"
-  echo ""
-  echo "  Start it with:"
-  echo "    podman run -d --name sql-server \\"
-  echo "      -e ACCEPT_EULA=Y \\"
-  echo "      -e MSSQL_SA_PASSWORD=Passwordkuat123! \\"
-  echo "      -p 1433:1433 \\"
-  echo "      mcr.microsoft.com/mssql/server:2022-latest"
-  echo ""
-  exit 1
+  # sqlcmd not on PATH — skip the active probe and trust the user's
+  # setup-db.sh success as evidence that SQL Server is reachable. The
+  # backend will fail loudly if connection fails at runtime.
+  log "sqlcmd not found on PATH — skipping active SQL Server probe."
+  log "  (If setup-db.sh succeeded earlier, SQL Server is reachable.)"
 fi
 
 # ─── Kill existing processes on ports ───────────────────────────────
