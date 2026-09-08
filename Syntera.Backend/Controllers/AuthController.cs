@@ -389,34 +389,23 @@ public sealed class AuthController : ApiControllerBase
             Path = "/api/auth",               // scoped to auth routes only
             IsEssential = true,
             MaxAge = ttl,
-            // COMPLIANCE (Sprint 2.5 silent-refresh fix): explicit Domain
-            // is required for the Vite dev proxy scenario. The backend
-            // runs on localhost:5296, the frontend on localhost:5173, and
-            // Vite's proxy forwards requests with changeOrigin=true (Host
-            // header rewritten to localhost:5296). Without an explicit
-            // Domain, ASP.NET Core's default is to set the cookie for the
-            // host in the Host header (localhost:5296), so the browser
-            // stores it for localhost:5296 — but the browser's origin is
-            // localhost:5173, so subsequent requests to /api/auth/refresh
-            // via the Vite proxy (which go to localhost:5173 from the
-            // browser's perspective) don't include the cookie.
+            // COMPLIANCE (Sprint 2.5 silent-refresh fix): do NOT set Domain.
+            // With Vite proxy's changeOrigin=false (default), the Host
+            // header stays as localhost:5173 (browser's origin). ASP.NET
+            // Core defaults the cookie Domain to the Host header value
+            // (localhost:5173), which matches the browser's origin.
+            // The browser stores the cookie for localhost:5173 and sends
+            // it on all subsequent /api/auth requests.
             //
-            // Setting Domain="localhost" makes the cookie host-only to
-            // the registrable domain (localhost), which both ports share.
-            // The browser stores it for localhost (any port) and sends
-            // it on all /api/auth requests regardless of port.
-            //
-            // In Production, the operator should put both frontend and
-            // backend behind the same origin (reverse proxy) — then
-            // Domain can be omitted. We set it here unconditionally for
-            // Dev portability; it works for Production too if backend
-            // and frontend share a registrable domain.
-            Domain = "localhost",
+            // Previous attempts set Domain="localhost" explicitly — some
+            // browsers reject Domain=localhost as invalid (localhost is
+            // not a registrable domain per PSL). Letting it default to
+            // the Host header value is the safest approach.
         };
         Response.Cookies.Append(RefreshCookieName, token, options);
 
-        _log.LogDebug("SetRefreshCookie: token length={Len}, scope={Scope}, ttl={Ttl}, path={Path}, domain={Domain}",
-            token.Length, scope, ttl, options.Path, options.Domain);
+        _log.LogDebug("SetRefreshCookie: token length={Len}, scope={Scope}, ttl={Ttl}, path={Path}, host={Host}",
+            token.Length, scope, ttl, options.Path, Request.Headers.Host.ToString());
     }
 
     /// <summary>
@@ -441,15 +430,12 @@ public sealed class AuthController : ApiControllerBase
     {
         // Must match the same Path/Domain/Secure attributes used when setting
         // the cookie, otherwise the browser won't actually delete it.
-        // Domain="localhost" must match SetRefreshCookie — otherwise the
-        // browser won't recognize the delete request as targeting the
-        // same cookie.
+        // No Domain set — matches SetRefreshCookie (defaults to Host header).
         Response.Cookies.Delete(RefreshCookieName, new CookieOptions
         {
             Path = "/api/auth",
             Secure = !_env.IsDevelopment(),
             SameSite = SameSiteMode.Lax,
-            Domain = "localhost",
         });
     }
 
@@ -460,21 +446,23 @@ public sealed class AuthController : ApiControllerBase
     /// </summary>
     private string? ReadRefreshToken(string? bodyToken)
     {
-        // DEBUG (Sprint 2.5 fix): log whether the cookie was received so we
-        // can diagnose silent-refresh-on-reload issues. The cookie is
-        // httpOnly so the browser can't read it; we log only whether it
-        // was received (not the value itself) — that's enough to tell
-        // cookie-missing from cookie-revoked.
-        var hasCookie = Request.Cookies.TryGetValue(RefreshCookieName, out var cookieToken)
-                        && !string.IsNullOrWhiteSpace(cookieToken);
-        if (hasCookie)
+        // DEBUG (Sprint 2.5 fix): log detailed cookie + Host info so we can
+        // diagnose silent-refresh-on-reload issues. The cookie is httpOnly
+        // so the browser can't read it; we log only metadata (not the
+        // token value itself).
+        var host = Request.Headers.Host.ToString();
+        var origin = Request.Headers.Origin.ToString();
+        var cookieCount = Request.Cookies.Count;
+        var cookieKeys = string.Join(", ", Request.Cookies.Keys);
+        _log.LogDebug("ReadRefreshToken: host={Host}, origin={Origin}, cookieCount={Count}, cookieKeys=[{Keys}], hasBodyToken={HasBody}",
+            host, origin, cookieCount, cookieKeys, bodyToken is not null);
+
+        if (Request.Cookies.TryGetValue(RefreshCookieName, out var cookieToken) && !string.IsNullOrWhiteSpace(cookieToken))
         {
-            _log.LogDebug("Refresh cookie received (length={Len}, scope={Scope})",
-                cookieToken!.Length, bodyToken is null ? "cookie-only" : "cookie+body");
+            _log.LogDebug("Refresh cookie received (length={Len})", cookieToken.Length);
             return cookieToken;
         }
-        _log.LogDebug("Refresh cookie NOT received (fallback to body token: {HasBody})",
-            bodyToken is not null);
+        _log.LogDebug("Refresh cookie NOT found in Request.Cookies — falling back to body token: {HasBody}", bodyToken is not null);
         return bodyToken;
     }
 }
