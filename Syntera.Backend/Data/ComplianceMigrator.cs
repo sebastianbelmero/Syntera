@@ -106,7 +106,7 @@ public static class ComplianceMigrator
                 RoleTemplateId              UNIQUEIDENTIFIER NOT NULL,
                 RequestedBy                  UNIQUEIDENTIFIER NOT NULL,
                 RequestedAt                 DATETIME2 NOT NULL,
-                RequestedSnapshotJson       NVARCHAR(8192) NOT NULL,
+                RequestedSnapshotJson       NVARCHAR(MAX) NOT NULL,
                 Status                      NVARCHAR(16) NOT NULL DEFAULT 'pending',
                 ActionBy                    UNIQUEIDENTIFIER NULL,
                 ActionAt                    DATETIME2 NULL,
