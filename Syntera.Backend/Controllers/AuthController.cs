@@ -389,9 +389,34 @@ public sealed class AuthController : ApiControllerBase
             Path = "/api/auth",               // scoped to auth routes only
             IsEssential = true,
             MaxAge = ttl,
-            // Don't set Domain — host-only cookie, not sent to subdomains.
+            // COMPLIANCE (Sprint 2.5 silent-refresh fix): explicit Domain
+            // is required for the Vite dev proxy scenario. The backend
+            // runs on localhost:5296, the frontend on localhost:5173, and
+            // Vite's proxy forwards requests with changeOrigin=true (Host
+            // header rewritten to localhost:5296). Without an explicit
+            // Domain, ASP.NET Core's default is to set the cookie for the
+            // host in the Host header (localhost:5296), so the browser
+            // stores it for localhost:5296 — but the browser's origin is
+            // localhost:5173, so subsequent requests to /api/auth/refresh
+            // via the Vite proxy (which go to localhost:5173 from the
+            // browser's perspective) don't include the cookie.
+            //
+            // Setting Domain="localhost" makes the cookie host-only to
+            // the registrable domain (localhost), which both ports share.
+            // The browser stores it for localhost (any port) and sends
+            // it on all /api/auth requests regardless of port.
+            //
+            // In Production, the operator should put both frontend and
+            // backend behind the same origin (reverse proxy) — then
+            // Domain can be omitted. We set it here unconditionally for
+            // Dev portability; it works for Production too if backend
+            // and frontend share a registrable domain.
+            Domain = "localhost",
         };
         Response.Cookies.Append(RefreshCookieName, token, options);
+
+        _log.LogDebug("SetRefreshCookie: token length={Len}, scope={Scope}, ttl={Ttl}, path={Path}, domain={Domain}",
+            token.Length, scope, ttl, options.Path, options.Domain);
     }
 
     /// <summary>
@@ -416,11 +441,15 @@ public sealed class AuthController : ApiControllerBase
     {
         // Must match the same Path/Domain/Secure attributes used when setting
         // the cookie, otherwise the browser won't actually delete it.
+        // Domain="localhost" must match SetRefreshCookie — otherwise the
+        // browser won't recognize the delete request as targeting the
+        // same cookie.
         Response.Cookies.Delete(RefreshCookieName, new CookieOptions
         {
             Path = "/api/auth",
             Secure = !_env.IsDevelopment(),
             SameSite = SameSiteMode.Lax,
+            Domain = "localhost",
         });
     }
 
