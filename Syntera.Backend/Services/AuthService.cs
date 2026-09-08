@@ -563,12 +563,24 @@ public sealed class AuthService : IAuthService
         // a DB query per attempt — now they're rejected at the signature
         // check. REFRESH_NOT_FOUND is returned (same as a real miss) so
         // the failure mode doesn't leak that the signature failed.
+        _log.LogDebug("RefreshAsync: token length={Len}, hasDot={HasDot}, first10={First10}, last10={Last10}",
+            refreshToken.Length,
+            refreshToken.IndexOf('.') > 0 ? "yes" : "no",
+            refreshToken.Length >= 10 ? refreshToken[..10] : refreshToken,
+            refreshToken.Length >= 10 ? refreshToken[^10..] : refreshToken);
+
         if (!VerifyRefreshTokenSignature(refreshToken))
+        {
+            _log.LogWarning("RefreshAsync: SIGNATURE VERIFICATION FAILED (len={Len}). Likely cause: stale token from before backend restart, or Jwt:SigningKey changed between requests.", refreshToken.Length);
             throw new AuthenticationException("REFRESH_NOT_FOUND", "Refresh token not found.");
+        }
+
+        _log.LogDebug("RefreshAsync: signature OK. Now looking up in DB.");
 
         // L3: hash only the random part — signature suffix is server-derived
         // and adds no entropy. DB column already stores hash of the random part.
         var hash = SHA256Hex(TokenRandomPart(refreshToken));
+        _log.LogDebug("RefreshAsync: token hash={Hash}", hash);
 
         // Look in platform DB first (platform admin).
         // M1: include tokens that are already revoked in the lookup so we can
@@ -576,6 +588,7 @@ public sealed class AuthService : IAuthService
         // OR RevokedAt is set) and someone presents it again, that's theft.
         var platformToken = await _platformDb.RefreshTokens
             .FirstOrDefaultAsync(t => t.TokenHash == hash, ct);
+        _log.LogDebug("RefreshAsync: platform DB lookup. Found={Found}", platformToken is not null);
         if (platformToken is not null)
         {
             // M1 — Token reuse detection: if this token was already rotated
@@ -639,6 +652,7 @@ public sealed class AuthService : IAuthService
         // We auto-detect by scanning all enabled sites' RefreshTokens.
         // Performance: 6 sites typical, indexed by TokenHash (unique) —
         // each lookup is O(1). Total worst case = 6 PK lookups.
+        _log.LogDebug("RefreshAsync: token not in platform DB. Scanning {Count} site DBs.", await _platformDb.Sites.CountAsync(s => s.IsEnabled, ct));
         var allSites = await _platformDb.Sites.AsNoTracking()
             .Where(s => s.IsEnabled)
             .ToListAsync(ct);
@@ -659,16 +673,19 @@ public sealed class AuthService : IAuthService
 
             var siteToken = await siteDb.RefreshTokens
                 .FirstOrDefaultAsync(t => t.TokenHash == hash, ct);
+            _log.LogDebug("RefreshAsync: site {Code} lookup. Found={Found}", site.Code, siteToken is not null);
             if (siteToken is null)
                 continue;
 
             // Found in this site's DB — delegate to the site-scoped refresh
             // logic (which handles reuse detection, family revocation, etc).
             // We re-issue via RefreshSiteAsync to keep the logic in one place.
+            _log.LogDebug("RefreshAsync: delegating to RefreshSiteAsync for site {Code}", site.Code);
             return await RefreshSiteAsync(refreshToken, site.Id, ip, userAgent, ct);
         }
 
         // Not found in platform DB nor any site DB — genuine miss.
+        _log.LogWarning("RefreshAsync: token NOT FOUND in any DB (platform + {Count} sites). This means the token is stale (from before backend restart), or the user's session was revoked.", allSites.Count);
         throw new AuthenticationException("REFRESH_NOT_FOUND",
             "Refresh token not found.");
     }
