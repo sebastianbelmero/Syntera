@@ -636,10 +636,27 @@ public sealed class AuthService : IAuthService
 
             // M1: propagate FamilyId from parent so all tokens in a chain share it.
             var newRt = BuildRefreshToken(admin.Id, "platform", null, newRefresh, ip, userAgent, familyId: platformToken.FamilyId);
-            newRt.ReplacedById = platformToken.Id;
-            // COMPLIANCE (Sprint 2.5): stamp LastUsedAt on the new token.
+            // COMPLIANCE FIX (Sprint 2.5 — refresh token rotation bug):
+            // The PREVIOUS code set newRt.ReplacedById = platformToken.Id.
+            // That marked the NEW token as "already replaced" — so on the
+            // NEXT refresh, the reuse-detection check (token.ReplacedById is not null)
+            // triggered on the brand-new token and revoked the entire family
+            // → REFRESH_REUSE_DETECTED → logout on the 2nd refresh.
+            //
+            // SEMANTICS of ReplacedById (per RefreshToken entity comment):
+            //   "If this token was rotated, the ID of the replacement token."
+            // So ReplacedById should be set on the OLD token pointing to the
+            // new one — NOT on the new token pointing back to the old.
+            //
+            // FIX: set ReplacedById on the OLD (revoked) token, pointing to
+            // the new token's ID. The new token's ReplacedById stays null
+            // (it hasn't been replaced by anything — it's the current token).
             newRt.LastUsedAt = DateTime.UtcNow;
             _platformDb.RefreshTokens.Add(newRt);
+            await _platformDb.SaveChangesAsync(ct);  // Save first to get newRt.Id
+
+            // Now mark the OLD token as replaced by the NEW token.
+            platformToken.ReplacedById = newRt.Id;
             await _platformDb.SaveChangesAsync(ct);
 
             return new RefreshResponse(access, exp, newRefresh, profile, ThemeService.PlatformDefault());
@@ -750,10 +767,17 @@ public sealed class AuthService : IAuthService
 
         // M1: propagate FamilyId from parent.
         var newRt = BuildRefreshToken(user.Id, "site", site.Id, newRefresh, ip, ua, familyId: token.FamilyId);
-        newRt.ReplacedById = token.Id;
-        // COMPLIANCE (Sprint 2.5): stamp LastUsedAt on the new token.
+        // COMPLIANCE FIX (Sprint 2.5 — same rotation bug as platform scope):
+        // Don't set ReplacedById on the new token. Set it on the OLD
+        // token pointing to the new one. See platform-scope fix above for
+        // the full explanation of why newRt.ReplacedById = token.Id was
+        // triggering REFRESH_REUSE_DETECTED on the 2nd refresh.
         newRt.LastUsedAt = DateTime.UtcNow;
         siteDb.RefreshTokens.Add(newRt);
+        await siteDb.SaveChangesAsync(ct);  // Save first to get newRt.Id
+
+        // Now mark the OLD token as replaced by the NEW token.
+        token.ReplacedById = newRt.Id;
         await siteDb.SaveChangesAsync(ct);
 
         var theme = await _themes.GetThemeAsync(site.Id, ct);
