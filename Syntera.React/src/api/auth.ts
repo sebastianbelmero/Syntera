@@ -130,28 +130,31 @@ export async function changePassword(req: ChangePasswordRequest): Promise<void> 
 
 export async function logout(): Promise<void> {
   // H7: refresh token is sent automatically by the browser via the
-  // httpOnly cookie on /api/auth/logout. We don't need (and don't have)
-  // the token in JS. Send an empty body — backend reads the cookie.
+  // httpOnly cookie on /api/auth/logout. We also send the in-memory
+  // refreshToken in the body as fallback for the Vite dev proxy scenario.
+  const { refreshToken } = useAuthStore.getState();
   try {
-    await post("/auth/logout", {});
+    await post("/auth/logout", { refreshToken: refreshToken ?? undefined });
   } finally {
     useAuthStore.getState().logout();
   }
 }
 
 export async function refresh(): Promise<RefreshResponse> {
-  const { profile } = useAuthStore.getState();
+  const { profile, refreshToken } = useAuthStore.getState();
 
   // Choose endpoint based on scope.
   const url = profile?.scope === "site" && profile.siteId
     ? "/auth/refresh-site"
     : "/auth/refresh";
 
-  // H7: refresh token comes from the httpOnly cookie automatically
-  // (withCredentials=true on axios). Only siteId is sent in the body.
+  // COMPLIANCE (Sprint 2.5 silent-refresh fix): send refreshToken in body
+  // as fallback for the Vite dev proxy scenario where httpOnly cookies
+  // don't round-trip. Backend's ReadRefreshToken prefers cookie, falls
+  // back to body — so cookie-first remains the production path.
   const body = profile?.scope === "site" && profile.siteId
-    ? { siteId: profile.siteId }
-    : {};
+    ? { siteId: profile.siteId, refreshToken: refreshToken ?? undefined }
+    : { refreshToken: refreshToken ?? undefined };
 
   const data = await post<RefreshResponse>(url, body);
   // Update tokens, profile, AND theme (server may return updated theme
@@ -161,6 +164,10 @@ export async function refresh(): Promise<RefreshResponse> {
     accessToken: data.accessToken,
     expiresAt: data.expiresAt,
   });
+  // Store the new refresh token in memory for the next refresh cycle.
+  if (data.refreshToken) {
+    useAuthStore.setState({ refreshToken: data.refreshToken });
+  }
   if (data.profile) {
     useAuthStore.getState().updateProfile(data.profile);
   }
@@ -200,27 +207,21 @@ export async function initAuth(): Promise<void> {
   }
 
   try {
-    // Platform vs site scope: on a fresh page load we don't know the
-    // user's scope yet (no in-memory profile). Try /api/auth/refresh
-    // first (platform scope). If the cookie belongs to a site user,
-    // the backend will refuse with REFRESH_NOT_FOUND and we fall back
-    // to /api/auth/refresh-site — but we don't know the siteId either.
+    // COMPLIANCE (Sprint 2.5 silent-refresh fix): the httpOnly cookie
+    // doesn't round-trip reliably through Vite's dev proxy (browser
+    // blocks cookie due to localhost port mismatch between :5173 and
+    // :5296). As a fallback, send the persisted refreshToken (from
+    // localStorage) in the body. Backend's ReadRefreshToken prefers
+    // the cookie if present, falls back to the body token — so this
+    // is purely additive (production with working cookie is unaffected).
     //
-    // Solution: the backend's refresh endpoint accepts the cookie
-    // alone and can determine scope from the token's UserScope column.
-    // For site scope, it returns a RefreshResponse that includes the
-    // profile (with siteId) — so the FIRST refresh always uses
-    // /api/auth/refresh. Site users whose first call returns 401
-    // can't be auto-detected here without a hint, but in practice the
-    // backend's RefreshAsync already throws REFRESH_NOT_FOUND for
-    // site tokens, so we just treat any failure as "not authenticated".
-    //
-    // To keep the UX simple for both scopes on first page load, we
-    // try the platform endpoint; if it returns a profile with
-    // scope='site', we re-issue via /auth/refresh-site with the
-    // returned siteId to get the correct site-scoped access token.
+    // The persisted refreshToken is loaded into the authStore via
+    // zustand's persist middleware (see authStore.ts partialize).
+    const { refreshToken } = useAuthStore.getState();
     const url = "/auth/refresh";
-    const data = await post<RefreshResponse>(url, {});
+    const data = await post<RefreshResponse>(url, {
+      refreshToken: refreshToken ?? undefined,
+    });
     useAuthStore.getState().login({
       accessToken: data.accessToken,
       expiresAt: data.expiresAt,

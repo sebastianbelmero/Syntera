@@ -139,18 +139,20 @@ api.interceptors.response.use(
 async function acquireFreshAccessToken(): Promise<string> {
   if (refreshPromise) return refreshPromise;
 
-  const { profile } = useAuthStore.getState();
+  const { profile, refreshToken } = useAuthStore.getState();
 
   // H7: refresh token is sent automatically by the browser as an httpOnly
-  // cookie on /api/auth/* requests (withCredentials=true). We don't read
-  // it from the auth store anymore — it's never stored client-side.
+  // cookie on /api/auth/* requests (withCredentials=true). We also send
+  // the in-memory refreshToken in the body as a fallback for the Vite dev
+  // proxy scenario where cookies don't round-trip reliably.
   //
   // Choose endpoint based on scope — site users need /auth/refresh-site
-  // with siteId in body. Platform admin uses /auth/refresh (no body needed
-  // beyond what the cookie carries).
+  // with siteId in body. Platform admin uses /auth/refresh.
   const isSiteUser = profile?.scope === "site" && profile.siteId;
   const url = isSiteUser ? "/api/auth/refresh-site" : "/api/auth/refresh";
-  const body = isSiteUser ? { siteId: profile!.siteId } : {};
+  const body = isSiteUser
+    ? { siteId: profile!.siteId, refreshToken: refreshToken ?? undefined }
+    : { refreshToken: refreshToken ?? undefined };
 
   refreshPromise = (async () => {
     try {
@@ -167,11 +169,12 @@ async function acquireFreshAccessToken(): Promise<string> {
       if (!data) throw new Error("REFRESH_FAILED");
       useAuthStore.getState().setTokens({
         accessToken: data.accessToken,
-        // H7: backend also returns refreshToken in body for backward compat,
-        // but we deliberately don't store it — the cookie is rotated by the
-        // backend's Set-Cookie header automatically.
         expiresAt: data.expiresAt,
       });
+      // Store the rotated refresh token for the next refresh cycle.
+      if (data.refreshToken) {
+        useAuthStore.setState({ refreshToken: data.refreshToken });
+      }
       if (data.theme) {
         useAuthStore.getState().updateTheme(data.theme as import("../types").ThemeBundle);
       }
