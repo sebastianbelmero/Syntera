@@ -109,15 +109,30 @@ try
         var sp = services.BuildServiceProvider();
         var protector = sp.GetRequiredService<IConnectionStringProtector>();
 
-        await DbSeeder.SeedPlatformAsync(platformDb, config, logger, protector);
-
-        // COMPLIANCE (Sprint 2.2): apply compliance schema additions (MFA,
-        // PasswordHistory, RefreshToken.LastUsedAt, AuditLog.SignatureMeaning,
-        // RoleTemplateApprovals) to Platform DB + all enabled site DBs.
-        // Idempotent — safe to run on every invocation.
-        Log.Information("  Applying compliance schema additions (MFA, PasswordHistory, etc.) to Platform DB...");
+        // COMPLIANCE (Sprint 2.2 — ORDER FIX): apply compliance schema
+        // additions (MFA columns on PlatformUsers, PasswordHistory table,
+        // RoleTemplateApprovals table, RefreshToken.LastUsedAt,
+        // AuditLog.BeforeJson/AfterJson/SignatureMeaning) BEFORE the
+        // seeder runs. The seeder inserts PlatformUser rows that reference
+        // the new MFA columns (PasswordChangedAt, TotpSecret, TotpEnabled)
+        // — if the columns don't exist yet, SaveChanges throws
+        // SqlException 207 'Invalid column name'.
+        //
+        // Previous order was: SeedPlatformAsync THEN ComplianceMigrator.
+        // That worked for sites (sites have no MFA columns to seed) but
+        // failed on PlatformAdmin insert. The fix is to make
+        // ComplianceMigrator run FIRST so the schema is complete before
+        // any data is inserted.
+        Log.Information("  Applying compliance schema additions (MFA, PasswordHistory, etc.) to Platform DB BEFORE seeding...");
         await ComplianceMigrator.ApplyPlatformAsync(platformDb, logger);
 
+        // Now seed platform data (role templates, sites, themes, admin
+        // user). The PlatformUser insert will succeed because the MFA
+        // columns already exist.
+        await DbSeeder.SeedPlatformAsync(platformDb, config, logger, protector);
+
+        // Apply compliance schema to each site DB too (RefreshToken.LastUsedAt,
+        // AuditLog.BeforeJson/AfterJson/SignatureMeaning).
         foreach (var (siteCode, siteConn) in siteConns)
         {
             Log.Information("  Applying compliance schema to site {Code}...", siteCode);

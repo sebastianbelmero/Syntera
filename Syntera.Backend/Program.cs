@@ -184,18 +184,21 @@ try
             await DatabaseInitializer.MigrateOrBaselineAsync(platformDb, logger);
         }
 
+        // COMPLIANCE (Sprint 2.2 — ORDER FIX): apply compliance schema additions
+        // BEFORE seeding. The seeder inserts PlatformUser rows that reference
+        // the new MFA columns (PasswordChangedAt, TotpSecret, TotpEnabled)
+        // — if the columns don't exist yet, SaveChanges throws
+        // SqlException 207 'Invalid column name'.
+        //
+        // Idempotent — safe to run on every startup.
+        await ComplianceMigrator.ApplyPlatformAsync(platformDb, logger);
+        await ComplianceMigrator.ApplyAllSitesAsync(platformDb, siteDbFactory, logger);
+
         await DbSeeder.SeedPlatformAsync(
             platformDb,
             app.Configuration,
             logger,
             scope.ServiceProvider.GetService<IConnectionStringProtector>());
-
-        // COMPLIANCE (Sprint 2.2): apply compliance schema additions (MFA,
-        // PasswordHistory, RefreshToken.LastUsedAt, AuditLog.SignatureMeaning,
-        // RoleTemplateApprovals) to Platform DB + all enabled site DBs.
-        // Idempotent — safe to run on every startup.
-        await ComplianceMigrator.ApplyPlatformAsync(platformDb, logger);
-        await ComplianceMigrator.ApplyAllSitesAsync(platformDb, siteDbFactory, logger);
     }
 
     app.Run();
