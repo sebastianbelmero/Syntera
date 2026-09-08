@@ -159,6 +159,11 @@ public sealed class AuthController : ApiControllerBase
         }
         catch (Models.DomainException ex)
         {
+            // DEBUG (Sprint 2.5): log the specific error code so we can
+            // diagnose refresh failures (SESSION_IDLE_TIMEOUT, REFRESH_EXPIRED,
+            // REFRESH_REUSE_DETECTED, REFRESH_NOT_FOUND, etc.) without
+            // inspecting the response body.
+            _log.LogWarning("Refresh failed: code={Code}, message={Message}", ex.Code, ex.Message);
             // On any refresh failure, clear the cookie so the browser state
             // matches the (now-revoked) server state.
             ClearRefreshCookie();
