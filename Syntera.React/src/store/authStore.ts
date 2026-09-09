@@ -1,10 +1,15 @@
 /**
  * Auth store (Zustand) — holds tokens, profile, and theme bundle.
  *
- * SECURITY (H7 full — Sprint 4):
+ * SECURITY (H7 full — cookie-only transport, ACTIVATED):
  *   Neither access token NOR refresh token is persisted to localStorage.
  *   - Refresh token: httpOnly cookie set by backend (syntera_refresh).
- *     JS cannot read it; XSS cannot exfiltrate it.
+ *     JS cannot read it; XSS cannot exfiltrate it. The backend ALSO blanks
+ *     the RefreshToken field in every JSON response (Auth:CookieOnlyRefreshToken
+ *     = true) so an XSS reading fetch/XHR response bodies sees an empty
+ *     string. The former localStorage/body fallback (Vite dev proxy) was
+ *     removed — the cookie round-trips correctly through the proxy since
+ *     the Sprint 2.5 fix (cookie Domain defaults to the Host header).
  *   - Access token: in-memory only (this store). On page reload, the
  *     store is empty; an explicit silent-refresh via /api/auth/refresh
  *     is run on app boot (see src/main.tsx → initAuth()) to repopulate
@@ -80,22 +85,12 @@ export const useAuthStore = create<AuthState>()(
       login(payload) {
         set({
           accessToken: payload.accessToken,
-          // COMPLIANCE (Sprint 2.5 silent-refresh fix): store refreshToken
-          // in-memory as a fallback for the Vite dev proxy scenario where
-          // httpOnly cookies don't round-trip reliably across localhost ports.
-          // In Production, the cookie is the preferred transport (H7 security
-          // model), but having the token in memory too gives us a working
-          // refresh path when cookie Domain/SameSite matching fails.
-          //
-          // Security trade-off: an XSS could read this token. Mitigations:
-          //   1. Token is in-memory only (not persisted to localStorage) —
-          //      gone on page reload (but then we have the cookie as backup).
-          //   2. Token is short-lived (1 day platform / 7 days site) and
-          //      rotated on every refresh — family-reuse detection still
-          //      works server-side.
-          //   3. HttpOnly cookie is ALSO set by backend — if cookie works,
-          //      backend prefers it (cookie-first in ReadRefreshToken).
-          refreshToken: payload.refreshToken,
+          // COOKIE-ONLY (H7): always null on the client — the refresh token
+          // travels exclusively in the httpOnly `syntera_refresh` cookie set
+          // by the backend. In strict mode the backend also blanks it in the
+          // JSON body, so `payload.refreshToken` is "" anyway; we null it here
+          // so no code path can ever resurrect the body transport.
+          refreshToken: null,
           expiresAt: payload.expiresAt,
           profile: payload.profile,
           theme: payload.theme,
@@ -167,31 +162,23 @@ export const useAuthStore = create<AuthState>()(
     {
       name: "syntera.auth",
       storage: createJSONStorage(() => localStorage),
-      // COMPLIANCE (Sprint 2.5 silent-refresh fix): persist theme + refreshToken
-      // to localStorage so the silent refresh on page reload can recover the
-      // session when the httpOnly cookie doesn't round-trip (Vite dev proxy
-      // scenario where browser blocks cookie due to port mismatch).
+      // COOKIE-ONLY (H7 hardening): persist ONLY the theme bundle. The
+      // refresh token is NO LONGER persisted — the former localStorage
+      // fallback existed for a Vite dev proxy cookie bug that was fixed in
+      // Sprint 2.5 (cookie Domain now defaults to the Host header, so the
+      // browser stores + replays it through the proxy correctly). With the
+      // token out of localStorage, an XSS cannot exfiltrate it even across
+      // page reloads; the httpOnly cookie is the single transport.
       //
-      // accessToken + profile + expiresAt stay in-memory only — they're
-      // short-lived and re-acquired via /api/auth/refresh using the
-      // persisted refreshToken (or the cookie, if the browser has it).
+      // accessToken + profile + expiresAt + refreshToken stay in-memory
+      // only — access material is re-acquired via /api/auth/refresh from
+      // the cookie on every page load (see initAuth in api/auth.ts).
       //
-      // SECURITY TRADE-OFF: refreshToken in localStorage means an XSS
-      // could exfiltrate it. Mitigations:
-      //   1. Backend prefers httpOnly cookie in ReadRefreshToken —
-      //      cookie-first means the body token is only used as fallback.
-      //   2. Token is short-lived (1d platform / 7d site) and rotated
-      //      on every refresh — family-reuse detection revokes the
-      //      entire family if a stolen token is replayed.
-      //   3. In Production with reverse-proxy (same origin), cookie
-      //      works reliably and the localStorage value is just a
-      //      redundant backup that's never read.
-      //   4. To force cookie-only (production hardening), set
-      //      `partialize` back to just `{ theme }` and ensure the
-      //      frontend is served from the same origin as the API.
+      // NOTE: users with an old `syntera.auth` localStorage entry (from the
+      // dual-transport era) will have the stale refreshToken key ignored —
+      // it's simply never read anymore.
       partialize: (state) => ({
         theme: state.theme,
-        refreshToken: state.refreshToken,
       }),
     },
   ),

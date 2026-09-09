@@ -24,6 +24,18 @@ public sealed class AuthController : ApiControllerBase
     /// </summary>
     public const string RefreshCookieName = "syntera_refresh";
 
+    /// <summary>
+    /// SECURITY (H7 hardening — cookie-only transport): when true (default),
+    /// the refresh token NEVER appears in a request/response BODY — it is
+    /// transported exclusively via the httpOnly cookie. This closes the last
+    /// XSS exfiltration path: even a script that can read fetch/XHR responses
+    /// (which it could when the token was in the JSON body) sees only an
+    /// empty string. Non-browser API clients (integration harnesses,
+    /// Swagger/.http debugging) set Auth:CookieOnlyRefreshToken=false in
+    /// appsettings.Development.json to re-enable the body transport.
+    /// </summary>
+    private readonly bool _cookieOnly;
+
     public AuthController(
         IAuthService auth,
         ILogger<AuthController> log,
@@ -34,6 +46,7 @@ public sealed class AuthController : ApiControllerBase
         _log = log;
         _env = env;
         _config = config;
+        _cookieOnly = config.GetValue<bool>("Auth:CookieOnlyRefreshToken", true);
     }
 
     /// <summary>
@@ -81,7 +94,9 @@ public sealed class AuthController : ApiControllerBase
             {
                 SetRefreshCookie(result.RefreshToken, result.Profile.Scope);
             }
-            return Ok(result);
+            // H7 (cookie-only): the token went out via Set-Cookie; the JSON
+            // body must not repeat it (XSS could read response bodies).
+            return Ok(StripBodyRefreshToken(result));
         }
         catch (Models.DomainException ex)
         {
@@ -126,7 +141,7 @@ public sealed class AuthController : ApiControllerBase
             // refresh token; don't touch the cookie in that case.
             if (!result.RequiresPasswordChange && !string.IsNullOrEmpty(result.RefreshToken))
                 SetRefreshCookie(result.RefreshToken, result.Profile.Scope);
-            return Ok(result);
+            return Ok(StripBodyRefreshToken(result));
         }
         catch (Models.DomainException ex)
         {
@@ -155,7 +170,8 @@ public sealed class AuthController : ApiControllerBase
             var result = await _auth.RefreshAsync(refreshToken, ip, ua, ct);
             // Rotate the cookie to the new token.
             SetRefreshCookie(result.RefreshToken, result.Profile.Scope);
-            return Ok(result);
+            // H7 (cookie-only): rotated token is delivered via Set-Cookie only.
+            return Ok(StripBodyRefreshToken(result));
         }
         catch (Models.DomainException ex)
         {
@@ -187,7 +203,8 @@ public sealed class AuthController : ApiControllerBase
         {
             var result = await _auth.RefreshSiteAsync(refreshToken, req.SiteId, ip, ua, ct);
             SetRefreshCookie(result.RefreshToken, result.Profile.Scope);
-            return Ok(result);
+            // H7 (cookie-only): rotated token is delivered via Set-Cookie only.
+            return Ok(StripBodyRefreshToken(result));
         }
         catch (Models.DomainException ex)
         {
@@ -379,6 +396,23 @@ public sealed class AuthController : ApiControllerBase
 
     // ── Cookie helpers (H7) ─────────────────────────────────────────────
 
+    /// <summary>
+    /// SECURITY (H7 hardening — cookie-only): blank the RefreshToken field of
+    /// the outgoing JSON when Auth:CookieOnlyRefreshToken is enabled (default).
+    /// The browser exclusively receives the token via the httpOnly Set-Cookie
+    /// header; the response body carries an empty string instead. This is the
+    /// server-side half of the cookie-only decision — the client-side half is
+    /// the frontend no longer reading/storing/sending the body field.
+    /// Challenge responses (MFA / forced password change) already carry an
+    /// empty refresh token, so stripping them is a no-op.
+    /// </summary>
+    private LoginResponse StripBodyRefreshToken(LoginResponse r)
+        => _cookieOnly ? r with { RefreshToken = string.Empty } : r;
+
+    /// <inheritdoc cref="StripBodyRefreshToken(LoginResponse)"/>
+    private RefreshResponse StripBodyRefreshToken(RefreshResponse r)
+        => _cookieOnly ? r with { RefreshToken = string.Empty } : r;
+
     private void SetRefreshCookie(string token, string scope)
     {
         // M2: cookie MaxAge must match the refresh token's TTL (which is
@@ -445,9 +479,11 @@ public sealed class AuthController : ApiControllerBase
     }
 
     /// <summary>
-    /// Read refresh token from httpOnly cookie first (preferred, more secure);
-    /// fall back to JSON body for backward compat with old frontend builds
-    /// that haven't migrated to cookie-based refresh yet.
+    /// Read refresh token from httpOnly cookie first (preferred, more secure).
+    /// Body fallback is DISABLED in cookie-only mode (Auth:CookieOnlyRefreshToken,
+    /// default true) — the token must arrive via cookie. When cookie-only is
+    /// disabled (dev / non-browser API clients), the body fallback remains for
+    /// backward compat with old frontend builds and Swagger/.http debugging.
     /// </summary>
     private string? ReadRefreshToken(string? bodyToken)
     {
@@ -467,7 +503,11 @@ public sealed class AuthController : ApiControllerBase
             _log.LogDebug("Refresh cookie received (length={Len})", cookieToken.Length);
             return cookieToken;
         }
-        _log.LogDebug("Refresh cookie NOT found in Request.Cookies — falling back to body token: {HasBody}", bodyToken is not null);
+        _log.LogDebug("Refresh cookie NOT found in Request.Cookies — cookie-only mode={CookieOnly}, hasBodyToken={HasBody}",
+            _cookieOnly, bodyToken is not null);
+        // H7 hardening: in cookie-only mode the body fallback is closed —
+        // a body token is treated as absent (EMPTY_TOKEN downstream).
+        if (_cookieOnly) return null;
         return bodyToken;
     }
 }

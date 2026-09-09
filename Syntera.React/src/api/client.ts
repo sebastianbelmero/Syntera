@@ -12,11 +12,15 @@
  *
  * Design goals:
  *   - DRY: every endpoint goes through this single instance.
- *   - Safe (H7): refresh token lives in httpOnly cookie set by backend —
- *     JS cannot read it, XSS cannot exfiltrate it. `withCredentials: true`
- *     ensures the cookie is sent on cross-origin (Vite dev :5173 → API
- *     :5296) requests. Access token is short-lived (15 min) and stored in
- *     localStorage — blast radius of an XSS leak is bounded.
+ *   - Safe (H7 — cookie-only): the refresh token lives EXCLUSIVELY in the
+ *     httpOnly `syntera_refresh` cookie set by the backend — JS cannot
+ *     read it and it is never sent in a request body. In strict mode
+ *     (Auth:CookieOnlyRefreshToken) the backend also blanks the token from
+ *     response bodies, so even an XSS that reads fetch/XHR responses gets
+ *     nothing. `withCredentials: true` ensures the cookie is sent on
+ *     cross-origin (Vite dev :5173 → API :5296) requests. Access token is
+ *     short-lived (15 min) and in-memory only — blast radius of an XSS leak
+ *     is bounded.
  *   - Transparent: a single request queue prevents refresh-token
  *     thundering herds when multiple requests 401 simultaneously.
  */
@@ -139,20 +143,21 @@ api.interceptors.response.use(
 async function acquireFreshAccessToken(): Promise<string> {
   if (refreshPromise) return refreshPromise;
 
-  const { profile, refreshToken } = useAuthStore.getState();
+  const { profile } = useAuthStore.getState();
 
-  // H7: refresh token is sent automatically by the browser as an httpOnly
-  // cookie on /api/auth/* requests (withCredentials=true). We also send
-  // the in-memory refreshToken in the body as a fallback for the Vite dev
-  // proxy scenario where cookies don't round-trip reliably.
+  // COOKIE-ONLY (H7): the refresh token travels exclusively in the httpOnly
+  // `syntera_refresh` cookie, sent automatically by the browser on /api/auth/*
+  // requests (withCredentials=true). We NEVER put the token in the request
+  // body — the Vite dev proxy round-trips the cookie correctly (Sprint 2.5
+  // fix: cookie Domain defaults to the Host header), so no fallback
+  // transport is needed.
   //
   // Choose endpoint based on scope — site users need /auth/refresh-site
-  // with siteId in body. Platform admin uses /auth/refresh.
+  // with siteId in the body (siteId is not secret; the cookie authorizes).
+  // Platform admin uses /auth/refresh.
   const isSiteUser = profile?.scope === "site" && profile.siteId;
   const url = isSiteUser ? "/api/auth/refresh-site" : "/api/auth/refresh";
-  const body = isSiteUser
-    ? { siteId: profile!.siteId, refreshToken: refreshToken ?? undefined }
-    : { refreshToken: refreshToken ?? undefined };
+  const body = isSiteUser ? { siteId: profile!.siteId } : {};
 
   refreshPromise = (async () => {
     try {
@@ -171,10 +176,10 @@ async function acquireFreshAccessToken(): Promise<string> {
         accessToken: data.accessToken,
         expiresAt: data.expiresAt,
       });
-      // Store the rotated refresh token for the next refresh cycle.
-      if (data.refreshToken) {
-        useAuthStore.setState({ refreshToken: data.refreshToken });
-      }
+      // COOKIE-ONLY (H7): the rotated refresh token arrives via the
+      // Set-Cookie header (httpOnly); the backend blanks the response
+      // body's refreshToken field in strict mode — nothing to store
+      // client-side, the cookie IS the storage.
       if (data.theme) {
         useAuthStore.getState().updateTheme(data.theme as import("../types").ThemeBundle);
       }

@@ -129,32 +129,32 @@ export async function changePassword(req: ChangePasswordRequest): Promise<void> 
 }
 
 export async function logout(): Promise<void> {
-  // H7: refresh token is sent automatically by the browser via the
-  // httpOnly cookie on /api/auth/logout. We also send the in-memory
-  // refreshToken in the body as fallback for the Vite dev proxy scenario.
-  const { refreshToken } = useAuthStore.getState();
+  // COOKIE-ONLY (H7): the refresh token is sent automatically by the browser
+  // via the httpOnly `syntera_refresh` cookie on /api/auth/logout — no token
+  // in the body. The backend revokes whatever the cookie carries; if the
+  // cookie is already gone, logout is a server-side no-op (the client clears
+  // its in-memory state either way).
   try {
-    await post("/auth/logout", { refreshToken: refreshToken ?? undefined });
+    await post("/auth/logout", {});
   } finally {
     useAuthStore.getState().logout();
   }
 }
 
 export async function refresh(): Promise<RefreshResponse> {
-  const { profile, refreshToken } = useAuthStore.getState();
+  const { profile } = useAuthStore.getState();
 
   // Choose endpoint based on scope.
   const url = profile?.scope === "site" && profile.siteId
     ? "/auth/refresh-site"
     : "/auth/refresh";
 
-  // COMPLIANCE (Sprint 2.5 silent-refresh fix): send refreshToken in body
-  // as fallback for the Vite dev proxy scenario where httpOnly cookies
-  // don't round-trip. Backend's ReadRefreshToken prefers cookie, falls
-  // back to body — so cookie-first remains the production path.
+  // COOKIE-ONLY (H7): the refresh token travels exclusively in the httpOnly
+  // cookie — never in the request body. For site scope we still send siteId
+  // (not secret; the cookie is the authorizing credential).
   const body = profile?.scope === "site" && profile.siteId
-    ? { siteId: profile.siteId, refreshToken: refreshToken ?? undefined }
-    : { refreshToken: refreshToken ?? undefined };
+    ? { siteId: profile.siteId }
+    : {};
 
   const data = await post<RefreshResponse>(url, body);
   // Update tokens, profile, AND theme (server may return updated theme
@@ -164,10 +164,8 @@ export async function refresh(): Promise<RefreshResponse> {
     accessToken: data.accessToken,
     expiresAt: data.expiresAt,
   });
-  // Store the new refresh token in memory for the next refresh cycle.
-  if (data.refreshToken) {
-    useAuthStore.setState({ refreshToken: data.refreshToken });
-  }
+  // COOKIE-ONLY: the rotated refresh token arrives via Set-Cookie (httpOnly);
+  // nothing is stored client-side — the cookie is the storage.
   if (data.profile) {
     useAuthStore.getState().updateProfile(data.profile);
   }
@@ -207,24 +205,17 @@ export async function initAuth(): Promise<void> {
   }
 
   try {
-    // COMPLIANCE (Sprint 2.5 silent-refresh fix): the httpOnly cookie
-    // doesn't round-trip reliably through Vite's dev proxy (browser
-    // blocks cookie due to localhost port mismatch between :5173 and
-    // :5296). As a fallback, send the persisted refreshToken (from
-    // localStorage) in the body. Backend's ReadRefreshToken prefers
-    // the cookie if present, falls back to the body token — so this
-    // is purely additive (production with working cookie is unaffected).
-    //
-    // The persisted refreshToken is loaded into the authStore via
-    // zustand's persist middleware (see authStore.ts partialize).
-    const { refreshToken } = useAuthStore.getState();
-    const url = "/auth/refresh";
-    const data = await post<RefreshResponse>(url, {
-      refreshToken: refreshToken ?? undefined,
-    });
+    // COOKIE-ONLY (H7): the httpOnly `syntera_refresh` cookie round-trips
+    // correctly through the Vite dev proxy (Sprint 2.5 fix — cookie Domain
+    // defaults to the Host header), so the silent refresh relies purely on
+    // the cookie. No body token, no localStorage fallback — the store's
+    // `refreshToken` field is always null.
+    const data = await post<RefreshResponse>("/auth/refresh", {});
     useAuthStore.getState().login({
       accessToken: data.accessToken,
       expiresAt: data.expiresAt,
+      // COOKIE-ONLY: ignored by the store (login() nulls it) — the rotated
+      // token is already in the cookie jar via the Set-Cookie header.
       refreshToken: data.refreshToken,
       profile: data.profile,
       theme: data.theme,

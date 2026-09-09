@@ -964,11 +964,16 @@ Error mapping (in `GlobalExceptionMiddleware`):
 | `authStore` | `theme` (the brand palette bundle) | `accessToken`, `refreshToken` (always null — cookie owns it), `expiresAt`, `profile`, `initializing` |
 | `themeStore` | `isDark` (light/dark preference) | — |
 
-**H7 security model (full, Sprint 4):**
+**H7 security model (full — cookie-only transport, activated):**
 
 - **Refresh token:** stored in **httpOnly cookie** `syntera_refresh`
   (set by backend, `Path=/api/auth`, `SameSite=Lax`, `Secure=!Dev`).
-  JavaScript cannot read it; XSS cannot exfiltrate it.
+  JavaScript cannot read it; XSS cannot exfiltrate it. The backend runs in
+  strict cookie-only mode (`Auth:CookieOnlyRefreshToken`, default `true`):
+  the token never appears in a request or response JSON body, so even an
+  XSS that can read fetch/XHR response bodies sees an empty string.
+  `appsettings.Development.json` sets the flag to `false` so Swagger/.http
+  and integration tooling can still use the body transport for debugging.
 - **Access token:** in-memory only in `authStore`. On page reload, the
   store is empty; `initAuth()` runs a silent refresh from the cookie
   before React renders.
