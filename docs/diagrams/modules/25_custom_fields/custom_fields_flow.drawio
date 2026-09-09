@@ -1,0 +1,127 @@
+<mxfile host="app.diagrams.net" agent="syntera-diagram-generator" version="24.7.8">
+  <diagram id="dfb77df5c23" name="25_cf_flow">
+    <mxGraphModel dx="800" dy="600" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="935" pageHeight="1607" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="ph_25_cf_flow_8831" value="Fase 1 — Definisi &amp; approval (objek terkontrol GxP)" style="rounded=1;html=1;fillColor=#F8FAFC;strokeColor=#CBD5E1;dashed=1;verticalAlign=top;fontStyle=1;fontColor=#475569;align=left;spacingLeft=8;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="338" y="74" width="254" height="543" as="geometry" />
+        </mxCell>
+        <mxCell id="ph_25_cf_flow_4337" value="Fase 2 — Pengisian &amp; validasi (server-side)" style="rounded=1;html=1;fillColor=#F8FAFC;strokeColor=#CBD5E1;dashed=1;verticalAlign=top;fontStyle=1;fontColor=#475569;align=left;spacingLeft=8;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="338" y="629" width="254" height="445" as="geometry" />
+        </mxCell>
+        <mxCell id="ph_25_cf_flow_1487" value="Fase 3 — Penguncian pasca-approval" style="rounded=1;html=1;fillColor=#F8FAFC;strokeColor=#CBD5E1;dashed=1;verticalAlign=top;fontStyle=1;fontColor=#475569;align=left;spacingLeft=8;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="338" y="1086" width="254" height="461" as="geometry" />
+        </mxCell>
+        <mxCell id="ttl" value="Modul Custom Fields — Diagram Alur Detail" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontStyle=1;fontSize=20;fontColor=#1E293B;" vertex="1" parent="1">
+          <mxGeometry x="20" y="16" width="620" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="sub" value="Sumber: FSD 2.25 (CF) · field dinamis per entity tanpa ubah skema · approval QO + lock pasca-approve" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontColor=#64748B;" vertex="1" parent="1">
+          <mxGeometry x="20" y="48" width="620" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="st" value="Mulai" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#F1F5F9;strokeColor=#334155;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="435" y="104" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="f1" value="1. Admin Business buat definisi: entity (ASSET/WO/SOP/CALIBRATOR/DEVIATION), field_key, label ID/EN, tipe data (10), mandatory/unique/searchable, regex/min/max, default" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="194" width="190" height="119" as="geometry" />
+        </mxCell>
+        <mxCell id="f2" value="2. Dropdown / multi-select → konfigurasi opsi (value unik, label bilingual, urutan, aktif)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="343" width="190" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="f3" value="3. Izin per role: can_view / can_edit per definisi" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="447" width="190" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="f4" value="4. Draft → pending_qo_approval → QO Manager approve → active (versioning: entity + field_key + versi unik)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="529" width="190" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="f5" value="5. Render field di form sesuai definisi active + izin role (tanpa can_view → tidak tampil; mandatory → wajib)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="659" width="190" height="89" as="geometry" />
+        </mxCell>
+        <mxCell id="f6" value="6. User isi nilai → validasi server-side: regex, min/max, opsi aktif, unique, blank required (NF-ER-04)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="778" width="190" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="f7" value="7. Simpan nilai typed-columns per record entity (value_text/number/date/boolean/json/ref/file)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="882" width="190" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="f8" value="8. Tampil di form, list, pencarian (searchable), laporan, dan label yang mereferensikannya" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="986" width="190" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="f9" value="9. Record entity mencapai approved → SEMUA nilai custom field DIKUNCI (server-side enforcement — bukan sekadar UI hidden)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="1116" width="190" height="89" as="geometry" />
+        </mxCell>
+        <mxCell id="f10" value="10. Write ke record approved → DITOLAK 'field locked' · override hanya via change request + e-sign QO + alasan (before/after audit)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="1235" width="190" height="89" as="geometry" />
+        </mxCell>
+        <mxCell id="f11" value="11. Definisi tak dipakai → retired; nilai historis dibaca sesuai definisi versi saat nilai dibuat (interpretasi konsisten)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="1354" width="190" height="89" as="geometry" />
+        </mxCell>
+        <mxCell id="en" value="Selesai" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#F1F5F9;strokeColor=#334155;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="435" y="1473" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="tipe" value="Tipe data: TEXT, NUMBER, DATE, DATETIME, BOOLEAN, DROPDOWN, MULTISELECT, LOOKUP, CHECKBOX, FILE_UPLOAD (→ syn_document)" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;size=18;dashed=1;fillColor=#F8FAFC;strokeColor=#94A3B8;fontStyle=2;fontColor=#475569;align=left;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="620" y="190" width="255" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="lock" value="Penguncian ditegakkan SERVER-SIDE — field-level write ditolak; tidak bisa dilewati dari klien" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;size=18;dashed=1;fillColor=#F8FAFC;strokeColor=#94A3B8;fontStyle=2;fontColor=#475569;align=left;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="60" y="1060" width="225" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="ac_25_cf_flow_0" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="st" target="f1">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_25_cf_flow_1" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="f1" target="f2">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_25_cf_flow_2" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="f2" target="f3">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_25_cf_flow_3" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="f3" target="f4">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_25_cf_flow_4" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="f4" target="f5">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_25_cf_flow_5" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="f5" target="f6">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_25_cf_flow_6" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="f6" target="f7">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_25_cf_flow_7" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="f7" target="f8">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_25_cf_flow_8" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="f8" target="f9">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_25_cf_flow_9" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="f9" target="f10">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_25_cf_flow_10" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="f10" target="f11">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_25_cf_flow_11" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="f11" target="en">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ef1" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;dashed=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="f10" target="lock">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ef1_l" value="enforcement" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#334155;" connectable="0" vertex="1" parent="ef1">
+          <mxGeometry x="0" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

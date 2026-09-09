@@ -1,0 +1,173 @@
+<mxfile host="app.diagrams.net" agent="syntera-diagram-generator" version="24.7.8">
+  <diagram id="d35be2c1cf2" name="formula">
+    <mxGraphModel dx="800" dy="600" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="935" pageHeight="1704" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="ph_formula_2411" value="Fase 1 — Pembuatan, validasi &amp; approval" style="rounded=1;html=1;fillColor=#F8FAFC;strokeColor=#CBD5E1;dashed=1;verticalAlign=top;fontStyle=1;fontColor=#475569;align=left;spacingLeft=8;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="338" y="74" width="254" height="790" as="geometry" />
+        </mxCell>
+        <mxCell id="ph_formula_9528" value="Fase 2 — Pemakaian &amp; siklus versi" style="rounded=1;html=1;fillColor=#F8FAFC;strokeColor=#CBD5E1;dashed=1;verticalAlign=top;fontStyle=1;fontColor=#475569;align=left;spacingLeft=8;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="338" y="876" width="254" height="768" as="geometry" />
+        </mxCell>
+        <mxCell id="ttl" value="MD Sub-modul 3 — Formula Library (Standar &amp; Custom)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontStyle=1;fontSize=20;fontColor=#1E293B;" vertex="1" parent="1">
+          <mxGeometry x="20" y="16" width="620" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="sub" value="Tabel: m_formula, m_formula_version, m_formula_validation (FS-MD-05/06/07/08)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontColor=#64748B;" vertex="1" parent="1">
+          <mxGeometry x="20" y="48" width="620" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="st" value="Mulai" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#F1F5F9;strokeColor=#334155;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="435" y="104" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="f1" value="1. Metrology Lead buat draft formula (name, expression, category, scope)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="194" width="190" height="59" as="geometry" />
+        </mxCell>
+        <mxCell id="f2" value="2. Scope: STANDARD → library lintas site · SITE_SPECIFIC → site_id pemilik diisi (mis. formula khusus Korsch XL200)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="283" width="190" height="89" as="geometry" />
+        </mxCell>
+        <mxCell id="f3" value="3. Validasi mekanik: syntax check parser matematika" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="402" width="190" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="f4" value="4. Simulasi sample input minimal 5 dataset + preview real-time + visualisasi chart (deteksi anomali)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="484" width="190" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="f5" value="5. Perbandingan vs perhitungan manual — selisih ≤ ±1e-6 (bukti CSV)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="588" width="190" height="59" as="geometry" />
+        </mxCell>
+        <mxCell id="f_d1" value="Validasi PASS?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#D97706;" vertex="1" parent="1">
+          <mxGeometry x="390" y="677" width="150" height="84" as="geometry" />
+        </mxCell>
+        <mxCell id="f6" value="6. Reviewer mereview formula + bukti validasi (m_formula_validation)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="791" width="190" height="59" as="geometry" />
+        </mxCell>
+        <mxCell id="f7" value="7. Approval: STANDARD → Cross-Site Council 4 dari 6 Metrology Lead · SITE_SPECIFIC → ML site pemilik + notifikasi site lain" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="906" width="190" height="89" as="geometry" />
+        </mxCell>
+        <mxCell id="f8" value="8. Publish → m_formula_version dibuat (immutable, addressable) + effective_date + esign_manifest" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="1025" width="190" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="f9" value="9. Formula engine memakai versi efektif terbaru saat eksekusi WO (correction, Uc, U95)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="1129" width="190" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="f10" value="10. syn_wo_uncertainty merekam formula_version_id → traceability versi formula saat eksekusi" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="1233" width="190" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="f_d2" value="Revisi formula?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#D97706;" vertex="1" parent="1">
+          <mxGeometry x="390" y="1337" width="150" height="84" as="geometry" />
+        </mxCell>
+        <mxCell id="f11" value="11. Versi baru menempuh alur 1-10; versi lama archived — formula custom tak dapat dipakai site lain kecuali di-adopt jadi standard" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="1451" width="190" height="89" as="geometry" />
+        </mxCell>
+        <mxCell id="en" value="Selesai" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#F1F5F9;strokeColor=#334155;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="435" y="1570" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="n1" value="Gate publish: syntax + ≥5 dataset + delta manual ±1e-6 — FAIL tidak dapat dipublikasikan (FS-MD-07, CSV)" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;size=18;dashed=1;fillColor=#F8FAFC;strokeColor=#94A3B8;fontStyle=2;fontColor=#475569;align=left;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="620" y="190" width="255" height="84" as="geometry" />
+        </mxCell>
+        <mxCell id="n2" value="Revisi expression" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;size=18;dashed=1;fillColor=#F8FAFC;strokeColor=#94A3B8;fontStyle=2;fontColor=#475569;align=left;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="60" y="680" width="220" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="n3" value="Contoh: correction = std − uut · Uc = sqrt(Σui²) · U95 = k × Uc" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;size=18;dashed=1;fillColor=#F8FAFC;strokeColor=#94A3B8;fontStyle=2;fontColor=#475569;align=left;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="620" y="1050" width="255" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="ac_formula_0" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="st" target="f1">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_formula_1" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="f1" target="f2">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_formula_2" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="f2" target="f3">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_formula_3" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="f3" target="f4">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_formula_4" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="f4" target="f5">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_formula_5" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="f5" target="f_d1">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_formula_6" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="f_d1" target="f6">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_formula_6_l" value="Ya" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#334155;" connectable="0" vertex="1" parent="ac_formula_6">
+          <mxGeometry x="0" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_formula_7" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="f6" target="f7">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_formula_8" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="f7" target="f8">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_formula_9" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="f8" target="f9">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_formula_10" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="f9" target="f10">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_formula_11" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="f10" target="f_d2">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_formula_12" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="f_d2" target="f11">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_formula_12_l" value="Tidak" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#334155;" connectable="0" vertex="1" parent="ac_formula_12">
+          <mxGeometry x="0" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_formula_13" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="f11" target="en">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e1" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="f_d1" target="n2">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e1_l" value="Tidak (FAIL)" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#334155;" connectable="0" vertex="1" parent="e1">
+          <mxGeometry x="0" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e2" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="n2" target="f1">
+          <mxGeometry relative="1" as="geometry">
+          <Array as="points">
+            <mxPoint x="28" y="708" />
+            <mxPoint x="28" y="220" />
+          </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e2_l" value="kembali revisi" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#334155;" connectable="0" vertex="1" parent="e2">
+          <mxGeometry x="0" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e3" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="f_d2" target="f11">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e3_l" value="Ya" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#334155;" connectable="0" vertex="1" parent="e3">
+          <mxGeometry x="0" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

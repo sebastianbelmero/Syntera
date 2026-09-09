@@ -1,0 +1,265 @@
+<mxfile host="app.diagrams.net" agent="syntera-diagram-generator" version="24.7.8">
+  <diagram id="dfaf98fcb92" name="07_dev_dfd">
+    <mxGraphModel dx="800" dy="600" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1604" pageHeight="924" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="cl_07_dev_dfd_own" value="Tabel modul ini (7) — Syntera_[site] / Master DB" style="rounded=1;html=1;fillColor=none;strokeColor=#94A3B8;dashed=1;verticalAlign=top;fontStyle=1;fontColor=#64748B;align=left;spacingLeft=8;spacingTop=2;" vertex="1" parent="1">
+          <mxGeometry x="682" y="116" width="265" height="502" as="geometry" />
+        </mxCell>
+        <mxCell id="ttl" value="Modul Deviasi — Data Flow Diagram (level 1)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontStyle=1;fontSize=20;fontColor=#1E293B;" vertex="1" parent="1">
+          <mxGeometry x="20" y="16" width="620" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="sub" value="Aktor → proses → tabel · QMS = system of record deviation (Syntera menyimpan link + mirror)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontColor=#64748B;" vertex="1" parent="1">
+          <mxGeometry x="20" y="48" width="620" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="tech" value="Technician&lt;br&gt;(trigger manual, bukti)" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fillColor=#F5F5F5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="40" y="116" width="36" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="sup" value="Supervisor&lt;br&gt;(approval level-1)" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fillColor=#F5F5F5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="40" y="216" width="36" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="qa" value="QA / QO Manager&lt;br&gt;(approval level-2, klasifikasi)" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fillColor=#F5F5F5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="40" y="316" width="36" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="em" value="Engineering Manager&lt;br&gt;(approval reaktivasi)" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fillColor=#F5F5F5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="40" y="416" width="36" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="qms" value="QMS (REST + polling 5 mnt / webhook)" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;dashed=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;" vertex="1" parent="1">
+          <mxGeometry x="34" y="516" width="150" height="96" as="geometry" />
+        </mxCell>
+        <mxCell id="ebs" value="Oracle EBS EAM&lt;br&gt;(status WO Cancelled)" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;dashed=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;" vertex="1" parent="1">
+          <mxGeometry x="34" y="642" width="150" height="96" as="geometry" />
+        </mxCell>
+        <mxCell id="s3" value="Object storage S3" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;dashed=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;" vertex="1" parent="1">
+          <mxGeometry x="34" y="768" width="150" height="96" as="geometry" />
+        </mxCell>
+        <mxCell id="p_trig" value="0.0  Deteksi trigger (OOS / OOT / manual)" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="330" y="116" width="220" height="68" as="geometry" />
+        </mxCell>
+        <mxCell id="p_reg" value="1.0  Registrasi &amp; kirim tiket QMS" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="330" y="216" width="220" height="68" as="geometry" />
+        </mxCell>
+        <mxCell id="p_evid" value="2.0  Bukti &amp; lampiran" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="330" y="316" width="220" height="68" as="geometry" />
+        </mxCell>
+        <mxCell id="p_sync" value="3.0  Sinkronisasi status investigasi" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="330" y="416" width="220" height="68" as="geometry" />
+        </mxCell>
+        <mxCell id="p_dec" value="4.0  Keputusan tindak lanjut WO" style="rounded=1;whiteSpace=wrap;html=1;arcSize=12;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="330" y="516" width="220" height="68" as="geometry" />
+        </mxCell>
+        <mxCell id="t_link" value="syn_wo_deviation_link" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#F5F3FF;strokeColor=#7C3AED;fontColor=#4C1D95;" vertex="1" parent="1">
+          <mxGeometry x="700" y="142" width="215" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="t_qlog" value="syn_qms_sync_log" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#F5F3FF;strokeColor=#7C3AED;fontColor=#4C1D95;" vertex="1" parent="1">
+          <mxGeometry x="700" y="208" width="215" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="t_att" value="syn_deviation_attachment" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#F5F3FF;strokeColor=#7C3AED;fontColor=#4C1D95;" vertex="1" parent="1">
+          <mxGeometry x="700" y="274" width="215" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="t_inv" value="syn_deviation_investigation" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#F5F3FF;strokeColor=#7C3AED;fontColor=#4C1D95;" vertex="1" parent="1">
+          <mxGeometry x="700" y="340" width="215" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="t_cancel" value="syn_wo_cancellation" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#F5F3FF;strokeColor=#7C3AED;fontColor=#4C1D95;" vertex="1" parent="1">
+          <mxGeometry x="700" y="406" width="215" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="t_react" value="syn_asset_reactivation" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#F5F3FF;strokeColor=#7C3AED;fontColor=#4C1D95;" vertex="1" parent="1">
+          <mxGeometry x="700" y="472" width="215" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="t_audit" value="audit_logs" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#F5F3FF;strokeColor=#7C3AED;fontColor=#4C1D95;" vertex="1" parent="1">
+          <mxGeometry x="700" y="538" width="215" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="refbox_07_dev_dfd" value="Baca — tabel modul lain:&lt;br&gt;verdict CAL (syn_wo_point_result — sumber OOS)&lt;br&gt;syn_risk_assessment (OOT → RISK)&lt;br&gt;syn_wo_deviation_capa_link (CAPA)&lt;br&gt;syn_notification_* (NOTIF — pembatalan WO)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="974" y="116" width="250" height="164" as="geometry" />
+        </mxCell>
+        <mxCell id="leg_07_dev_dfd" value="solid = alur tulis data · putus-putus = baca&lt;br&gt;lavender = tabel milik modul · abu = referensi&lt;br&gt;cylinder putus-putus = sistem eksternal" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;size=18;dashed=1;fillColor=#F8FAFC;strokeColor=#94A3B8;fontStyle=2;fontColor=#475569;align=left;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="1254" y="642" width="290" height="84" as="geometry" />
+        </mxCell>
+        <mxCell id="note_07_dev_dfd" value="Outbound async: proses kalibrasi tidak blocking menunggu QMS. Verdict WO keseluruhan: ACCEPTED / ACCEPTED_WITH_NOTES (max_spread ≤ U95) / NOT_ACCEPTED." style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;size=18;dashed=1;fillColor=#F8FAFC;strokeColor=#94A3B8;fontStyle=2;fontColor=#475569;align=left;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="1254" y="492" width="290" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="f1" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="tech" target="p_trig">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f1_l" value="manual trigger (non-OOS)" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#334155;" connectable="0" vertex="1" parent="f1">
+          <mxGeometry x="0" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f2" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p_trig" target="p_reg">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f2_l" value="event OOS / OOT (dari CAL)" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#334155;" connectable="0" vertex="1" parent="f2">
+          <mxGeometry x="0" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f3" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p_reg" target="t_link">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f3_l" value="snapshot konteks + sync_status" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#334155;" connectable="0" vertex="1" parent="f3">
+          <mxGeometry x="-0.25" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f4" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p_reg" target="qms">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f4_l" value="tiket (payload JSON + idempotency key)" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#334155;" connectable="0" vertex="1" parent="f4">
+          <mxGeometry x="0.5" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f5" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p_reg" target="t_qlog">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f5_l" value="log DEVIATION_TRIGGER" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#334155;" connectable="0" vertex="1" parent="f5">
+          <mxGeometry x="-0.25" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f6" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="qms" target="p_reg">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f6_l" value="deviation ID (balasan)" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#334155;" connectable="0" vertex="1" parent="f6">
+          <mxGeometry x="0" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f7" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="tech" target="p_evid">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f7_l" value="foto / screenshot / laporan" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#334155;" connectable="0" vertex="1" parent="f7">
+          <mxGeometry x="0" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f8" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p_evid" target="s3">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f8_l" value="upload (path per deviation_uuid)" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#334155;" connectable="0" vertex="1" parent="f8">
+          <mxGeometry x="0.5" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f9" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p_evid" target="t_att">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f9_l" value="lampiran (≤10 × 25 MB)" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#334155;" connectable="0" vertex="1" parent="f9">
+          <mxGeometry x="-0.25" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f10" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="qms" target="p_sync">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f10_l" value="status investigasi (poll/webhook)" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#334155;" connectable="0" vertex="1" parent="f10">
+          <mxGeometry x="0" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f11" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p_sync" target="t_inv">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f11_l" value="mirror: metode, root cause, status" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#334155;" connectable="0" vertex="1" parent="f11">
+          <mxGeometry x="-0.25" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f12" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p_sync" target="t_qlog">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f12_l" value="log DEVIATION_STATUS_SYNC" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#334155;" connectable="0" vertex="1" parent="f12">
+          <mxGeometry x="-0.25" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f13" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;dashed=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="t_inv" target="p_dec">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f13_l" value="klasifikasi minor/major/critical" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#334155;" connectable="0" vertex="1" parent="f13">
+          <mxGeometry x="0.5" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f14" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="qa" target="p_dec">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f14_l" value="klasifikasi &amp; approval" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#334155;" connectable="0" vertex="1" parent="f14">
+          <mxGeometry x="0" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f15" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="sup" target="p_dec">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f15_l" value="approval pembatalan (level-1)" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#334155;" connectable="0" vertex="1" parent="f15">
+          <mxGeometry x="0" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f16" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="em" target="p_dec">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f16_l" value="approval reaktivasi (level-3)" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#334155;" connectable="0" vertex="1" parent="f16">
+          <mxGeometry x="0" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f17" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p_dec" target="t_cancel">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f17_l" value="alasan + link tiket QMS" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#334155;" connectable="0" vertex="1" parent="f17">
+          <mxGeometry x="-0.25" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f18" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p_dec" target="t_react">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f18_l" value="reaktivasi 3-level" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#334155;" connectable="0" vertex="1" parent="f18">
+          <mxGeometry x="-0.25" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f19" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p_dec" target="ebs">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f19_l" value="status WO → Cancelled (sinkron)" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#334155;" connectable="0" vertex="1" parent="f19">
+          <mxGeometry x="0.5" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f20" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="p_dec" target="t_audit">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="f20_l" value="semua aktivitas (hash chain)" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#334155;" connectable="0" vertex="1" parent="f20">
+          <mxGeometry x="-0.25" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -1,0 +1,153 @@
+<mxfile host="app.diagrams.net" agent="syntera-diagram-generator" version="24.7.8">
+  <diagram id="d57cca645c8" name="11_snp_flow">
+    <mxGraphModel dx="800" dy="600" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="935" pageHeight="1753" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="ph_11_snp_flow_8894" value="Fase 1 — Capture snapshot 14-entity saat assignment" style="rounded=1;html=1;fillColor=#F8FAFC;strokeColor=#CBD5E1;dashed=1;verticalAlign=top;fontStyle=1;fontColor=#475569;align=left;spacingLeft=8;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="338" y="74" width="254" height="580" as="geometry" />
+        </mxCell>
+        <mxCell id="ph_11_snp_flow_3935" value="Fase 2 — Eksekusi terikat snapshot" style="rounded=1;html=1;fillColor=#F8FAFC;strokeColor=#CBD5E1;dashed=1;verticalAlign=top;fontStyle=1;fontColor=#475569;align=left;spacingLeft=8;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="338" y="666" width="254" height="351" as="geometry" />
+        </mxCell>
+        <mxCell id="ph_11_snp_flow_5408" value="Fase 3 — Verifikasi auditor" style="rounded=1;html=1;fillColor=#F8FAFC;strokeColor=#CBD5E1;dashed=1;verticalAlign=top;fontStyle=1;fontColor=#475569;align=left;spacingLeft=8;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="338" y="1029" width="254" height="664" as="geometry" />
+        </mxCell>
+        <mxCell id="ttl" value="Modul Snapshot Immutable — Diagram Alur Detail" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontStyle=1;fontSize=20;fontColor=#1E293B;" vertex="1" parent="1">
+          <mxGeometry x="20" y="16" width="620" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="sub" value="Sumber: FSD 2.23 (SNP) · timing capture = WO assignment (pre/post-commit) · hash chain 14 entitas" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontColor=#64748B;" vertex="1" parent="1">
+          <mxGeometry x="20" y="48" width="620" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="st" value="Mulai&lt;br&gt;(WO di-assign)" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#F1F5F9;strokeColor=#334155;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="435" y="104" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="n1" value="1. Baca nilai terkini 14 entitas: asset, kalibrator+cert, media, SOP+config, WO, PM schedule, user+kompetensi, device, ambient range, foto, approval chain, titik template" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="194" width="190" height="119" as="geometry" />
+        </mxCell>
+        <mxCell id="n2" value="2. Tulis snapshot family INSERT-only (DB trigger): syn_wo_snapshot, syn_wo_calibrator, syn_wo_media, syn_wo_cal_point, syn_wo_env, syn_wo_approval" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="343" width="190" height="104" as="geometry" />
+        </mxCell>
+        <mxCell id="n3" value="3. Hash chain per baris: hash = SHA256(record_data ‖ hash_prev)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="477" width="190" height="59" as="geometry" />
+        </mxCell>
+        <mxCell id="n4" value="4. Snapshot immutable — tak dapat diedit/dihapus siapa pun, termasuk System Administrator" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="566" width="190" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="n5" value="5. Teknisi eksekusi: setiap reading (syn_wo_result) me-reference cal_point_id DARI SNAPSHOT — bukan master live" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="696" width="190" height="89" as="geometry" />
+        </mxCell>
+        <mxCell id="n_d1" value="Master di-update mid-WO?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#D97706;" vertex="1" parent="1">
+          <mxGeometry x="390" y="815" width="150" height="84" as="geometry" />
+        </mxCell>
+        <mxCell id="n6" value="6. Verdict dihitung vs criteria_snapshot (JSONB) → hasil FINAL immutable → alur approval (APPR/ESIGN)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="929" width="190" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="n7" value="7. Auditor: Hash Chain Integrity Verification — seluruh log / per WO / per tanggal / per site" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="1059" width="190" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="n8" value="8. Sistem hitung ulang hash tiap snapshot &amp; bandingkan dengan rantai (hash_prev linkage)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="1163" width="190" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="n_d2" value="Konsisten?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#D97706;" vertex="1" parent="1">
+          <mxGeometry x="390" y="1267" width="150" height="84" as="geometry" />
+        </mxCell>
+        <mxCell id="n9" value="9. Hasil → syn_snapshot_verification + laporan PDF ber-digital-signature Syntera (verifikasi bulanan — FDA best practice)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="1381" width="190" height="89" as="geometry" />
+        </mxCell>
+        <mxCell id="n10" value="10. Retensi = retensi WO (5 tahun post-decommission) → arsip immutable storage; read-only API by wo_id (rekonstruksi lengkap)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="1500" width="190" height="89" as="geometry" />
+        </mxCell>
+        <mxCell id="en" value="Selesai" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#F1F5F9;strokeColor=#334155;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="435" y="1619" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="n_ok" value="Snapshot TIDAK berubah — teknisi tetap memakai versi yang benar-benar dipakai saat eksekusi (defensible)" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;size=18;dashed=1;fillColor=#F8FAFC;strokeColor=#94A3B8;fontStyle=2;fontColor=#475569;align=left;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="620" y="470" width="255" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="n_bad" value="Laporan mismatch: snapshot_id, expected vs actual hash, last_modified_at, modified_by (via DB metadata — menangkap modifikasi langsung DBA) → investigasi data integrity" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;size=18;dashed=1;fillColor=#F8FAFC;strokeColor=#94A3B8;fontStyle=2;fontColor=#475569;align=left;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="620" y="1010" width="255" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="ac_11_snp_flow_0" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="st" target="n1">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_11_snp_flow_1" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="n1" target="n2">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_11_snp_flow_2" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="n2" target="n3">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_11_snp_flow_3" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="n3" target="n4">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_11_snp_flow_4" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="n4" target="n5">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_11_snp_flow_5" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="n5" target="n_d1">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_11_snp_flow_6" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="n_d1" target="n6">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_11_snp_flow_6_l" value="Tidak berpengaruh" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#334155;" connectable="0" vertex="1" parent="ac_11_snp_flow_6">
+          <mxGeometry x="0" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_11_snp_flow_7" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="n6" target="n7">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_11_snp_flow_8" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="n7" target="n8">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_11_snp_flow_9" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="n8" target="n_d2">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_11_snp_flow_10" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="n_d2" target="n9">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_11_snp_flow_10_l" value="Ya" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#334155;" connectable="0" vertex="1" parent="ac_11_snp_flow_10">
+          <mxGeometry x="0" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_11_snp_flow_11" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="n9" target="n10">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_11_snp_flow_12" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="n10" target="en">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="en1" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="n_d1" target="n_ok">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="en1_l" value="Ya" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#334155;" connectable="0" vertex="1" parent="en1">
+          <mxGeometry x="0" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="en2" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="n_d2" target="n_bad">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="en2_l" value="Tidak" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#334155;" connectable="0" vertex="1" parent="en2">
+          <mxGeometry x="0" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

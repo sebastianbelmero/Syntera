@@ -1,0 +1,138 @@
+<mxfile host="app.diagrams.net" agent="syntera-diagram-generator" version="24.7.8">
+  <diagram id="df2bb96412e" name="18_risk_flow">
+    <mxGraphModel dx="800" dy="600" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="935" pageHeight="1211" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="ph_18_risk_flow_2279" value="Fase 1 — Trigger OOT &amp; scope dampak" style="rounded=1;html=1;fillColor=#F8FAFC;strokeColor=#CBD5E1;dashed=1;verticalAlign=top;fontStyle=1;fontColor=#475569;align=left;spacingLeft=8;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="338" y="74" width="254" height="550" as="geometry" />
+        </mxCell>
+        <mxCell id="ph_18_risk_flow_857" value="Fase 2 — Review 3 pihak &amp; keputusan" style="rounded=1;html=1;fillColor=#F8FAFC;strokeColor=#CBD5E1;dashed=1;verticalAlign=top;fontStyle=1;fontColor=#475569;align=left;spacingLeft=8;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="338" y="636" width="254" height="515" as="geometry" />
+        </mxCell>
+        <mxCell id="ttl" value="Modul Risk Assessment (OOT) — Diagram Alur Detail" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontStyle=1;fontSize=20;fontColor=#1E293B;" vertex="1" parent="1">
+          <mxGeometry x="20" y="16" width="620" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="sub" value="Sumber: FSD 2.16 (RISK) · RPN = S×O×D per ICH Q9 / FMEA · 3 keputusan baku" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontColor=#64748B;" vertex="1" parent="1">
+          <mxGeometry x="20" y="48" width="620" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="st" value="Mulai&lt;br&gt;(OOT: OOS pada alat&lt;br&gt;yang terpakai produksi)" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#F1F5F9;strokeColor=#334155;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="435" y="104" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="r1" value="1. Trigger dari DEV: instrument_id, riwayat WO 12 bulan, batch terdampak, last_passing_cal, severity (CRITICAL/MAJOR/MINOR)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="194" width="190" height="89" as="geometry" />
+        </mxCell>
+        <mxCell id="r2" value="2. Scope dampak WAJIB dari query Oracle EBS (instrumen + rentang tanggal sejak last_passing_cal) → syn_impacted_product_log (immutable)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="313" width="190" height="89" as="geometry" />
+        </mxCell>
+        <mxCell id="r3" value="3. Form risk assessment auto-populate: severity × occurrence × detection (skala 1-5)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="432" width="190" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="r4" value="4. RPN dihitung client-side (feedback instan) + divalidasi server-side saat submit (ICH Q9)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="536" width="190" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="r5" value="5. Review &amp; e-signature 3 pihak: QA + QO Manager + Engineering Manager (Risk Assessment Report PDF)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="666" width="190" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="r_d1" value="Keputusan (risk_decision)?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#D97706;" vertex="1" parent="1">
+          <mxGeometry x="390" y="770" width="150" height="84" as="geometry" />
+        </mxCell>
+        <mxCell id="r6" value="6. Tidak ada tindakan lanjutan; risiko tercatat di risk register — status CLOSED" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="884" width="190" height="59" as="geometry" />
+        </mxCell>
+        <mxCell id="r7" value="7. Risk register &amp; FMEA terpelihara; risk review cycle berkala; CAPA memitigasi risiko (score diperbarui)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="973" width="190" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="en" value="Selesai" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#F1F5F9;strokeColor=#334155;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="435" y="1077" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="major" value="Severity MAJOR → CAPA juga auto-trigger (jalur DEV/CAPA)" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;size=18;dashed=1;fillColor=#F8FAFC;strokeColor=#94A3B8;fontStyle=2;fontColor=#475569;align=left;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="620" y="190" width="255" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="br" value="BATCH_REVIEW → investigasi batch di QMS + trigger action CAPA" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#64748B;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="620" y="626" width="255" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="rc" value="RECALL → workflow APPR 3-manager approval SEBELUM transaksi recall dieksekusi di Oracle EBS + trigger CAPA (last resort)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#64748B;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="626" width="225" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="ac_18_risk_flow_0" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="st" target="r1">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_18_risk_flow_1" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="r1" target="r2">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_18_risk_flow_2" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="r2" target="r3">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_18_risk_flow_3" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="r3" target="r4">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_18_risk_flow_4" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="r4" target="r5">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_18_risk_flow_5" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="r5" target="r_d1">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_18_risk_flow_6" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="r_d1" target="r6">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_18_risk_flow_6_l" value="ACCEPTABLE" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#334155;" connectable="0" vertex="1" parent="ac_18_risk_flow_6">
+          <mxGeometry x="0" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_18_risk_flow_7" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="r6" target="r7">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_18_risk_flow_8" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="r7" target="en">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="er1" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="r_d1" target="br">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="er1_l" value="BATCH_REVIEW" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#334155;" connectable="0" vertex="1" parent="er1">
+          <mxGeometry x="0" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="er2" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="r_d1" target="rc">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="er2_l" value="RECALL" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#334155;" connectable="0" vertex="1" parent="er2">
+          <mxGeometry x="0" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="er3" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="br" target="r7">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="er3_l" value="eksekusi keputusan" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#334155;" connectable="0" vertex="1" parent="er3">
+          <mxGeometry x="0" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="er4" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="rc" target="r7">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="er4_l" value="eksekusi keputusan" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#334155;" connectable="0" vertex="1" parent="er4">
+          <mxGeometry x="0" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

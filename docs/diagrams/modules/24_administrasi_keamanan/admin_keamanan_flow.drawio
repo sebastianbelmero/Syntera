@@ -1,0 +1,108 @@
+<mxfile host="app.diagrams.net" agent="syntera-diagram-generator" version="24.7.8">
+  <diagram id="dd0e7164390" name="24_as_flow">
+    <mxGraphModel dx="800" dy="600" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="935" pageHeight="1469" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="ph_24_as_flow_3096" value="Fase 1 — Akses &amp; autentikasi keamanan (FS-AS-01..05)" style="rounded=1;html=1;fillColor=#F8FAFC;strokeColor=#CBD5E1;dashed=1;verticalAlign=top;fontStyle=1;fontColor=#475569;align=left;spacingLeft=8;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="338" y="74" width="254" height="743" as="geometry" />
+        </mxCell>
+        <mxCell id="ph_24_as_flow_9836" value="Fase 2 — Otorisasi &amp; operasional keamanan" style="rounded=1;html=1;fillColor=#F8FAFC;strokeColor=#CBD5E1;dashed=1;verticalAlign=top;fontStyle=1;fontColor=#475569;align=left;spacingLeft=8;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="338" y="829" width="254" height="580" as="geometry" />
+        </mxCell>
+        <mxCell id="ttl" value="Modul Administrasi &amp; Keamanan (AS) — Diagram Alur Detail" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontStyle=1;fontSize=20;fontColor=#1E293B;" vertex="1" parent="1">
+          <mxGeometry x="20" y="16" width="620" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="sub" value="Sumber: FSD 2.1 (AS) + kode terimplementasi (IAM .NET: LDAPS direct-bind, bcrypt fallback, TOTP, refresh rotation)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontColor=#64748B;" vertex="1" parent="1">
+          <mxGeometry x="20" y="48" width="620" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="st" value="Mulai" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#F1F5F9;strokeColor=#334155;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="435" y="104" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="a1" value="1. HTTPS (TLS 1.3 dipaksa di load balancer); resolve domain email → site/tenant" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="194" width="190" height="59" as="geometry" />
+        </mxCell>
+        <mxCell id="a2" value="2. Akun LDAP → bind LDAPS port 636 ke Kalbe AD · akun emergency @syntera.com → bcrypt lokal (fallback)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="283" width="190" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="a3" value="3. Gagal → counter per user+IP; 5x beruntun → kunci 30 menit + notifikasi admin &amp; user terkena" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="387" width="190" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="a4" value="4. Sukses → cek status user master (AD Change Notification); disabled di AD → sesi di-invalidasi seketika" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="491" width="190" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="a5" value="5. Role high-privilege (SysAdmin/QO) → MFA TOTP (secret AES-256-GCM, QR enrollment); fallback email OTP rate-limited" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="595" width="190" height="89" as="geometry" />
+        </mxCell>
+        <mxCell id="a6" value="6. Set konteks tenant (RLS / UNION site terizinkan) + JWT 15 mnt + refresh 8 jam sliding + rotasi reuse detection per family" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="714" width="190" height="89" as="geometry" />
+        </mxCell>
+        <mxCell id="a7" value="7. Setiap request API → PEP RBAC (permission efektif dari cache TTL 5 mnt); DENY per-user menang; 403 tercatat" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="859" width="190" height="89" as="geometry" />
+        </mxCell>
+        <mxCell id="a8" value="8. Ubah role/permission → broadcast invalidasi cache + permissions_version naik → JWT stale ditolak (wajib refresh)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="978" width="190" height="89" as="geometry" />
+        </mxCell>
+        <mxCell id="a9" value="9. Idle 15 menit → warning 60 detik → logout paksa + revoke refresh; reuse token → seluruh family revoked (anti-theft)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="1097" width="190" height="89" as="geometry" />
+        </mxCell>
+        <mxCell id="a10" value="10. Kebijakan: password max-age 90 hari + anti-reuse 10 hash, device check high-privilege, export user + hak akses (CSV)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;" vertex="1" parent="1">
+          <mxGeometry x="370" y="1216" width="190" height="89" as="geometry" />
+        </mxCell>
+        <mxCell id="en" value="Selesai" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#F1F5F9;strokeColor=#334155;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="435" y="1335" width="60" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="pol" value="Kalventis IS Security Policy: patch management, virus protection, secure development, encrypted authentication, password policy — tanpa data pribadi selain username/user ID" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;size=18;dashed=1;fillColor=#F8FAFC;strokeColor=#94A3B8;fontStyle=2;fontColor=#475569;align=left;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="620" y="190" width="255" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="aud" value="Semua upaya login, perubahan role, enable/disable, dan kebijakan tercatat audit immutable (before/after JSON, aktor, UTC, IP)" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;size=18;dashed=1;fillColor=#F8FAFC;strokeColor=#94A3B8;fontStyle=2;fontColor=#475569;align=left;spacingLeft=6;spacingRight=6;" vertex="1" parent="1">
+          <mxGeometry x="60" y="190" width="225" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="ac_24_as_flow_0" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="st" target="a1">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_24_as_flow_1" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="a1" target="a2">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_24_as_flow_2" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="a2" target="a3">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_24_as_flow_3" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="a3" target="a4">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_24_as_flow_4" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="a4" target="a5">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_24_as_flow_5" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="a5" target="a6">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_24_as_flow_6" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="a6" target="a7">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_24_as_flow_7" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="a7" target="a8">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_24_as_flow_8" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="a8" target="a9">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_24_as_flow_9" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="a9" target="a10">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ac_24_as_flow_10" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;rounded=1;strokeColor=#64748B;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="a10" target="en">
+          <mxGeometry relative="1" as="geometry">
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

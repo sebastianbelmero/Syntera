@@ -1,0 +1,208 @@
+<mxfile host="app.diagrams.net" agent="syntera-diagram-generator" version="24.7.8">
+  <diagram id="syntera_overview" name="Alur Proses Bisnis Syntera">
+    <mxGraphModel dx="787" dy="483" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="mulai" value="Mulai" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;" parent="1" vertex="1">
+          <mxGeometry x="50" y="245" width="80" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="auth" value="Modul Autentikasi" style="rounded=0;whiteSpace=wrap;html=1;" parent="1" vertex="1">
+          <mxGeometry x="190" y="255" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="wo" value="Modul Pembuatan dan Perilisan WO" style="rounded=0;whiteSpace=wrap;html=1;" parent="1" vertex="1">
+          <mxGeometry x="360" y="255" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="kal" value="Modul Kalibrasi" style="rounded=0;whiteSpace=wrap;html=1;" parent="1" vertex="1">
+          <mxGeometry x="560" y="255" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="reg" value="Modul Register Asset" style="rounded=0;whiteSpace=wrap;html=1;" parent="1" vertex="1">
+          <mxGeometry x="360" y="155" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="md" value="Modul Master Data Management" style="rounded=0;whiteSpace=wrap;html=1;" parent="1" vertex="1">
+          <mxGeometry x="560" y="155" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="oracle" value="Oracle EBS EAM (System of Record: Asset &amp; WO)" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;dashed=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="1" vertex="1">
+          <mxGeometry x="110" y="90" width="120" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="hasil" value="Hasil Kalibrasi" style="rhombus;whiteSpace=wrap;html=1;aspect=fixed;" parent="1" vertex="1">
+          <mxGeometry x="580" y="345" width="80" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="rep" value="Modul Report" style="rounded=0;whiteSpace=wrap;html=1;" parent="1" vertex="1">
+          <mxGeometry x="360" y="355" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="appr" value="Modul Approval Oleh QO Manager dan Eng Manager" style="rounded=0;whiteSpace=wrap;html=1;" parent="1" vertex="1">
+          <mxGeometry x="190" y="355" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="labelm" value="Modul Label (Cetak Label Kalibrasi)" style="rounded=0;whiteSpace=wrap;html=1;" parent="1" vertex="1">
+          <mxGeometry x="190" y="455" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="selesai" value="Selesai" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;" parent="1" vertex="1">
+          <mxGeometry x="50" y="445" width="80" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="dev" value="Modul Deviasi" style="rounded=0;whiteSpace=wrap;html=1;" parent="1" vertex="1">
+          <mxGeometry x="560" y="475" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="qms" value="QMS (Deviation &amp; CAPA)" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;dashed=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="1" vertex="1">
+          <mxGeometry x="300" y="525" width="120" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="tindak" value="Tindak Lanjut?" style="rhombus;whiteSpace=wrap;html=1;aspect=fixed;" parent="1" vertex="1">
+          <mxGeometry x="580" y="600" width="80" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="res" value="" style="group" parent="1" connectable="0" vertex="1">
+          <mxGeometry x="452.5" y="70" width="335" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="resbox" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;" parent="res" vertex="1">
+          <mxGeometry width="335" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="res_sop" value="SOP" style="rounded=0;whiteSpace=wrap;html=1;" parent="res" vertex="1">
+          <mxGeometry x="10" y="15" width="70" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="res_media" value="Media Kalibrasi" style="rounded=0;whiteSpace=wrap;html=1;" parent="res" vertex="1">
+          <mxGeometry x="88" y="15" width="70" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="res_sert" value="Sertifikat Standar" style="rounded=0;whiteSpace=wrap;html=1;" parent="res" vertex="1">
+          <mxGeometry x="166" y="15" width="70" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="res_form" value="Formula &amp; Toleransi" style="rounded=0;whiteSpace=wrap;html=1;" parent="res" vertex="1">
+          <mxGeometry x="244" y="15" width="70" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;html=1;" parent="1" source="mulai" target="auth" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;html=1;" parent="1" source="auth" target="wo" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;html=1;" parent="1" source="wo" target="kal" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="reg" target="wo" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4_lbl" value="asset" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="e4" connectable="0" vertex="1">
+          <mxGeometry x="-0.1" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e5" style="edgeStyle=orthogonalEdgeStyle;html=1;" parent="1" source="reg" target="md" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="resbox" target="md" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="md" target="kal" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" style="edgeStyle=orthogonalEdgeStyle;html=1;" parent="1" source="kal" target="hasil" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e9" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="hasil" target="rep" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e9_lbl" value="OK" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="e9" connectable="0" vertex="1">
+          <mxGeometry x="-0.1" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e10" style="edgeStyle=orthogonalEdgeStyle;html=1;" parent="1" source="hasil" target="dev" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e10_lbl" value="OOS/OOT" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="e10" connectable="0" vertex="1">
+          <mxGeometry x="-0.1" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e11" style="edgeStyle=orthogonalEdgeStyle;html=1;" parent="1" source="rep" target="appr" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e12" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="appr" target="labelm" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e13" style="edgeStyle=orthogonalEdgeStyle;html=1;" parent="1" source="labelm" target="selesai" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e14" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" edge="1" parent="1" source="12" target="kal">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e15" style="edgeStyle=orthogonalEdgeStyle;html=1;" parent="1" source="tindak" target="kal" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="770" y="615" />
+              <mxPoint x="770" y="285" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e15_lbl" value="Kalibrasi ulang" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="e15" connectable="0" vertex="1">
+          <mxGeometry x="-0.1" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e16" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" parent="1" source="tindak" target="selesai" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e16_lbl" value="WO dibatalkan" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="e16" connectable="0" vertex="1">
+          <mxGeometry x="-0.1" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e17" style="edgeStyle=orthogonalEdgeStyle;html=1;dashed=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="oracle" target="reg" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e17_lbl" value="sinkron asset" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="e17" connectable="0" vertex="1">
+          <mxGeometry x="-0.1" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e18" style="edgeStyle=orthogonalEdgeStyle;html=1;dashed=1;startArrow=classic;exitX=0.25;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" parent="1" source="wo" target="oracle" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e18_lbl" value="rilis &amp; status WO" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="e18" connectable="0" vertex="1">
+          <mxGeometry x="-0.1" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e19" style="edgeStyle=orthogonalEdgeStyle;html=1;dashed=1;startArrow=classic;" parent="1" source="qms" target="dev" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e19_lbl" value="sinkron deviasi &amp; CAPA" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="e19" connectable="0" vertex="1">
+          <mxGeometry x="-0.1" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="2" value="1" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;" vertex="1" parent="1">
+          <mxGeometry x="290" y="245" width="30" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="4" value="2" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;" vertex="1" parent="1">
+          <mxGeometry x="463" y="140" width="30" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="5" value="3" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;" vertex="1" parent="1">
+          <mxGeometry x="660" y="140" width="30" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="6" value="4" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;" vertex="1" parent="1">
+          <mxGeometry x="463" y="245" width="30" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="7" value="5" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;" vertex="1" parent="1">
+          <mxGeometry x="660" y="245" width="30" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="8" value="7" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;" vertex="1" parent="1">
+          <mxGeometry x="665" y="461" width="30" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="9" value="8" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;" vertex="1" parent="1">
+          <mxGeometry x="463" y="345" width="30" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="10" value="9" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;" vertex="1" parent="1">
+          <mxGeometry x="290" y="340" width="30" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="11" value="10" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;" vertex="1" parent="1">
+          <mxGeometry x="296" y="442" width="30" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="12" value="Modul Cross Site" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="710" y="155" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="13" value="6" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;" vertex="1" parent="1">
+          <mxGeometry x="810" y="140" width="30" height="30" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
