@@ -1,0 +1,436 @@
+// ============================================================================
+//  SYNTERA ERD — Syntera_master (platform DB)
+//  Basis: UR (Core) ver 5 + FSD + kode ter-implementasi (Syntera.Backend EF Core)
+//
+//  File ini = 21 tabel. Pasangannya: syntera_erd_site.dbml (107 tabel)
+//  + file gabungan syntera_erd.dbml (sumber utuh, 125 tabel unik).
+//
+//  LEGEND (table header color = implementation status):
+//    GREEN  (#2E7D32) — IMPLEMENTED hari ini (EF Core entities, hidup di kode)
+//    BLUE   (#1565C0) — Master data & proses bisnis inti
+//    PURPLE (#6A1B9A) — Engine compliance (APPR, ESIGN, AUDIT, DEV, CAPA, RISK, QUAL)
+//    TEAL   (#00838F) — Integrasi (ORA Oracle EBS, QMS, CS cross-site)
+//    ORANGE (#EF6C00) — Pendukung & konfigurasi
+//
+//  CATATAN PENTING — RELASI LINTAS-DB:
+//    Tabel di file ini punya relasi LOGICAL ke tabel di file pasangannya
+//    (mis. users.site_id → sites.id). SQL Server tidak bisa FK antar database,
+//    sehingga dijaga APPLICATION LAYER. Daftar lengkap ada di bagian
+//    "CROSS-DB LOGICAL REFERENCES" di akhir file ini.
+// ============================================================================
+
+Project Syntera_ERD_Master {
+  database_type: 'SQL Server'
+  Note: '''Syntera Syntera_master (platform DB).GREEN = implemented; lainnya = target UR/FSD. Ref lintas-DB ke file pasangan bersifat logical (application layer).'''
+}
+
+// ── ENUMS ──────────────────────────────────────────────
+
+//  ENUMS — state machine & katalog nilai (sumber: FSD verbatim)
+Enum user_scope {
+  site
+  platform
+}
+Enum calibrator_status {
+  available
+  in_use
+  borrowed
+  in_transit
+  reserved
+  expired        [note: 'Auto saat lewat cal_expiry — blokir dipakai WO']
+  retired
+}
+Enum scenario_type {
+  borrow         [note: 'Site A pinjam calibrator Site B; cert issuer Site A']
+  bring_self_cal [note: 'UUT dibawa + self-cal di Site B; cert Site A']
+  full_outsource [note: 'Site A outsource penuh ke Site B; cert Site B']
+}
+Enum logistics_status {
+  in_transit
+  received
+  returned
+}
+
+// ── TABLES ─────────────────────────────────────────────
+
+//  GROUP 0 — SHAPED TABLES (dideploy di platform DB DAN setiap site DB)
+Table audit_logs [note: 'IMPLEMENTED (hijau) — immutable, append-only, hash chain per scope: hash = SHA256(previous_hash + fields + before/after + signature_meaning). Kolom berakhiran [FSD] = rencana tambahan modul AUDIT (reason-of-change, session, timezone). Deployed: syntera_master + tiap site DB.', headercolor: #2E7D32] {
+  id bigint [pk, increment]
+  timestamp datetime [not null, note: 'UTC']
+  site_id uuid [note: 'Null = aksi level platform']
+  actor_user_id uuid [note: 'Null = anonymous (mis. failed login)']
+  actor_email varchar
+  actor_ip varchar
+  actor_user_agent varchar
+  action varchar [not null, note: 'Mis. auth.login, user.create, permission.grant']
+  target_type varchar
+  target_id varchar
+  before_json json
+  after_json json
+  outcome varchar [not null, default: 'success']
+  error_message varchar
+  hash varchar [not null, note: 'SHA-256 chain']
+  previous_hash varchar [not null]
+  signature_meaning varchar [note: '21 CFR Part 11 §11.50']
+  reason_for_change varchar [note: '[FSD] FS-AT-02 — teks reason pilihan']
+  reason_list_item_id bigint [note: '[FSD] FK ke reason QA-approved']
+  session_id varchar [note: '[FSD] user + IP + session']
+  timezone_id varchar [note: '[FSD] timestamp UTC + zona waktu aktor']
+  indexes {
+    (timestamp)
+    (site_id)
+    (actor_user_id)
+    (action)
+  }
+}
+Table refresh_tokens [note: 'IMPLEMENTED (hijau) — rotasi TOCTOU-safe (conditional update + 1 insert), reuse detection per FAMILY (semua token dari login yang sama share family_id; reuse → revoke seluruh family). Token mentah tidak disimpan (hanya SHA-256). Deployed: syntera_master (scope platform) + tiap site DB (scope site).', headercolor: #2E7D32] {
+  id uuid [pk]
+  token varchar [note: 'Kosong sejak hardening — lihat token_hash']
+  token_hash varchar [not null, unique, note: 'SHA-256 dari random part']
+  user_id uuid [not null, note: 'platform_users (scope platform) ATAU users (scope site)']
+  user_scope user_scope [not null, default: 'site']
+  site_id uuid [note: 'Null untuk token platform admin']
+  expires_at datetime [not null]
+  revoked_at datetime
+  revoked_by uuid
+  replaced_by_id uuid [note: 'Chain rotasi']
+  family_id uuid [note: 'Root login family — reuse detection M1']
+  created_from_ip varchar
+  created_user_agent varchar
+  last_used_at datetime [note: 'Idle timeout 30 menit (11.300(d)) — distamp SessionActivityMiddleware']
+  created_at datetime
+  updated_at datetime
+  indexes {
+    (token_hash) [unique]
+    (user_id, user_scope)
+    (family_id)
+  }
+}
+Table login_attempt_log [note: 'TARGET (AUTH) — semua percobaan login sukses/gagal. Append-only. Counter lockout 5-gagal/30-menit per user+IP. Deployed di platform DB (percobaan platform admin) + site DB (percobaan LDAP). FS-AS-04/05, FS-AUTH-07/10/13. ALTERNATIF LEAN: counter lockout di cache (IMemoryCache/Redis) + event auth.login di audit_logs — tabel terpisah hanya bila volume percobaan gagal tinggi.', headercolor: #EF6C00] {
+  id bigint [pk, increment]
+  username varchar [not null, note: 'Email yang dicoba']
+  user_id uuid [note: 'User ter-resolve (bila match)']
+  site_id uuid
+  success boolean [not null]
+  failure_reason varchar [note: 'INVALID_CREDENTIALS | LOCKED_OUT | ACCOUNT_DISABLED | MFA_FAILED | LDAP_ERROR']
+  ip_address varchar [not null]
+  user_agent varchar
+  attempted_at datetime [not null]
+}
+//  GROUP 1 — PLATFORM DB (syntera_master) · IAM — IMPLEMENTED
+Table sites [note: 'IMPLEMENTED (hijau) — registry tenant. Connection string terenkripsi DPAPI (ENC: prefix). Kolom [FSD] = rencana syn_site_master (SITE 2.21). Kolom environment DIHAPUS — pemisahan DEV/UAT/PROD per-deployment (database terpisah), bukan per-baris. Sisa rencana: initials untuk DNG, label workflow per site, dsb.', headercolor: #2E7D32] {
+  id uuid [pk]
+  code varchar [not null, unique, note: 'Mis. kalbe, kalventis, dankos — dipakai claim site_id JWT']
+  display_name varchar [not null]
+  database_connection_string varchar [not null, note: 'ENC: bila ConnectionProtection aktif']
+  default_theme_key varchar
+  is_enabled boolean [not null, default: true]
+  notes varchar
+  initials varchar [note: '[FSD] Kode inisial site utk penomoran dokumen']
+  address varchar [note: '[FSD]']
+  timezone varchar [note: '[FSD] default Asia/Jakarta']
+  currency varchar [note: '[FSD] default IDR']
+  locale varchar [note: '[FSD] default id-ID']
+  label_workflow_type varchar [note: '[FSD] TEMPORARY_THEN_QO (Kalventis) | QO_ONLY (site lain)']
+  label_attributes json [note: '[FSD] Field label yang tampil + posisi grid']
+  created_at datetime
+  updated_at datetime
+}
+Table site_ldap_domains [note: 'IMPLEMENTED (hijau) — routing domain email → site (login flow). Multi domain per site (alias pasca M&A).', headercolor: #2E7D32] {
+  id uuid [pk]
+  site_id uuid [not null]
+  domain varchar [not null, unique, note: 'Lowercase tanpa @, mis. kalventis.com']
+  is_active boolean [not null, default: true]
+  created_at datetime
+  updated_at datetime
+}
+Table site_ldap_configs [note: 'IMPLEMENTED (hijau) — direct-bind LDAP (tanpa service account), gaya ldap-get-user.js Kalventis.', headercolor: #2E7D32] {
+  id uuid [pk]
+  site_id uuid [not null, unique]
+  host varchar [not null]
+  port integer [not null, default: 389]
+  use_start_tls boolean [not null, default: false]
+  base_dn varchar [not null, note: 'Mis. DC=KALVENTIS,DC=DOM']
+  upn_domain varchar [note: 'Suffix UPN AD (sering beda dari domain email)']
+  created_at datetime
+  updated_at datetime
+}
+Table site_themes [note: 'IMPLEMENTED (hijau) — palet tema per site (JSON), cache in-memory. Kolom [FSD] = template label print.', headercolor: #2E7D32] {
+  id uuid [pk]
+  site_id uuid [not null, unique]
+  theme_key varchar [not null]
+  light_palette_json json [not null, default: '{}']
+  dark_palette_json json [not null, default: '{}']
+  logo_url varchar
+  label_template_storage_key varchar [note: '[FSD] Template ZPL print label']
+  created_at datetime
+  updated_at datetime
+}
+Table platform_users [note: 'IMPLEMENTED (hijau) — hanya admin@syntera.com. Bcrypt lokal (bukan LDAP) agar bisa login saat semua LDAP site mati. MFA TOTP (secret terenkripsi Data Protection). Password max-age 90 hari (11.300(c)).', headercolor: #2E7D32] {
+  id uuid [pk]
+  email varchar [not null, unique, note: 'Domain @syntera.com']
+  password_hash varchar [not null, note: 'BCrypt']
+  display_name varchar [not null]
+  is_enabled boolean [not null, default: true]
+  last_login_at datetime
+  last_failed_login_at datetime
+  failed_login_count integer [not null, default: 0]
+  locked_until datetime
+  totp_secret varchar [note: 'Base32, terenkripsi IDataProtector']
+  totp_enabled boolean [not null, default: false]
+  password_changed_at datetime [note: 'Basis password max-age']
+  created_at datetime
+  updated_at datetime
+}
+Table password_history [note: 'IMPLEMENTED (hijau) — 10 hash terakhir; reuse password ditolak PASSWORD_REUSE_FORBIDDEN (11.300(c)).', headercolor: #2E7D32] {
+  id uuid [pk]
+  platform_user_id uuid [not null]
+  password_hash varchar [not null]
+  set_at datetime [not null]
+  created_at datetime
+  updated_at datetime
+  indexes {
+    (platform_user_id, set_at)
+  }
+}
+Table role_templates [note: 'IMPLEMENTED (hijau) — role template platform. Saat site dibuat semua template published di-clone jadi Roles di site DB. Versioning: site mencatat versi yang di-clone.', headercolor: #2E7D32] {
+  id uuid [pk]
+  key varchar [not null, unique, note: 'Mis. viewer, site-business-admin']
+  display_name varchar [not null]
+  description varchar
+  is_site_admin_role boolean [not null, default: false]
+  is_published boolean [not null, default: false]
+  version integer [not null, default: 1]
+  created_at datetime
+  updated_at datetime
+}
+Table role_template_permissions [note: 'IMPLEMENTED (hijau) — M2M template ↔ permission key (string global constant, bukan FK).', headercolor: #2E7D32] {
+  id uuid [pk]
+  role_template_id uuid [not null]
+  permission_key varchar [not null, note: 'Mis. user.read — di-resolve ke site Permission saat clone']
+  created_at datetime
+  updated_at datetime
+  indexes {
+    (role_template_id, permission_key) [unique]
+  }
+}
+Table role_template_approvals [note: 'IMPLEMENTED (hijau) — two-person rule publish role template: requester tidak boleh self-approve; snapshot permintaan + signature meaning dua sisi. Opt-in via TwoPerson:Enabled.', headercolor: #2E7D32] {
+  id uuid [pk]
+  role_template_id uuid [not null]
+  requested_by uuid [not null]
+  requested_at datetime [not null]
+  requested_snapshot_json json [not null]
+  status varchar [not null, default: 'pending', note: 'pending | approved | rejected | superseded']
+  action_by uuid [note: 'Platform admin kedua (pembeda dari requester)']
+  action_at datetime
+  rejection_reason varchar
+  requester_signature_meaning varchar
+  approver_signature_meaning varchar
+  created_at datetime
+  updated_at datetime
+  indexes {
+    (role_template_id, status)
+  }
+}
+Table platform_settings [note: 'IMPLEMENTED (hijau) — key-value setting platform (mis. Audit:RetentionYears).', headercolor: #2E7D32] {
+  key varchar [pk]
+  value varchar
+  description varchar
+}
+//  GROUP 13 — PLATFORM DB (Syntera Central) · CROSS-SITE (CS 2.13) — TARGET
+//  3 skenario: Borrow · Bring & Self-Cal · Full Outsource.
+//  Istilah lintas site = "Task" (bukan Work Request/WR).
+Table syn_cross_site_calibrator [note: 'TARGET (CS/FS-CS-01/04/05) — katalog calibrator ter-agregasi 6 site (refresh 5 menit via event per-site): tipe, range, brand, owner site, shareable, status availability (auto-update dari event logistics). Browse + filter utk Borrow.', headercolor: #00838F] {
+  id bigint [pk, increment]
+  ebs_calibrator_global_id varchar [not null, unique, note: 'Identitas di instance EBS sumber']
+  calibrator_type varchar [not null]
+  range_min decimal
+  range_max decimal
+  range_unit varchar
+  brand varchar
+  serial_number varchar
+  availability_status calibrator_status [not null, default: 'available']
+  owner_site_id uuid [not null]
+  shareable_flag boolean [not null]
+  last_refreshed_at datetime [not null]
+}
+Table syn_cross_site_wo_link [note: 'TARGET (CS/FS-CS-01..12) — link dual-WO lintas DB/site (WO-A di Oracle A + WO-B di Oracle B, global ID tanpa FK fisik). Pembuatan dual-WO transaksional via 2 Site Adapter + kompensasi (WO-B gagal → WO-A cancel). Hasil kalibrasi WAJIB kembali ke Site A utk approval 3-manager di SEMUA skenario. Tanpa charging antar site.', headercolor: #00838F] {
+  cross_site_wo_id uuid [pk]
+  scenario_type scenario_type [not null]
+  site_a_wo_global_id varchar [not null, unique, note: 'Site A = pemilik asset/permintaan']
+  site_b_wo_global_id varchar [not null, unique, note: 'Site B = pelaksana/peminjam']
+  site_a_role varchar [not null, note: 'BORROWER | LENDER | OUTSOURCER | HOST — sesuai skenario']
+  site_b_role varchar [not null]
+  logistics_tracking_id uuid [not null]
+  certificate_issuer_site_id uuid [note: 'Skenario 1/2 = Site A; skenario 3 = Site B']
+  status varchar [not null, default: 'created', note: 'CREATED | IN_PROGRESS | COMPLETED | CANCELLED']
+  created_by_user_id uuid
+  created_at datetime
+  indexes {
+    (scenario_type, status)
+  }
+}
+Table syn_cross_site_logistics [note: 'TARGET (CS/FS-CS-01/10/15) — header tracking pengiriman fisik (calibrator/UUT) antar site; transisi status memicu auto-update availability_status katalog cross-site.', headercolor: #00838F] {
+  id uuid [pk]
+  cross_site_wo_id uuid [not null, unique]
+  item_type varchar [not null, note: 'CALIBRATOR | UUT']
+  current_status logistics_status [not null, default: 'in_transit']
+  created_at datetime
+}
+Table syn_cross_site_logistics_checkpoint [note: 'TARGET (CS/FS-CS-10) — 1 baris per checkpoint pengiriman: timestamp + lokasi. Append-only (history immutable).', headercolor: #00838F] {
+  id bigint [pk, increment]
+  logistics_tracking_id uuid [not null]
+  status logistics_status [not null]
+  checkpoint_timestamp datetime [not null]
+  location varchar [not null]
+  recorded_by_user_id uuid
+}
+Table syn_cross_site_calibrator_booking [note: 'TARGET (CS/FS-CS-16/17) — reservasi calibrator shareable utk periode tertentu; deteksi konflik 2-site meminta calibrator yang sama bersamaan (exclusion overlap period) → rejected.', headercolor: #00838F] {
+  id bigint [pk, increment]
+  calibrator_id bigint [not null]
+  requesting_site_id uuid [not null]
+  requested_by_user_id uuid
+  period_start datetime [not null]
+  period_end datetime [not null]
+  status varchar [not null, default: 'reserved', note: 'RESERVED | CANCELLED — booking flip status katalog']
+  created_at datetime
+}
+//  GROUP 14 — PLATFORM DB · AUTH EXTENSION (AS 2.1 / AUTH 2.2 / FS-SITE-09)
+//  — TARGET
+Table syn_user_site_access [note: 'TARGET (AUTH/FS-SITE-09) — grant akses multi-site per user + default site (dipilih saat login). Pengganti PostgreSQL RLS di arsitektur DB-per-site: platform DB memetakan satu identitas ke beberapa site DB (UNION site yang diizinkan).', headercolor: #EF6C00] {
+  id bigint [pk, increment]
+  user_id uuid [not null, note: 'User di site DB asal (logical)']
+  site_id uuid [not null]
+  is_default boolean [not null, default: false]
+  granted_at datetime [not null]
+  granted_by_user_id uuid
+  reason varchar [note: 'Justifikasi grant (pola compliance)']
+  indexes {
+    (user_id, site_id) [unique]
+  }
+}
+Table syn_impersonation_session [note: 'TARGET (AS/FS-AS-06, FS-AUTH-15) — System Administrator beraksi sebagai user lain (troubleshooting): wajib alasan + approval QO Manager; audit context terpisah; token membawa claim impersonated_by.', headercolor: #EF6C00] {
+  id uuid [pk]
+  impersonator_user_id uuid [not null]
+  impersonated_user_id uuid [not null]
+  qo_approval_by_user_id uuid
+  reason varchar [not null]
+  started_at datetime [not null]
+  ended_at datetime
+  temporary_token_id varchar [note: 'Token membawa claim impersonated_by']
+}
+Table syn_role_designated_user [note: 'TARGET (AUTH/FS-AUTH-USEREXC-01) — whitelist user dalam role (input Master Item/Asset hanya oleh user yang didesignate).', headercolor: #EF6C00] {
+  id bigint [pk, increment]
+  role_id uuid [not null, note: 'Role di site DB (logical)']
+  user_id uuid [not null]
+  granted_by_user_id uuid
+  granted_at datetime [not null]
+  indexes {
+    (role_id, user_id) [unique]
+  }
+}
+
+// ── REFERENCES (dalam file ini) ────────────────────────
+
+Ref: site_ldap_domains.site_id > sites.id
+Ref: site_ldap_configs.site_id - sites.id // 1-1 per site
+Ref: site_themes.site_id - sites.id // 1-1 per site
+Ref: password_history.platform_user_id > platform_users.id
+Ref: role_template_permissions.role_template_id > role_templates.id
+Ref: role_template_approvals.role_template_id > role_templates.id
+Ref: refresh_tokens.user_id ?> platform_users.id // scope=platform (platform DB)
+Ref: refresh_tokens.site_id ?> sites.id // xdb
+Ref: refresh_tokens.replaced_by_id ?> refresh_tokens.id // chain rotasi
+Ref: login_attempt_log.site_id ?> sites.id // xdb
+Ref: syn_cross_site_calibrator.owner_site_id > sites.id
+Ref: syn_cross_site_wo_link.logistics_tracking_id - syn_cross_site_logistics.id // 1-1
+Ref: syn_cross_site_wo_link.certificate_issuer_site_id ?> sites.id
+Ref: syn_cross_site_logistics.cross_site_wo_id - syn_cross_site_wo_link.cross_site_wo_id
+Ref: syn_cross_site_logistics_checkpoint.logistics_tracking_id > syn_cross_site_logistics.id
+Ref: syn_cross_site_calibrator_booking.calibrator_id > syn_cross_site_calibrator.id
+Ref: syn_cross_site_calibrator_booking.requesting_site_id > sites.id
+Ref: syn_user_site_access.site_id > sites.id
+
+// ── SAMPLE DATA — 6 site Kalbe (seed platform DB) ──────
+
+Records sites(id, code, display_name, initials) {
+  '11111111-1111-1111-1111-111111111101', 'kalbe',     'PT Kalbe Farma Tbk',             'KF'
+  '11111111-1111-1111-1111-111111111102', 'kalventis', 'PT Kalventis Surya Pratama',     'KVT'
+  '11111111-1111-1111-1111-111111111103', 'dankos',    'PT Dankos Farma',                'DK'
+  '11111111-1111-1111-1111-111111111104', 'hexpharm',  'PT Hexpharm Jaya',               'HJ'
+  '11111111-1111-1111-1111-111111111105', 'fima',      'PT Kalbe Fima',                  'FMA'
+  '11111111-1111-1111-1111-111111111106', 'gof',       'PT Global One Fortuna (GOF)',    'GOF'
+}
+
+// ── TABLE GROUPS (layout dbdiagram.io) ─────────────────
+
+//  TABLE GROUPS (layout dbdiagram.io)
+TableGroup platform_db_iam_implemented {
+  sites
+  site_ldap_domains
+  site_ldap_configs
+  site_themes
+  platform_users
+  password_history
+  role_templates
+  role_template_permissions
+  role_template_approvals
+  platform_settings
+}
+TableGroup shared_shape_both_dbs {
+  audit_logs
+  refresh_tokens
+  login_attempt_log
+}
+TableGroup cross_site_platform_db {
+  syn_cross_site_calibrator
+  syn_cross_site_wo_link
+  syn_cross_site_logistics
+  syn_cross_site_logistics_checkpoint
+  syn_cross_site_calibrator_booking
+}
+TableGroup auth_extension_platform_db {
+  syn_user_site_access
+  syn_impersonation_session
+  syn_role_designated_user
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  CROSS-DB LOGICAL REFERENCES — tabel file ini ↔ tabel file pasangan
+//  (TIDAK FK fisik; dijaga application layer — tidak bisa digambar di dbdiagram.io)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// 32 relasi lintas-DB melibatkan tabel file ini:
+
+// Ref: refresh_tokens.user_id ?> users.id // scope=site (site DB) — xdb
+// Ref: user_sync_history.site_id > sites.id // xdb
+// Ref: roles.origin_template_id ?> role_templates.id // xdb
+// Ref: login_attempt_log.user_id ?> users.id // xdb
+// Ref: m_formula.site_id ?> sites.id // xdb (SITE_SPECIFIC)
+// Ref: syn_location.site_id > sites.id // xdb
+// Ref: syn_department.site_id > sites.id // xdb
+// Ref: syn_calibrator.owner_site_id > sites.id // xdb
+// Ref: syn_asset.site_id > sites.id // xdb
+// Ref: syn_forecast_cache.site_id > sites.id // xdb
+// Ref: syn_wo_ref.site_id > sites.id // xdb
+// Ref: m_label_color_config.site_id - sites.id // 1-1 per site — xdb
+// Ref: m_label_attributes.site_id > sites.id // xdb
+// Ref: syn_document.site_id > sites.id // xdb
+// Ref: syn_doc_number_log.site_id > sites.id // xdb
+// Ref: syn_notification_routing.site_id > sites.id // xdb
+// Ref: syn_scheduled_report.site_id ?> sites.id // xdb
+// Ref: syn_approval_matrix.site_id > sites.id // xdb
+// Ref: syn_audit_verification_run.site_id ?> sites.id // xdb
+// Ref: syn_oracle_config.site_id - sites.id // 1-1 per site — xdb
+// Ref: syn_oracle_sync_log.site_id > sites.id // xdb
+// Ref: syn_oracle_conflict_log.site_id > sites.id // xdb
+// Ref: syn_oracle_dlq.site_id > sites.id // xdb
+// Ref: syn_qms_config.site_id - sites.id // 1-1 per site — xdb
+// Ref: syn_qms_sync_log.site_id > sites.id // xdb
+// Ref: syn_user_site_access.user_id ?> users.id // xdb — user hidup di site DB
+// Ref: syn_user_site_access.granted_by_user_id ?> users.id // xdb
+// Ref: syn_impersonation_session.impersonator_user_id > users.id
+// Ref: syn_impersonation_session.impersonated_user_id > users.id
+// Ref: syn_impersonation_session.qo_approval_by_user_id ?> users.id
+// Ref: syn_role_designated_user.role_id > roles.id // xdb
+// Ref: syn_role_designated_user.user_id > users.id // xdb
