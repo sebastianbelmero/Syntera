@@ -22,7 +22,11 @@
  *     short-lived (15 min) and in-memory only — blast radius of an XSS leak
  *     is bounded.
  *   - Transparent: a single request queue prevents refresh-token
- *     thundering herds when multiple requests 401 simultaneously.
+ *     thundering herds when multiple requests 401 simultaneously — ALL
+ *     refresh paths funnel through refreshCoordinator.ts (single-flight +
+ *     Web Locks across tabs), so concurrent 401s never produce racing
+ *     refresh requests (a rotation race triggers the server's family-wide
+ *     reuse detection and logs every tab out).
  */
 
 import axios, { AxiosError } from "axios";
@@ -36,6 +40,7 @@ import type {
   FieldError,
 } from "../types";
 import { useAuthStore } from "../store/authStore";
+import { silentRefresh } from "./refreshCoordinator";
 
 export const api = axios.create({
   baseURL: "/api",
@@ -59,7 +64,6 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
 });
 
 // ── Response: unwrap envelope + handle 401 ──────────────────
-let refreshPromise: Promise<string> | null = null;
 
 api.interceptors.response.use(
   (response: AxiosResponse<ApiResponse<unknown>>) => {
@@ -140,56 +144,21 @@ api.interceptors.response.use(
   },
 );
 
+/**
+ * 401-recovery path: run the single silent refresh and hand back the fresh
+ * access token for replaying the failed request.
+ *
+ * F5-LOGOUT FIX (2026-09): this used to be a SEPARATE raw-axios refresh (own
+ * code path, no shared single-flight with initAuth/refresh, no cross-tab
+ * serialization). Any overlap with another refresh presenting the same
+ * cookie → server-side rotation race → reuse detection → the whole token
+ * family revoked → every tab logged out. All refresh traffic now funnels
+ * through refreshCoordinator.silentRefresh() (single-flight in-tab + Web
+ * Locks across tabs), so a race is structurally impossible.
+ */
 async function acquireFreshAccessToken(): Promise<string> {
-  if (refreshPromise) return refreshPromise;
-
-  const { profile } = useAuthStore.getState();
-
-  // COOKIE-ONLY (H7): the refresh token travels exclusively in the httpOnly
-  // `syntera_refresh` cookie, sent automatically by the browser on /api/auth/*
-  // requests (withCredentials=true). We NEVER put the token in the request
-  // body — the Vite dev proxy round-trips the cookie correctly (Sprint 2.5
-  // fix: cookie Domain defaults to the Host header), so no fallback
-  // transport is needed.
-  //
-  // Choose endpoint based on scope — site users need /auth/refresh-site
-  // with siteId in the body (siteId is not secret; the cookie authorizes).
-  // Platform admin uses /auth/refresh.
-  const isSiteUser = profile?.scope === "site" && profile.siteId;
-  const url = isSiteUser ? "/api/auth/refresh-site" : "/api/auth/refresh";
-  const body = isSiteUser ? { siteId: profile!.siteId } : {};
-
-  refreshPromise = (async () => {
-    try {
-      const res = await axios.post<
-        ApiResponse<{
-          accessToken: string;
-          refreshToken: string;
-          expiresAt: string;
-          profile: unknown;
-          theme: unknown;
-        }>
-      >(url, body, { withCredentials: true });
-      const data = res.data.data;
-      if (!data) throw new Error("REFRESH_FAILED");
-      useAuthStore.getState().setTokens({
-        accessToken: data.accessToken,
-        expiresAt: data.expiresAt,
-      });
-      // COOKIE-ONLY (H7): the rotated refresh token arrives via the
-      // Set-Cookie header (httpOnly); the backend blanks the response
-      // body's refreshToken field in strict mode — nothing to store
-      // client-side, the cookie IS the storage.
-      if (data.theme) {
-        useAuthStore.getState().updateTheme(data.theme as import("../types").ThemeBundle);
-      }
-      return data.accessToken;
-    } finally {
-      refreshPromise = null;
-    }
-  })();
-
-  return refreshPromise;
+  const data = await silentRefresh();
+  return data.accessToken;
 }
 
 export class ApiError extends Error {

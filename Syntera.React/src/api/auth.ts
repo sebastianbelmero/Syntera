@@ -23,9 +23,17 @@
  *   - If the cookie is missing or expired, the backend returns 401;
  *     initAuth() marks the store as "not authenticated" and React
  *     proceeds to show the login page.
+ *
+ * F5-LOGOUT FIX (2026-09): initAuth, the 401 interceptor, and refresh()
+ * all funnel through refreshCoordinator.silentRefresh() — one single-flight
+ * refresh per tab, serialized across tabs via Web Locks. Overlapping
+ * refreshes presenting the same cookie trigger the server's family-wide
+ * reuse detection and log every tab out; the coordinator makes that race
+ * structurally impossible.
  */
 
 import { post, get } from "./client";
+import { silentRefresh } from "./refreshCoordinator";
 import type {
   LoginRequest,
   LoginResponse,
@@ -142,37 +150,11 @@ export async function logout(): Promise<void> {
 }
 
 export async function refresh(): Promise<RefreshResponse> {
-  const { profile } = useAuthStore.getState();
-
-  // Choose endpoint based on scope.
-  const url = profile?.scope === "site" && profile.siteId
-    ? "/auth/refresh-site"
-    : "/auth/refresh";
-
-  // COOKIE-ONLY (H7): the refresh token travels exclusively in the httpOnly
-  // cookie — never in the request body. For site scope we still send siteId
-  // (not secret; the cookie is the authorizing credential).
-  const body = profile?.scope === "site" && profile.siteId
-    ? { siteId: profile.siteId }
-    : {};
-
-  const data = await post<RefreshResponse>(url, body);
-  // Update tokens, profile, AND theme (server may return updated theme
-  // in refresh response — important for site users whose theme comes
-  // from their site's SiteTheme record).
-  useAuthStore.getState().setTokens({
-    accessToken: data.accessToken,
-    expiresAt: data.expiresAt,
-  });
-  // COOKIE-ONLY: the rotated refresh token arrives via Set-Cookie (httpOnly);
-  // nothing is stored client-side — the cookie is the storage.
-  if (data.profile) {
-    useAuthStore.getState().updateProfile(data.profile);
-  }
-  if (data.theme) {
-    useAuthStore.getState().updateTheme(data.theme);
-  }
-  return data;
+  // F5-LOGOUT FIX: run through the coordinator (single-flight + Web Locks)
+  // so this can never race the boot refresh or the 401 interceptor's
+  // refresh — a race would trigger server-side family revocation.
+  // The coordinator also commits tokens/profile/theme to the store.
+  return await silentRefresh();
 }
 
 export async function getProfile(): Promise<UserProfile> {
@@ -210,13 +192,17 @@ export async function initAuth(): Promise<void> {
     // defaults to the Host header), so the silent refresh relies purely on
     // the cookie. No body token, no localStorage fallback — the store's
     // `refreshToken` field is always null.
-    const data = await post<RefreshResponse>("/auth/refresh", {});
+    //
+    // F5-LOGOUT FIX: via the coordinator (raw axios + Web Locks), NOT the
+    // `api` instance — the boot refresh must share the single-flight with
+    // the 401 interceptor's refresh and never race it.
+    const data = await silentRefresh();
     useAuthStore.getState().login({
       accessToken: data.accessToken,
       expiresAt: data.expiresAt,
       // COOKIE-ONLY: ignored by the store (login() nulls it) — the rotated
       // token is already in the cookie jar via the Set-Cookie header.
-      refreshToken: data.refreshToken,
+      refreshToken: null,
       profile: data.profile,
       theme: data.theme,
     });
