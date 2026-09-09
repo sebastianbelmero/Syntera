@@ -33,6 +33,23 @@ public interface ISiteDbContextFactory
     /// the first site-business-admin). Throws if the site is not found or disabled.
     /// </summary>
     Task<SiteDbContext> ResolveForSiteAsync(Guid siteId, CancellationToken ct = default);
+
+    /// <summary>
+    /// FIX (P0 — multi-site scan bug): returns a FRESH, UNCACHED SiteDbContext for
+    /// the given site. The caller owns disposal.
+    ///
+    /// <para><b>Why this exists:</b> <see cref="ResolveForSiteAsync"/> caches the
+    /// first resolved context per request and IGNORES the siteId argument on
+    /// subsequent calls — correct for normal requests (one request = one site)
+    /// but WRONG for flows that must iterate multiple sites in a single request.
+    /// The refresh fallback in AuthService.RefreshAsync scans every enabled
+    /// site's RefreshTokens table; with the cached resolver, every iteration
+    /// after the first queried the FIRST site's database, so site users from
+    /// any other site could never find their token → REFRESH_NOT_FOUND on every
+    /// page reload. This method always resolves the requested site's connection
+    /// string and returns a new context.</para>
+    /// </summary>
+    Task<SiteDbContext> CreateForSiteAsync(Guid siteId, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -103,6 +120,45 @@ public sealed class SiteDbContextFactory : ISiteDbContextFactory, IDisposable, I
 
         _resolved = new SiteDbContext(options);
         return _resolved;
+    }
+
+    /// <summary>
+    /// FIX (P0 — multi-site scan bug): always creates a FRESH context for the
+    /// requested site (no per-request caching). Caller must dispose. See the
+    /// interface documentation for the multi-site scan rationale.
+    /// </summary>
+    public async Task<SiteDbContext> CreateForSiteAsync(Guid siteId, CancellationToken ct = default)
+    {
+        var connectionString = await ResolveConnectionStringAsync(siteId, ct);
+        return new SiteDbContext(BuildSiteOptions(connectionString));
+    }
+
+    /// <summary>
+    /// Fetch + decrypt the site's connection string from the Platform DB registry.
+    /// Shared by ResolveForSiteAsync (cached per request) and CreateForSiteAsync
+    /// (fresh per call).
+    /// </summary>
+    private async Task<string> ResolveConnectionStringAsync(Guid siteId, CancellationToken ct)
+    {
+        using var scope = _services.CreateScope();
+        var platformDb = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
+        var site = await platformDb.Sites.AsNoTracking()
+            .FirstOrDefaultAsync(s => s.Id == siteId, ct)
+            ?? throw new InvalidOperationException($"Site {siteId} not found in platform registry.");
+
+        if (!site.IsEnabled)
+            throw new InvalidOperationException($"Site '{site.Code}' is disabled.");
+
+        return _protector.Unprotect(site.DatabaseConnectionString);
+    }
+
+    private static DbContextOptions<SiteDbContext> BuildSiteOptions(string connectionString)
+    {
+        return new DbContextOptionsBuilder<SiteDbContext>()
+            .UseSqlServer(connectionString,
+                sql => sql.MigrationsHistoryTable("__EFMigrationsHistory_Site"))
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning))
+            .Options;
     }
 
     public void Dispose()

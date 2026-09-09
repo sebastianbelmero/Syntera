@@ -137,6 +137,21 @@ public sealed partial class AuditService : IAuditService
     private readonly ICurrentUserService _current;
     private readonly ILogger<AuditService> _log;
 
+    // FIX (P2 — hash-chain race): the previous read-PreviousHash → compute →
+    // insert sequence was not atomic. Two concurrent requests auditing into the
+    // same database could both read the SAME last hash, produce two rows that
+    // claim the same predecessor, and silently FORK the chain — undermining the
+    // tamper-evidence guarantee (a verifier can no longer reconstruct a single
+    // linear history). Each append is now serialized per target database within
+    // this process via a semaphore keyed by database identity.
+    // NOTE: this protects a single app instance. For multi-instance deployments,
+    // add a database-level lock (e.g. sp_getapplock on SQL Server) or a UNIQUE
+    // index on PreviousHash + retry loop.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim> _chainLocks = new();
+
+    private static SemaphoreSlim ChainLockFor(string databaseKey)
+        => _chainLocks.GetOrAdd(databaseKey, _ => new SemaphoreSlim(1, 1));
+
     [LoggerMessage(Level = LogLevel.Error, Message = "Failed to write audit log entry: {Action}")]
     private partial void LogAuditWriteFailure(Exception exception, string action);
 
@@ -206,14 +221,24 @@ public sealed partial class AuditService : IAuditService
             SignatureMeaning = entry.SignatureMeaning,
         };
 
-        // Write to the correct DB.
+        // Write to the correct DB — each append is serialized per database to
+        // keep the hash chain linear (see the _chainLocks comment above).
         if (entry.SiteId is null)
         {
             // Platform-level audit → master DB.
-            log.PreviousHash = await GetLastHashAsync(_platformDb.AuditLogs, ct);
-            log.Hash = ComputeHash(log);
-            _platformDb.AuditLogs.Add(log);
-            await _platformDb.SaveChangesAsync(ct);
+            var chainLock = ChainLockFor("platform");
+            await chainLock.WaitAsync(ct);
+            try
+            {
+                log.PreviousHash = await GetLastHashAsync(_platformDb.AuditLogs, ct);
+                log.Hash = ComputeHash(log);
+                _platformDb.AuditLogs.Add(log);
+                await _platformDb.SaveChangesAsync(ct);
+            }
+            finally
+            {
+                chainLock.Release();
+            }
         }
         else
         {
@@ -231,10 +256,19 @@ public sealed partial class AuditService : IAuditService
             // from the AuditEntry — the caller knows which site it's
             // auditing for.
             var siteDb = await _siteDbFactory.ResolveForSiteAsync(entry.SiteId.Value, ct);
-            log.PreviousHash = await GetLastHashAsync(siteDb.AuditLogs, ct);
-            log.Hash = ComputeHash(log);
-            siteDb.AuditLogs.Add(log);
-            await siteDb.SaveChangesAsync(ct);
+            var siteChainLock = ChainLockFor($"site:{entry.SiteId.Value}");
+            await siteChainLock.WaitAsync(ct);
+            try
+            {
+                log.PreviousHash = await GetLastHashAsync(siteDb.AuditLogs, ct);
+                log.Hash = ComputeHash(log);
+                siteDb.AuditLogs.Add(log);
+                await siteDb.SaveChangesAsync(ct);
+            }
+            finally
+            {
+                siteChainLock.Release();
+            }
         }
     }
 

@@ -116,6 +116,12 @@ try
     builder.Services.AddSingleton<ILdapClient, NovellLdapClient>();
     builder.Services.AddScoped<ITokenService, JwtTokenService>();
     builder.Services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
+    // REFACTOR (2026-09): the former 1.700-line AuthService was split into
+    // focused services; AuthService is now a thin facade over them.
+    builder.Services.AddScoped<IRefreshTokenService, RefreshTokenService>();
+    builder.Services.AddScoped<IPlatformAdminAuthService, PlatformAdminAuthService>();
+    builder.Services.AddScoped<ISiteUserAuthService, SiteUserAuthService>();
+    builder.Services.AddScoped<IRefreshFlowService, RefreshFlowService>();
     builder.Services.AddScoped<IAuthService, AuthService>();
     builder.Services.AddScoped<IPermissionService, PermissionService>();
     builder.Services.AddScoped<IAuditService, AuditService>();

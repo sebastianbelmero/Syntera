@@ -178,9 +178,11 @@ public sealed class PlatformDbContext : DbContext
             e.Property(x => x.Hash).HasMaxLength(128).IsRequired();
             e.Property(x => x.PreviousHash).HasMaxLength(128).IsRequired();
             // COMPLIANCE (Sprint 1.6): BeforeJson + AfterJson exposed in DTO.
-            // Stored as NVARCHAR(MAX) — full state snapshots can be large.
-            e.Property(x => x.BeforeJson).HasColumnType("NVARCHAR(MAX)");
-            e.Property(x => x.AfterJson).HasColumnType("NVARCHAR(MAX)");
+            // NOTE: no explicit column type — EF Core maps unconstrained strings
+            // to NVARCHAR(MAX) on SQL Server (unchanged) and to TEXT on SQLite,
+            // which enables in-memory integration tests.
+            e.Property(x => x.BeforeJson);
+            e.Property(x => x.AfterJson);
             // COMPLIANCE (Sprint 2.8): 21 CFR Part 11 §11.50 signature meaning.
             e.Property(x => x.SignatureMeaning).HasMaxLength(500);
             // NOTE: AuditLog rows are append-only. We do NOT register any
