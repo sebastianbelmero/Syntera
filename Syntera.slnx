@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="Syntera.Backend.Tests/Syntera.Backend.Tests.csproj" />
+  <Project Path="Syntera.Backend/Syntera.Backend.csproj" />
+  <Project Path="Syntera.DbSetup/Syntera.DbSetup.csproj" />
+</Solution>
