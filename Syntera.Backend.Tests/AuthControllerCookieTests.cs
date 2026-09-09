@@ -264,6 +264,34 @@ public sealed class AuthControllerCookieTests
         Assert.Contains(CookieName, SetCookies(controller));
     }
 
+    // ── Null-body transport (F5-LOGOUT FIX 2026-09-09) ─────────────────────
+    // The cookie-only frontend posts bodies WITHOUT a refreshToken field
+    // ("{}" / "{ siteId }"). The DTO nullability fix lets those requests
+    // reach the action; these tests pin the controller behavior for a NULL
+    // body token: the cookie is the credential, the body token is ignored.
+
+    [Fact]
+    public async Task Refresh_NullBodyToken_UsesCookieToken()
+    {
+        var controller = CreateController(cookieOnly: true);
+
+        var action = await controller.Refresh(new RefreshRequest(), CancellationToken.None);
+
+        Assert.IsType<OkObjectResult>(action);
+        Assert.Equal(IncomingToken, _fake.LastRefreshToken);
+    }
+
+    [Fact]
+    public async Task Logout_NullBodyToken_RevokesCookieToken()
+    {
+        var controller = CreateController(cookieOnly: true);
+
+        var action = await controller.Logout(new LogoutRequest(), CancellationToken.None);
+
+        Assert.IsType<OkObjectResult>(action);
+        Assert.Equal(IncomingToken, _fake.LastLogoutToken);
+    }
+
     // ── Non-strict (dev) mode: body transport preserved ────────────────────
 
     [Fact]

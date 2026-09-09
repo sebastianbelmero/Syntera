@@ -22,7 +22,19 @@ public record LoginResponse(
     bool RequiresPasswordChange = false,
     string? PasswordChangeChallengeToken = null);
 
-public record RefreshRequest(string RefreshToken);
+/// <summary>
+/// F5-LOGOUT FIX (2026-09-09): RefreshToken is deliberately NULLABLE.
+/// With the cookie-only transport (H7) the browser client posts an EMPTY
+/// body ("{}") — the token arrives via the httpOnly `syntera_refresh`
+/// cookie, never in the body. A non-nullable parameter is treated by MVC
+/// as implicitly [Required], so the [ApiController] auto-validation filter
+/// returned 400 VALIDATION_FAILED ("The RefreshToken field is required.")
+/// BEFORE the action method executed — the cookie was never read and every
+/// silent refresh (app boot / F5 / 401 interceptor) logged the user out.
+/// The controller treats a null body token as "use the cookie" and returns
+/// EMPTY_TOKEN only when BOTH cookie and body are absent.
+/// </summary>
+public record RefreshRequest(string? RefreshToken = null);
 
 public record RefreshResponse(
     string AccessToken,
@@ -61,7 +73,14 @@ public record ThemePalette(
     string Warning,
     string Danger);
 
-public record LogoutRequest(string RefreshToken);
+/// <summary>
+/// F5-LOGOUT FIX (2026-09-09): same reasoning as <see cref="RefreshRequest"/>
+/// — the cookie-only frontend posts an empty body ("{}") to /api/auth/logout
+/// and relies on the httpOnly cookie; a non-nullable (implicitly required)
+/// parameter made the request die in model validation before the action ran,
+/// so the server-side revoke never happened.
+/// </summary>
+public record LogoutRequest(string? RefreshToken = null);
 
 // ── COMPLIANCE (Sprint 2.3): MFA + password max-age DTOs ──────────────────
 

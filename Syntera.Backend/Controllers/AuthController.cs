@@ -512,7 +512,15 @@ public sealed class AuthController : ApiControllerBase
     }
 }
 
-public record RefreshSiteRequest(string RefreshToken, Guid SiteId);
+/// <summary>
+/// F5-LOGOUT FIX (2026-09-09): RefreshToken is deliberately NULLABLE — the
+/// cookie-only frontend posts { "siteId": "..." } WITHOUT a body refresh token
+/// (the httpOnly cookie is the credential). A non-nullable parameter was
+/// implicitly [Required] → the [ApiController] auto-validation filter
+/// returned 400 VALIDATION_FAILED before the action ran and the cookie was
+/// ever read → logout on every refresh. See RefreshRequest in AuthDtos.cs.
+/// </summary>
+public record RefreshSiteRequest(string? RefreshToken, Guid SiteId);
 
 // NOTE: ChangePasswordRequest has moved to Models/Dtos/Auth/AuthDtos.cs
 // (Sprint 2.3) so it can carry the optional PasswordChangeChallengeToken
