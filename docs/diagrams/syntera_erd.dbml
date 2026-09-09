@@ -1,0 +1,2595 @@
+// ============================================================================
+//  SYNTERA — Calibration & Compliance Management Platform (Kalbe Farma Group)
+//  Entity Relationship Diagram · dbdiagram.io DBML format
+//
+//  Basis: UR (Core) ver 5 + FSD + kode ter-implementasi (Syntera.Backend EF Core)
+//
+//  LEGEND (table header color = implementation status):
+//    GREEN  (#2E7D32) — IMPLEMENTED hari ini (EF Core entities, 21 tabel, hidup di kode)
+//    BLUE   (#1565C0) — Master data & proses bisnis inti (MD, RA, WO, CAL, SNP, LIFE, DOC, DNG, LBL)
+//    PURPLE (#6A1B9A) — Engine compliance (APPR, ESIGN, AUDIT, DEV, CAPA, RISK, QUAL)
+//    TEAL   (#00838F) — Integrasi (ORA Oracle EBS, QMS, CS cross-site)
+//    ORANGE (#EF6C00) — Pendukung & konfigurasi (TRAIN, NOTIF, REP, CF, SITE ext, AUTH ext)
+//
+//  ARSITEKTUR MULTI-TENANT (database-per-site, sesuai kode aktual):
+//    - 1 platform DB  : syntera_master  (site registry, platform admin, role templates)
+//    - 6 site DB      : 1 per site Kalbe (Kalbe, Kalventis, Dankos, Hexpharm, Fima, GOF)
+//    - FSD ditulis dengan asumsi Spring Boot + PostgreSQL RLS (single DB);
+//      ERD ini MEMETAKAN ulang ke arsitektur aktual .NET 10 + SQL Server DB-per-site.
+//    - Ref ANTAR-grup DB berbeda (platform <-> site) = LOGICAL reference
+//      (dijaga application layer, bukan FK fisik SQL Server).
+//
+//  KONVENSI:
+//    - Tabel hijau: nama tabel = nama ToTable() EF Core, kolom = properti entity
+//      (dinormalisasi ke snake_case agar terbaca; EF memakai PascalCase, mis. PasswordHash).
+//    - Tabel non-hijau: nama FSD verbatim (syn_*, M_* lowercase).
+//    - Semua tabel syn_* mewarisi kolom audit BaseEntity: created_at, updated_at
+//      (+ is_deleted / deleted_at / deleted_by untuk entity soft-delete) — tidak
+//      diulang per tabel demi keringkasan.
+//    - JSONB di FSD dipetakan json (SQL Server: nvarchar(max) berisi JSON).
+//    - Hash chain SHA-256: audit_logs (existing) + snapshot WO family + label.
+// ============================================================================
+
+Project Syntera_ERD {
+  database_type: 'SQL Server'
+  Note: '''Syntera ERP kalibrasi multi-site Kalbe Farma Group.
+GREEN tables = implemented in code today (21 tables: platform IAM + site IAM).
+BLUE / PURPLE / TEAL / ORANGE tables = target design refined from UR (9 proses bisnis PB-1..PB-9) + FSD (31 modul).
+Oracle EBS EAM tetap system-of-record WO & asset master (6 instance, via Site Adapter);
+QMS tetap system-of-record deviation & CAPA (sync + polling 5 menit).
+Cross-DB refs (platform <-> site) are logical, enforced by the application layer.'''
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  ENUMS — state machine & katalog nilai (sumber: FSD verbatim)
+// ─────────────────────────────────────────────────────────────────────────────
+
+Enum user_scope {
+  site
+  platform
+}
+
+// D-05 Work Order state machine (FS-WO, FS-CAL, FS-DEV)
+Enum wo_status {
+  draft          [note: 'Dibuat planner, belum direlease']
+  unreleased     [note: 'Pre batch-release bulanan (sisi Oracle)']
+  released       [note: 'WO release via Oracle EBS EAM']
+  acknowledged   [note: 'Technician acknowledge']
+  assigned       [note: 'Assignment + snapshot 14-entity']
+  in_progress    [note: 'Pre-start check 5S/safety/env']
+  executing      [note: 'Pengambilan reading AS-FOUND/AS-LEFT']
+  report_submitted
+  under_review
+  approved       [note: '4-tier approval selesai']
+  labeled        [note: 'Label tercetak (ZPL)']
+  completed
+  closed         [note: 'Gate: semua approval + tanpa deviation/CAPA terbuka']
+  cancelled      [note: 'Via deviation approval + Oracle CancelWO']
+  discarded      [note: 'Soft-delete WO non-kalibrasi (Oracle tetap)']
+}
+
+Enum asset_category {
+  machine        [note: 'Wajib field berbeda (tanpa CC number)']
+  equipment
+  building
+  infrastructure
+}
+
+Enum asset_lifecycle {
+  planned
+  commissioned
+  active
+  out_of_service
+  decommissioned  [note: 'Immutable archive, history tetap queryable']
+  inactive
+}
+
+Enum activity_type {
+  calibration
+  general_maintenance
+}
+
+Enum cal_mode {
+  internal       [note: 'Form digital + metrology engine internal']
+  external       [note: 'Vendor cert upload + OCR verify']
+}
+
+Enum measurement_phase {
+  as_found
+  as_left
+  final
+}
+
+Enum reading_status {
+  draft          [note: 'Autosave 30s, belum masuk audit trail']
+  final
+}
+
+Enum cal_verdict {
+  pass
+  pass_with_note  [note: 'AWN — Accepted With Notes, wajib e-sign QO']
+  not_pass       [note: 'Trigger deviation OOS']
+}
+
+Enum uncertainty_type {
+  A              [note: 'Statistik reading (std_dev / sqrt(n), DoF = n-1)']
+  B              [note: 'Sumber lain (cert calibrator, resolusi, drift, env)']
+}
+
+Enum distribution {
+  normal         [note: 'divisor 1 (sigma)']
+  rectangular    [note: 'divisor sqrt(3)']
+  triangular     [note: 'divisor sqrt(6)']
+  u_shaped       [note: 'divisor sqrt(2)']
+  t_distribution
+}
+
+Enum formula_scope {
+  standard       [note: 'Cross-site council: sign-off 4 dari 6 Metrology Lead']
+  site_specific  [note: 'Hanya site pemilik (Metrology Lead)']
+}
+
+Enum calibrator_status {
+  available
+  in_use
+  borrowed
+  in_transit
+  reserved
+  expired        [note: 'Auto saat lewat cal_expiry — blokir dipakai WO']
+  retired
+}
+
+Enum media_type {
+  gas
+  solution
+  weight
+}
+
+Enum doc_status {
+  draft
+  active
+  archived      [note: 'Cold storage (Glacier) setelah >1 tahun']
+  disposed      [note: 'Setelah QA approval disposal']
+}
+
+Enum approval_status {
+  pending
+  approved
+  rejected
+  escalated     [note: 'SLA timeout → supervisor/alternate']
+  delegated
+  cancelled
+  superseded
+}
+
+Enum sign_meaning {
+  review
+  approve
+  author
+  reject         [note: 'Reject juga e-signature (manifest immutable)']
+}
+
+Enum deviation_trigger {
+  oos            [note: 'Out of Specification — auto dari verdict engine']
+  oot            [note: 'Out of Tolerance pada alat terpakai produksi → RISK']
+  expired_override
+  manual
+}
+
+Enum sync_status {
+  pending
+  synced
+  failed         [note: 'Retry 3x exponential backoff → DLQ']
+}
+
+Enum capa_status {
+  open
+  in_progress
+  pending_verification
+  closed         [note: 'Wajib CLOSED sebelum WO Complete → Close']
+}
+
+Enum oot_severity {
+  critical
+  major          [note: 'Auto-trigger CAPA']
+  minor
+}
+
+Enum risk_decision {
+  acceptable
+  batch_review   [note: 'Investigasi di QMS']
+  recall         [note: 'APPR 3-manager SEBELUM transaksi recall Oracle']
+}
+
+Enum qual_type {
+  IQ
+  OQ
+  PQ
+}
+
+Enum qual_status {
+  in_progress
+  completed
+  failed         [note: 'Trigger deviation']
+}
+
+Enum competency_status {
+  qualified      [note: 'Syarat assignment WO: expiry > due_date']
+  in_training
+  expired        [note: 'H-90 alert ke Supervisor + Technician']
+}
+
+Enum scenario_type {
+  borrow         [note: 'Site A pinjam calibrator Site B; cert issuer Site A']
+  bring_self_cal [note: 'UUT dibawa + self-cal di Site B; cert Site A']
+  full_outsource [note: 'Site A outsource penuh ke Site B; cert Site B']
+}
+
+Enum logistics_status {
+  in_transit
+  received
+  returned
+}
+
+Enum label_type {
+  temporary      [note: 'A4; setelah Supervisor review (Kalventis) / QO (site lain)']
+  final          [note: '2x4 inch; setelah QO approval + e-sign']
+}
+
+Enum notif_channel {
+  in_app
+  email
+  push
+}
+
+Enum notif_status {
+  sent
+  delivered
+  read
+  failed
+}
+
+Enum integration_status {
+  success
+  failed
+  retried
+}
+
+Enum audit_mode {
+  silent         [note: 'Hanya navigasi/view non-GxP']
+  restricted     [note: 'Default GxP: wajib pilih QA-approved reason']
+  unrestricted   [note: 'Free text reason']
+}
+
+Enum environment_tier {
+  dev
+  uat
+  prod
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  GROUP 0 — SHAPED TABLES (dideploy di platform DB DAN setiap site DB)
+// ─────────────────────────────────────────────────────────────────────────────
+
+Table audit_logs [note: 'IMPLEMENTED (hijau) — immutable, append-only, hash chain per scope: hash = SHA256(previous_hash + fields + before/after + signature_meaning). Kolom berakhiran [FSD] = rencana tambahan modul AUDIT (reason-of-change, session, timezone). Deployed: syntera_master + tiap site DB.', headercolor: #2E7D32] {
+  id bigint [pk, increment]
+  timestamp datetime [not null, note: 'UTC']
+  site_id uuid [note: 'Null = aksi level platform']
+  actor_user_id uuid [note: 'Null = anonymous (mis. failed login)']
+  actor_email varchar
+  actor_ip varchar
+  actor_user_agent varchar
+  action varchar [not null, note: 'Mis. auth.login, user.create, permission.grant']
+  target_type varchar
+  target_id varchar
+  before_json json
+  after_json json
+  outcome varchar [not null, default: 'success']
+  error_message varchar
+  hash varchar [not null, note: 'SHA-256 chain']
+  previous_hash varchar [not null]
+  signature_meaning varchar [note: '21 CFR Part 11 §11.50']
+  reason_for_change varchar [note: '[FSD] FS-AT-02 — teks reason pilihan']
+  reason_list_item_id bigint [note: '[FSD] FK ke reason QA-approved']
+  session_id varchar [note: '[FSD] user + IP + session']
+  timezone_id varchar [note: '[FSD] timestamp UTC + zona waktu aktor']
+  indexes {
+    (timestamp)
+    (site_id)
+    (actor_user_id)
+    (action)
+  }
+}
+
+Table refresh_tokens [note: 'IMPLEMENTED (hijau) — rotasi TOCTOU-safe (conditional update + 1 insert), reuse detection per FAMILY (semua token dari login yang sama share family_id; reuse → revoke seluruh family). Token mentah tidak disimpan (hanya SHA-256). Deployed: syntera_master (scope platform) + tiap site DB (scope site).', headercolor: #2E7D32] {
+  id uuid [pk]
+  token varchar [note: 'Kosong sejak hardening — lihat token_hash']
+  token_hash varchar [not null, unique, note: 'SHA-256 dari random part']
+  user_id uuid [not null, note: 'platform_users (scope platform) ATAU users (scope site)']
+  user_scope user_scope [not null, default: 'site']
+  site_id uuid [note: 'Null untuk token platform admin']
+  expires_at datetime [not null]
+  revoked_at datetime
+  revoked_by uuid
+  replaced_by_id uuid [note: 'Chain rotasi']
+  family_id uuid [note: 'Root login family — reuse detection M1']
+  created_from_ip varchar
+  created_user_agent varchar
+  last_used_at datetime [note: 'Idle timeout 30 menit (11.300(d)) — distamp SessionActivityMiddleware']
+  created_at datetime
+  updated_at datetime
+  indexes {
+    (token_hash) [unique]
+    (user_id, user_scope)
+    (family_id)
+  }
+}
+
+Table login_attempt_log [note: 'TARGET (AUTH) — semua percobaan login sukses/gagal. Append-only. Counter lockout 5-gagal/30-menit per user+IP. Deployed di platform DB (percobaan platform admin) + site DB (percobaan LDAP). FS-AS-04/05, FS-AUTH-07/10/13.', headercolor: #EF6C00] {
+  id bigint [pk, increment]
+  username varchar [not null, note: 'Email yang dicoba']
+  user_id uuid [note: 'User ter-resolve (bila match)']
+  site_id uuid
+  success boolean [not null]
+  failure_reason varchar [note: 'INVALID_CREDENTIALS | LOCKED_OUT | ACCOUNT_DISABLED | MFA_FAILED | LDAP_ERROR']
+  ip_address varchar [not null]
+  user_agent varchar
+  attempted_at datetime [not null]
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  GROUP 1 — PLATFORM DB (syntera_master) · IAM — IMPLEMENTED
+// ─────────────────────────────────────────────────────────────────────────────
+
+Table sites [note: 'IMPLEMENTED (hijau) — registry tenant. Connection string terenkripsi DPAPI (ENC: prefix). Kolom [FSD] = rencana syn_site_master (SITE 2.21): initials untuk DNG, label workflow per site, dsb.', headercolor: #2E7D32] {
+  id uuid [pk]
+  code varchar [not null, unique, note: 'Mis. kalbe, kalventis, dankos — dipakai claim site_id JWT']
+  display_name varchar [not null]
+  database_connection_string varchar [not null, note: 'ENC: bila ConnectionProtection aktif']
+  default_theme_key varchar
+  is_enabled boolean [not null, default: true]
+  notes varchar
+  initials varchar [note: '[FSD] Kode inisial site utk penomoran dokumen']
+  address varchar [note: '[FSD]']
+  timezone varchar [note: '[FSD] default Asia/Jakarta']
+  currency varchar [note: '[FSD] default IDR']
+  locale varchar [note: '[FSD] default id-ID']
+  environment environment_tier [note: '[FSD] DEV/UAT/PROD']
+  label_workflow_type varchar [note: '[FSD] TEMPORARY_THEN_QO (Kalventis) | QO_ONLY (site lain)']
+  label_attributes json [note: '[FSD] Field label yang tampil + posisi grid']
+  created_at datetime
+  updated_at datetime
+}
+
+Table site_ldap_domains [note: 'IMPLEMENTED (hijau) — routing domain email → site (login flow). Multi domain per site (alias pasca M&A).', headercolor: #2E7D32] {
+  id uuid [pk]
+  site_id uuid [not null]
+  domain varchar [not null, unique, note: 'Lowercase tanpa @, mis. kalventis.com']
+  is_active boolean [not null, default: true]
+  created_at datetime
+  updated_at datetime
+}
+
+Table site_ldap_configs [note: 'IMPLEMENTED (hijau) — direct-bind LDAP (tanpa service account), gaya ldap-get-user.js Kalventis.', headercolor: #2E7D32] {
+  id uuid [pk]
+  site_id uuid [not null, unique]
+  host varchar [not null]
+  port integer [not null, default: 389]
+  use_start_tls boolean [not null, default: false]
+  base_dn varchar [not null, note: 'Mis. DC=KALVENTIS,DC=DOM']
+  upn_domain varchar [note: 'Suffix UPN AD (sering beda dari domain email)']
+  created_at datetime
+  updated_at datetime
+}
+
+Table site_themes [note: 'IMPLEMENTED (hijau) — palet tema per site (JSON), cache in-memory. Kolom [FSD] = template label print.', headercolor: #2E7D32] {
+  id uuid [pk]
+  site_id uuid [not null, unique]
+  theme_key varchar [not null]
+  light_palette_json json [not null, default: '{}']
+  dark_palette_json json [not null, default: '{}']
+  logo_url varchar
+  label_template_storage_key varchar [note: '[FSD] Template ZPL print label']
+  created_at datetime
+  updated_at datetime
+}
+
+Table platform_users [note: 'IMPLEMENTED (hijau) — hanya admin@syntera.com. Bcrypt lokal (bukan LDAP) agar bisa login saat semua LDAP site mati. MFA TOTP (secret terenkripsi Data Protection). Password max-age 90 hari (11.300(c)).', headercolor: #2E7D32] {
+  id uuid [pk]
+  email varchar [not null, unique, note: 'Domain @syntera.com']
+  password_hash varchar [not null, note: 'BCrypt']
+  display_name varchar [not null]
+  is_enabled boolean [not null, default: true]
+  last_login_at datetime
+  last_failed_login_at datetime
+  failed_login_count integer [not null, default: 0]
+  locked_until datetime
+  totp_secret varchar [note: 'Base32, terenkripsi IDataProtector']
+  totp_enabled boolean [not null, default: false]
+  password_changed_at datetime [note: 'Basis password max-age']
+  created_at datetime
+  updated_at datetime
+}
+
+Table password_history [note: 'IMPLEMENTED (hijau) — 10 hash terakhir; reuse password ditolak PASSWORD_REUSE_FORBIDDEN (11.300(c)).', headercolor: #2E7D32] {
+  id uuid [pk]
+  platform_user_id uuid [not null]
+  password_hash varchar [not null]
+  set_at datetime [not null]
+  created_at datetime
+  updated_at datetime
+  indexes {
+    (platform_user_id, set_at)
+  }
+}
+
+Table role_templates [note: 'IMPLEMENTED (hijau) — role template platform. Saat site dibuat semua template published di-clone jadi Roles di site DB. Versioning: site mencatat versi yang di-clone.', headercolor: #2E7D32] {
+  id uuid [pk]
+  key varchar [not null, unique, note: 'Mis. viewer, site-business-admin']
+  display_name varchar [not null]
+  description varchar
+  is_site_admin_role boolean [not null, default: false]
+  is_published boolean [not null, default: false]
+  version integer [not null, default: 1]
+  created_at datetime
+  updated_at datetime
+}
+
+Table role_template_permissions [note: 'IMPLEMENTED (hijau) — M2M template ↔ permission key (string global constant, bukan FK).', headercolor: #2E7D32] {
+  id uuid [pk]
+  role_template_id uuid [not null]
+  permission_key varchar [not null, note: 'Mis. user.read — di-resolve ke site Permission saat clone']
+  created_at datetime
+  updated_at datetime
+  indexes {
+    (role_template_id, permission_key) [unique]
+  }
+}
+
+Table role_template_approvals [note: 'IMPLEMENTED (hijau) — two-person rule publish role template: requester tidak boleh self-approve; snapshot permintaan + signature meaning dua sisi. Opt-in via TwoPerson:Enabled.', headercolor: #2E7D32] {
+  id uuid [pk]
+  role_template_id uuid [not null]
+  requested_by uuid [not null]
+  requested_at datetime [not null]
+  requested_snapshot_json json [not null]
+  status varchar [not null, default: 'pending', note: 'pending | approved | rejected | superseded']
+  action_by uuid [note: 'Platform admin kedua (pembeda dari requester)']
+  action_at datetime
+  rejection_reason varchar
+  requester_signature_meaning varchar
+  approver_signature_meaning varchar
+  created_at datetime
+  updated_at datetime
+  indexes {
+    (role_template_id, status)
+  }
+}
+
+Table platform_settings [note: 'IMPLEMENTED (hijau) — key-value setting platform (mis. Audit:RetentionYears).', headercolor: #2E7D32] {
+  key varchar [pk]
+  value varchar
+  description varchar
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  GROUP 2 — SITE DB (per-site) · IAM — IMPLEMENTED
+// ─────────────────────────────────────────────────────────────────────────────
+
+Table users [note: 'IMPLEMENTED (hijau) — user site. Auth via LDAP direct-bind; Syntera TIDAK menyimpan password. Pre-provisioning oleh Site Business Admin SEBELUM login pertama. permissions_version: counter naik saat role/permission berubah → JWT stale terdeteksi.', headercolor: #2E7D32] {
+  id uuid [pk]
+  email varchar [not null, unique]
+  display_name varchar [not null, note: 'Sync dari LDAP displayName']
+  title varchar [note: 'Sync dari LDAP title']
+  site_id uuid [not null, note: 'Site pemilik DB ini']
+  is_enabled boolean [not null, default: true]
+  last_login_at datetime
+  last_failed_login_at datetime
+  failed_login_count integer [not null, default: 0]
+  locked_until datetime
+  permissions_version bigint [not null, default: 1]
+  is_deleted boolean [not null, default: false, note: 'Soft delete — row tetap untuk forensik']
+  deleted_at datetime
+  deleted_by uuid
+  created_at datetime
+  updated_at datetime
+}
+
+Table roles [note: 'IMPLEMENTED (hijau) — hasil clone RoleTemplate published. Site Business Admin hanya ASSIGN, tidak bisa ubah mapping role-permission. origin_template_id → role_templates (platform DB, logical).', headercolor: #2E7D32] {
+  id uuid [pk]
+  key varchar [not null, unique]
+  display_name varchar [not null]
+  description varchar
+  is_site_admin_role boolean [not null, default: false]
+  origin_template_id uuid [note: 'Traceability ke template platform']
+  is_deleted boolean [not null, default: false]
+  deleted_at datetime
+  deleted_by uuid
+  created_at datetime
+  updated_at datetime
+}
+
+Table permissions [note: 'IMPLEMENTED (hijau) — katalog permission key statis, di-seed ke tiap site DB saat provisioning.', headercolor: #2E7D32] {
+  id uuid [pk]
+  key varchar [not null, unique, note: 'Mis. user.read, role.assign, audit.read']
+  display_name varchar [not null]
+  permission_group varchar [not null, note: 'Grouping UI, mis. User Management']
+  is_platform_only boolean [not null, default: false]
+  created_at datetime
+  updated_at datetime
+}
+
+Table user_roles [note: 'IMPLEMENTED (hijau) — M2M user ↔ role; assignment oleh Business Admin; bisa ber-expiry (sementara).', headercolor: #2E7D32] {
+  id uuid [pk]
+  user_id uuid [not null]
+  role_id uuid [not null]
+  assigned_by uuid [not null]
+  expires_at datetime [note: 'Null = permanen']
+  created_at datetime
+  updated_at datetime
+  indexes {
+    (user_id, role_id) [unique]
+  }
+}
+
+Table role_permissions [note: 'IMPLEMENTED (hijau) — M2M role ↔ permission; frozen hasil clone template.', headercolor: #2E7D32] {
+  id uuid [pk]
+  role_id uuid [not null]
+  permission_id uuid [not null]
+  created_at datetime
+  updated_at datetime
+  indexes {
+    (role_id, permission_id) [unique]
+  }
+}
+
+Table user_permissions [note: 'IMPLEMENTED (hijau) — direct grant/deny per user (bypass role). Wajib: reason + approver + expiry maks 90 hari. DENY override grant. Sweeper auto-revoke expired.', headercolor: #2E7D32] {
+  id uuid [pk]
+  user_id uuid [not null]
+  permission_id uuid [not null]
+  reason varchar [not null, note: 'Justifikasi bisnis wajib']
+  approved_by uuid [not null]
+  expires_at datetime [not null, note: 'Wajib ≤ 90 hari']
+  is_deny boolean [not null, default: false, note: 'Explicit DENY — override semua grant']
+  is_revoked boolean [not null, default: false]
+  revoked_at datetime
+  revoked_by uuid
+  created_at datetime
+  updated_at datetime
+  indexes {
+    (user_id, permission_id)
+    (expires_at)
+  }
+}
+
+Table user_sync_history [note: 'IMPLEMENTED (hijau) — riwayat import/sync LDAP per site (pre-provisioning verification).', headercolor: #2E7D32] {
+  id uuid [pk]
+  site_id uuid [not null]
+  triggered_by uuid [not null]
+  started_at datetime [not null]
+  finished_at datetime
+  status varchar [not null, default: 'running', note: 'running | success | partial | failed']
+  users_found integer [not null, default: 0]
+  users_created integer [not null, default: 0]
+  users_updated integer [not null, default: 0]
+  users_disabled integer [not null, default: 0]
+  errors varchar [note: 'Satu error per baris']
+  sync_trigger varchar [note: '[FSD] SCHEDULED | EVENT_AD_CHANGE (real-time sync)']
+  created_at datetime
+  updated_at datetime
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  GROUP 3 — SITE DB · MASTER DATA (MD 2.3) — TARGET
+//  Master approval umum (FS-MD-APPR-01): SME create → Reviewer review →
+//  Approver approve (e-sign 2-komponen) → effective_date + notifikasi stakeholder.
+// ─────────────────────────────────────────────────────────────────────────────
+
+Table syn_sop [note: 'TARGET (MD/DOC) — master SOP kalibrasi. Parameter type → auto-filter kategori formula + tolerance + conversion table. Versioned & approved seperti master lain; file fisik di syn_document (type SOP). Salah satu dari 14 entity snapshot (FS-SNP-01).', headercolor: #1565C0] {
+  id uuid [pk]
+  sop_no varchar [not null, unique, note: 'Mis. SOP-244']
+  title varchar [not null]
+  parameter_type varchar [not null, note: 'Temperature | Pressure | Mass | Dimensional | Electrical | Flow | Light | Sound | Gas | Time | RPM']
+  status varchar [not null, default: 'draft', note: 'draft | in_review | effective | retired']
+  effective_date date
+  sop_config_json json [note: 'Config: template form, env ranges (temp/rh), konvensi koreksi, dll']
+  created_at datetime
+  updated_at datetime
+}
+
+Table m_form_template [note: 'TARGET (CAL/MD) — M_FORM_TEMPLATE. Template form digital per SOP+version: jumlah reading, cycle, titik, channel multi-sensor (PT100/TC-J/TC-K/TC-T/0-10V/4-20mA). Di-snapshot ke sop_config_snapshot saat assignment WO.', headercolor: #1565C0] {
+  id uuid [pk]
+  sop_id uuid [not null]
+  sop_version varchar [not null]
+  reading_count integer [not null, note: '1 | 3 | 5 | 10 (9-point x 20s observasi)']
+  cycle_count integer [not null, note: '1 | 2 (Pre+Main) | 3 (up-down)']
+  cal_points_template json [not null, note: 'Daftar nominal value titik']
+  uncertainty_factors json [not null]
+  formula_id uuid [not null]
+  channels json [note: 'Multi-channel recorder: sensor_input_type + bias_value, hingga 20+ channel']
+  is_active boolean [not null, default: true]
+}
+
+Table m_formula [note: 'TARGET (MD) — Standard Formula Library + formula custom per-site. STANDARD butuh council 4-dari-6 Metrology Lead site (KF, GOF, DK, HJ, Fima, Kalventis); SITE_SPECIFIC dikunci site pemilik.', headercolor: #1565C0] {
+  id uuid [pk]
+  name varchar [not null]
+  expression varchar [not null, note: 'Mis. correction = std - uut; Uc = sqrt(sum(ui^2)); U95 = k x Uc']
+  category varchar [not null, note: 'Kategori parameter metrologi']
+  scope formula_scope [not null, default: 'standard']
+  site_id uuid [note: 'Wajib bila SITE_SPECIFIC, null bila STANDARD']
+  status varchar [not null, default: 'draft', note: 'draft | in_review | pending_council | published | rejected']
+}
+
+Table m_formula_version [note: 'TARGET (MD) — revisi formula immutable & addressable; direferensikan syn_wo_uncertainty.formula_version_id (traceability k-factor & divisor — temuan auditor umum).', headercolor: #1565C0] {
+  id uuid [pk]
+  formula_id uuid [not null]
+  version integer [not null]
+  expression varchar [not null]
+  status varchar [not null, note: 'draft | approved | published | archived']
+  effective_date date
+  approved_by uuid
+  approved_at datetime
+  esign_manifest json [note: 'Sign-off council (STANDARD) / Metrology Lead (SITE_SPECIFIC)']
+  indexes {
+    (formula_id, version) [unique]
+  }
+}
+
+Table m_formula_validation [note: 'TARGET (MD) — bukti CSV: formula wajib lolos validasi (min 5 dataset simulasi + match manual ±1e-6) sebelum publish.', headercolor: #1565C0] {
+  id uuid [pk]
+  formula_version_id uuid [not null]
+  syntax_check_ok boolean [not null]
+  simulation_datasets json [not null]
+  manual_comparison_delta decimal [not null, note: 'Wajib ≤ 1e-6 vs hitung manual']
+  result varchar [not null, note: 'PASS | FAIL — FAIL tidak bisa publish']
+  validated_at datetime
+}
+
+Table m_uncertainty_template [note: 'TARGET (MD/FS-MD-09) — template uncertainty budget per SOP; versi & approved seperti master lain; men-seed syn_wo_uncertainty saat eksekusi.', headercolor: #1565C0] {
+  id uuid [pk]
+  sop_id uuid [not null]
+  version integer [not null]
+  status varchar [not null, default: 'draft', note: 'draft | approved | effective']
+  effective_date date
+}
+
+Table m_uncertainty_template_component [note: 'TARGET (MD) — komponen uncertainty template: nama, Type A/B, distribusi (penentu divisor), nilai, DoF.', headercolor: #1565C0] {
+  id uuid [pk]
+  template_id uuid [not null]
+  component_name varchar [not null, note: 'Mis. Calibrator accuracy, Repeatability, Resolution, Drift, Env temp effect']
+  type uncertainty_type [not null]
+  distribution distribution [not null]
+  value decimal
+  unit varchar
+  degrees_of_freedom integer [note: 'Type A; Type B = infinity']
+}
+
+Table m_tolerance [note: 'TARGET (MD/FS-MD-12/13) — kriteria toleransi by instrument type + parameter + range. ABSOLUTE | PERCENTAGE | TIERED (tier per nominal) | MULTI (AND semua harus pass). Di-snapshot ke criteria_snapshot per titik WO.', headercolor: #1565C0] {
+  id uuid [pk]
+  instrument_type varchar [not null]
+  parameter varchar [not null]
+  range_min decimal
+  range_max decimal
+  criteria_type varchar [not null, note: 'ABSOLUTE | PERCENTAGE | TIERED | MULTI']
+  criteria json [not null, note: 'Tiered ranges / multi kriteria + operator']
+  status varchar [not null, default: 'draft', note: 'draft | effective | retired']
+  effective_date date
+}
+
+Table m_conversion_table [note: 'TARGET (MD/FS-MD-14/15) — tabel konversi standard (RTD PT100 IEC60751, TC ITS-90 per tipe J/K/T/E/N/R/S/B, loop 4-20mA). Versi lama tetap aktif untuk WO in-progress (snapshot lock); retensi 10 tahun.', headercolor: #1565C0] {
+  id uuid [pk]
+  table_type varchar [not null, note: 'RTD_PT100_IEC60751 | THERMOCOUPLE_ITS90 | CURRENT_LOOP_4_20MA']
+  tc_type varchar [note: 'J/K/T/E/N/R/S/B — khusus thermocouple']
+  version integer [not null]
+  effective_date date [not null]
+  status varchar [not null, default: 'pending_approval', note: 'draft | pending_approval | active | archived']
+  data json [note: 'Koefisien Callendar-Van Dusen / polinomial NIST ITS-90 / titik']
+}
+
+Table syn_calibrator [note: 'TARGET (MD) — master reference tool / calibrator (TUR 4:1). Blok dari WO bila EXPIRED (jendela: planned_date .. planned_date+lead_time) kecuali QO override. shareable_flag membuka skenario cross-site Borrow. H-90 auto re-cal trigger (email vendor + in-app planner). Salah satu dari 14 entity snapshot.', headercolor: #1565C0] {
+  id uuid [pk]
+  brand varchar [not null]
+  model varchar [not null]
+  serial_no varchar [not null]
+  range_min decimal
+  range_max decimal
+  resolution decimal
+  accuracy_class varchar
+  cal_cycle_months integer [not null, default: 12, note: '6 | 12 | 24']
+  last_cal_date date
+  next_cal_date date [note: 'a.k.a. cal_expiry']
+  certificate_id uuid [note: 'Cert aktif (k-factor + uncertainty untuk Type B)']
+  uncertainty_k_factor decimal
+  owner_site_id uuid [not null]
+  shareable_flag boolean [not null, default: false]
+  status calibrator_status [not null, default: 'available']
+  indexes {
+    (serial_no)
+  }
+}
+
+Table syn_certificate [note: 'TARGET (CAL/MD) — sertifikat kalibrasi: hasil generate internal (wo_id terisi, unique) ATAU upload vendor (untuk kalibrasi eksternal / cert calibrator / media). PDF/A-2b di object storage; SHA-256 + QR → /verify/{certificate_uuid}.', headercolor: #1565C0] {
+  id uuid [pk]
+  certificate_no varchar [not null, unique, note: 'Penomoran DNG terpisah dari WO number']
+  certificate_uuid uuid [not null, unique, note: 'Target QR code verifikasi lapangan']
+  cert_type varchar [not null, default: 'internal', note: 'internal | vendor']
+  wo_id uuid [note: 'Terisi (unique) bila hasil generate WO internal']
+  expiry_date date
+  k_factor decimal
+  uncertainty decimal
+  status varchar [not null, default: 'draft', note: 'draft (watermark) | final — immutable setelah final']
+  pdf_path varchar [not null]
+  sha256_hash varchar [not null]
+  header_json json [note: 'Header 20-field: WO#, asset, SOP, calibrator, env, technician, tanggal']
+  generated_at datetime
+  generated_by uuid
+}
+
+Table syn_media [note: 'TARGET (MD/FS-MD-16) — master media kalibrasi (gas standard, larutan, weight set). Blokir dari eksekusi WO bila expired (H-30 alert). Lot/batch untuk recall.', headercolor: #1565C0] {
+  id uuid [pk]
+  name varchar [not null]
+  type media_type [not null]
+  brand varchar
+  lot_no varchar
+  batch_no varchar
+  manufacture_date date
+  expired_date date [not null]
+  concentration decimal [note: 'Gas/larutan']
+  uncertainty decimal
+  certificate_id uuid
+  status varchar [not null, default: 'available', note: 'available | expired | blocked']
+}
+
+Table syn_location [note: 'TARGET (MD/RA) — master lokasi per site (hierarki parent). Dipakai asset, forecast, label.', headercolor: #1565C0] {
+  id uuid [pk]
+  site_id uuid [not null]
+  code varchar [not null, unique]
+  name varchar [not null]
+  parent_location_id uuid [note: 'Self-reference hierarki']
+}
+
+Table syn_department [note: 'TARGET (MD/RA) — master department / line per site. Dipakai asset & movement.', headercolor: #1565C0] {
+  id uuid [pk]
+  site_id uuid [not null]
+  code varchar [not null, unique]
+  name varchar [not null]
+}
+
+Table syn_manufacturer [note: 'TARGET (MD/RA) — master pabrikan (opsional RA-08).', headercolor: #1565C0] {
+  id uuid [pk]
+  name varchar [not null, unique]
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  GROUP 4 — SITE DB · ASSET REGISTRATION (RA 2.4) + WORK ORDER (WO 2.5)
+//  + LIFECYCLE (LIFE 2.18) — TARGET
+// ─────────────────────────────────────────────────────────────────────────────
+
+Table syn_asset [note: 'TARGET (RA) — master UUT (Unit Under Test). Immutable setelah approved kecuali formal change request (FS-RA-15). Penomoran RA: xxxx/{inisial-site}/RA/{bulan-Romawi}/{tahun} reset bulanan+tahunan. Audit SHA-256 (FS-RA-19). Sync dua arah event-driven ke Oracle EAM setelah approval. Salah satu dari 14 entity snapshot.', headercolor: #1565C0] {
+  id uuid [pk]
+  tag_id varchar [not null, unique, note: 'Validasi duplikat tag']
+  ra_doc_no varchar [not null, unique]
+  site_id uuid [not null]
+  category asset_category [not null, note: 'Menentukan field wajib (CC number dst.)']
+  cc_number varchar [note: 'Wajib non-MACHINE; lookup CC Online PLM (KF/DK/HJ) / manual (HJ/GOF/Fima/Kalventis)']
+  asset_name varchar [not null]
+  model varchar [not null]
+  serial_no varchar [not null]
+  department_id uuid
+  location_id uuid [not null]
+  manufacturer_id uuid
+  year_of_manufacture integer
+  range_min decimal
+  range_max decimal
+  resolution decimal
+  calibrator_class varchar
+  cal_cycle_months integer [not null, default: 12]
+  next_cal_due_date date [note: 'Auto dari cycle; diupdate saat WO close ACCEPTED/AWN']
+  assigned_calibrator_id uuid
+  sop_id uuid
+  status asset_status [not null, default: 'draft', note: 'Edit hanya saat DRAFT; search filter Draft/Approved/Inactive']
+  lifecycle_status asset_lifecycle [not null, default: 'planned', note: 'Qualified didapat setelah IQ/OQ/PQ semua approved (QUAL)']
+  is_deleted boolean [not null, default: false]
+  oracle_asset_number varchar [note: 'Nomor asset Oracle EAM setelah sync']
+  oracle_synced_at datetime
+}
+
+Table syn_forecast_cache [note: 'TARGET (WO/FS-WO-01) — cache forecast PM Oracle EAM (activity=Calibration) via ORDS REST, pull harian 06:00 site-local, TTL 6 jam; horizon 30 hari (maks 365). Baris dijadikan WO via action implement (idempotency check).', headercolor: #1565C0] {
+  id uuid [pk]
+  site_id uuid [not null]
+  oracle_ebs_instance varchar [not null]
+  asset_number varchar [not null]
+  description varchar
+  sop_no varchar
+  due_date date [not null]
+  criticality varchar
+  location varchar
+  horizon_days integer [not null, default: 30]
+  fetched_at datetime [not null]
+  expires_at datetime [not null]
+}
+
+Table syn_wo_ref [note: 'TARGET (WO) — WO reference Syntera ↔ Oracle EBS EAM (Oracle = system of record). Batch release bulanan (Unreleased→Released, maks 10 SOAP concurrent) + distribusi PDF Monthly PM Schedule. Idempotency: UNIQUE(asset, activity, due-period). Status machine lihat enum wo_status. pr_number: hasil EAM WMA-UWO-A-10 saat butuh vendor re-calibration. wo_number ≠ certificate_number.', headercolor: #1565C0] {
+  id uuid [pk]
+  wo_number varchar [not null, unique, note: 'DNG — format per-site (autonumber | tahun/bulan)']
+  site_id uuid [not null]
+  oracle_ebs_instance varchar [not null, note: '1 dari 6 instance']
+  oracle_wo_number varchar [note: 'Hasil ISG SOAP CreateWO']
+  syn_wo_status wo_status [not null, default: 'draft']
+  asset_id uuid [not null]
+  activity_id varchar [note: 'Oracle EAM activity']
+  activity_type activity_type [not null, default: 'calibration']
+  description varchar
+  criticality varchar
+  sop_id uuid
+  due_date date
+  due_date_period varchar [note: 'Periode idempotency']
+  planned_date date
+  lead_time_days integer
+  technician_id uuid
+  calibration_mode cal_mode [note: 'INTERNAL | EXTERNAL — dari asset+activity / flag Oracle']
+  pr_number varchar [note: 'Purchase Requisition Oracle utk vendor re-cal']
+  is_deleted boolean [not null, default: false, note: 'DISCARDED: WO non-kalibrasi (Oracle tetap)']
+  released_at datetime
+  acknowledged_at datetime
+  assigned_at datetime
+  completed_at datetime
+  closed_at datetime [note: 'CLOSED = immutable; gate 4 approval + tanpa deviation/CAPA open']
+  indexes {
+    (asset_id, activity_id, due_date_period) [unique, note: 'Idempotency: 1 WO per asset-activity-periode']
+    (wo_number) [unique]
+  }
+}
+
+Table syn_wo_snapshot [note: 'TARGET (SNP/WO) — SNAPSHOT IMMUTABLE konteks WO saat assignment: SOP config (titik, kriteria, env range), header 14-field (asset tag, lokasi, range, calibrator ID+SN+cert, media, technician). INSERT-only (DB trigger), hash chain per-entity. Bagian dari set 14-entity snapshot (FS-WO-SNAP-01).', headercolor: #1565C0] {
+  id uuid [pk]
+  wo_id uuid [not null, unique]
+  asset_id uuid [not null]
+  sop_id uuid [not null]
+  sop_version varchar [not null]
+  sop_config_snapshot json [not null]
+  parameter_type varchar [not null]
+  technician_id uuid [not null]
+  planned_date date [not null]
+  calibrator_id uuid [not null]
+  media_id uuid [not null]
+  asset_tag_snapshot varchar [not null]
+  tag_description_snapshot varchar
+  location_snapshot varchar
+  range_min_snapshot decimal
+  range_max_snapshot decimal
+  resolution_snapshot decimal
+  snapshot_hash varchar [not null, note: 'SHA-256 chain atas set 14-entity']
+  hash_prev varchar [not null]
+  created_at datetime [not null]
+}
+
+Table syn_wo_calibrator [note: 'TARGET (SNP/MD) — snapshot immutable calibrator terpakai (+cert): SN, cert_no, expiry, K-factor, uncertainty. Update master kemudian TIDAK bisa menulis ulang history. Hash-chained.', headercolor: #1565C0] {
+  id uuid [pk]
+  wo_id uuid [not null]
+  calibrator_id uuid [not null]
+  calibrator_sn_snapshot varchar [not null]
+  calibrator_cert_snapshot json [not null, note: 'cert_no + expiry + K + uncertainty']
+  calibrator_expiry_snapshot date [not null]
+  parameter_type varchar
+  resolution_snapshot decimal
+  uncertainty_snapshot decimal
+  hash_curr varchar [not null]
+  hash_prev varchar [not null]
+}
+
+Table syn_wo_media [note: 'TARGET (SNP/MD) — snapshot immutable media terpakai: SN/lot, expiry, range ter-cover, kontributor uncertainty. Hash-chained.', headercolor: #1565C0] {
+  id uuid [pk]
+  wo_id uuid [not null]
+  media_id uuid [not null]
+  media_sn_snapshot varchar [not null]
+  media_lot_snapshot varchar
+  media_expiry_snapshot date [not null]
+  range_covered_min decimal [not null]
+  range_covered_max decimal [not null]
+  hash_curr varchar [not null]
+  hash_prev varchar [not null]
+}
+
+Table syn_wo_cal_point [note: 'TARGET (SNP) — snapshot titik kalibrasi dari template SOP saat assignment: nominal + unit + criteria_snapshot (ABSOLUTE|PERCENTAGE|TIERED|MULTI, per-stage utk multi-stage). Semua verdict dihitung vs snapshot ini — BUKAN master live. Hash-chained.', headercolor: #1565C0] {
+  id uuid [pk]
+  wo_id uuid [not null]
+  point_sequence integer [not null]
+  nominal_value decimal [not null]
+  unit varchar [not null]
+  criteria_snapshot json [not null]
+  hash_curr varchar [not null]
+  hash_prev varchar [not null]
+  indexes {
+    (wo_id, point_sequence)
+  }
+}
+
+Table syn_wo_assignment [note: 'TARGET (WO/FS-WO-04) — assignment technician: AUTO (workload balancer: pending WO tersedikit di antara qualified) atau OVERRIDE Supervisor (wajib reason + e-sign). Validasi real-time: competency QUALIFIED & expiry > due_date.', headercolor: #1565C0] {
+  id uuid [pk]
+  wo_id uuid [not null]
+  technician_id uuid [not null]
+  assignment_mode varchar [not null, note: 'AUTO | OVERRIDE']
+  override_reason varchar [note: 'Wajib bila OVERRIDE + audit trail']
+  esign_manifest json
+  assigned_by uuid [not null]
+  pending_wo_count_at_assign integer [note: 'Bukti workload balancer']
+  assigned_at datetime [not null]
+}
+
+Table syn_wo_cancellation [note: 'TARGET (WO/DEV) — pembatalan WO formal: alasan + link ticket deviation QMS + approval paralel (Supervisor+QA) + dual-write Oracle CancelWO dengan kompensasi retry 3x → queue.', headercolor: #1565C0] {
+  id uuid [pk]
+  wo_id uuid [not null, unique]
+  cancel_reason varchar [not null]
+  qms_deviation_ticket_id varchar [note: 'Back-link dua arah dengan QMS']
+  oracle_cancel_status varchar [note: 'PENDING | SENT | QUEUED | FAILED (retry 3x)']
+  cancelled_at datetime
+}
+
+Table syn_wo_berita_acara [note: 'TARGET (LIFE/FS-LIFE-BA-01) — Berita Acara WO batal karena alat hilang/rusak/tidak-pulih: set EAM activity Inactive via effective date; reactivation path bila nanti dapat WO baru.', headercolor: #1565C0] {
+  id uuid [pk]
+  wo_id uuid [not null]
+  asset_id uuid [not null]
+  reason_code varchar [not null, note: 'LOST | DAMAGED | UNRECOVERABLE (dropdown)']
+  reason_text varchar
+  inactive_effective_date date [not null]
+  approved_by uuid
+  esign_manifest json
+  oracle_inactive_synced_at datetime
+}
+
+Table syn_asset_movement [note: 'TARGET (LIFE) — mutasi asset antar lokasi/department (termasuk lintas site). History IMMUTABLE; dua approval (Engineering Manager + QA) + e-sign; update master + sync real-time Oracle EAM. Hash-chained (FS-LIFE-11).', headercolor: #1565C0] {
+  id uuid [pk]
+  asset_id uuid [not null]
+  from_location_id uuid [not null]
+  to_location_id uuid [not null]
+  from_department_id uuid
+  to_department_id uuid
+  movement_date date [not null]
+  reason varchar [not null]
+  requester_user_id uuid [not null]
+  approval_status approval_status [not null, default: 'pending']
+  esign_manifest json
+  change_details json [note: 'Before/after values']
+  moved_at datetime
+}
+
+Table syn_asset_decommission [note: 'TARGET (LIFE) — pensiun/disposal asset: approval 3-manager (Eng Mgr + QA + QO) dengan e-sign. Setelah approved: status DECOMMISSIONED, data historis di-archive immutable & tetap queryable; asset keluar dari siklus kalibrasi rutin; sync Oracle.', headercolor: #1565C0] {
+  id uuid [pk]
+  asset_id uuid [not null, unique]
+  decommission_reason varchar [not null]
+  decommission_date date [not null]
+  disposal_method varchar [not null]
+  approval_status approval_status [not null, default: 'pending']
+  esign_manifest json
+  decommissioned_at datetime
+  archived_at datetime
+}
+
+Table syn_asset_reactivation [note: 'TARGET (LIFE/FS-LIFE-REACT-01) — reaktivasi otomatis saat Check Status menemukan alat Inactive ter-assign WO baru: notifikasi Supervisor dulu, QO signature + justification, set EAM Active via effective date.', headercolor: #1565C0] {
+  id uuid [pk]
+  asset_id uuid [not null]
+  wo_id uuid [not null]
+  reason varchar [not null]
+  justification varchar [not null]
+  qo_signature_by uuid
+  esign_manifest json
+  supervisor_notified_at datetime
+  oracle_effective_date date
+  status approval_status [not null, default: 'pending']
+  reactivated_at datetime
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  GROUP 5 — SITE DB · CALIBRATION EXECUTION (CAL 2.6) — TARGET
+// ─────────────────────────────────────────────────────────────────────────────
+
+Table syn_wo_result [note: 'TARGET (CAL) — baris reading per titik × cycle × stage × reading: std_reading & uut_reading terpisah (sumber koreksi), koreksi auto-calc. Validasi range real-time. DRAFT (autosave 30s) di luar audit trail; FINAL immutable setelah submit. Input Type A uncertainty.', headercolor: #1565C0] {
+  id bigint [pk, increment]
+  wo_id uuid [not null]
+  cal_point_id uuid [not null, note: 'Reference ke SNAPSHOT point, bukan master']
+  cycle_no integer [not null]
+  cycle_stage varchar [not null, note: 'UP | DOWN | PRE_COMPRESSION | MAIN_COMPRESSION | MAIN']
+  reading_no integer [not null]
+  channel_no integer [note: 'Multi-channel recorder (20+)']
+  std_reading decimal [not null]
+  uut_reading decimal [not null]
+  correction decimal [not null, note: 'Auto = std - uut (atau konvensi SOP)']
+  measurement_phase measurement_phase [not null]
+  is_accepted boolean [not null, note: '|correction| ≤ criteria_snapshot — real-time per titik']
+  status reading_status [not null, default: 'draft']
+  test_type varchar [note: 'Fume hood multi-test: AIRFLOW_VELOCITY | ILLUMINANCE | SOUND_LEVEL | PATTERN_FLOW']
+  measured_at datetime [not null]
+  captured_by_user_id uuid
+  indexes {
+    (wo_id, cal_point_id, cycle_no, reading_no)
+  }
+}
+
+Table syn_wo_point_result [note: 'TARGET (CAL) — agregat hasil per titik per phase: mean, error, U95 per titik, status pass/fail; plus konsistensi WO (max_spread ≤ U95). Verdict keseluruhan WO: worst-case lintas multi-stage/multi-test/multi-cycle.', headercolor: #1565C0] {
+  id bigint [pk, increment]
+  wo_id uuid [not null]
+  cal_point_id uuid [not null]
+  measurement_phase measurement_phase
+  mean_std decimal
+  mean_uut decimal
+  correction_avg decimal
+  error decimal [not null]
+  u95 decimal [not null]
+  point_status varchar [not null, note: 'pass | fail']
+  indexes {
+    (wo_id, cal_point_id, measurement_phase)
+  }
+}
+
+Table syn_wo_env [note: 'TARGET (CAL/FS-CAL-10) — kondisi ambient sebelum & sesudah kalibrasi (suhu, RH, tekanan utk SOP pressure-sensitive). Validasi vs range sop_config_snapshot; out-of-range → wajib override justification + audit + QO approval. Feed uncertainty Type B. Salah satu 6 snapshot SNP.', headercolor: #1565C0] {
+  id uuid [pk]
+  wo_id uuid [not null, unique]
+  temp_before decimal [not null]
+  rh_before decimal [not null]
+  temp_after decimal [not null]
+  rh_after decimal [not null]
+  pressure_before decimal
+  pressure_after decimal
+  is_in_range boolean [not null, default: true]
+  override_justification varchar
+  measured_at datetime [not null]
+  measured_by uuid [not null]
+}
+
+Table syn_wo_uncertainty [note: 'TARGET (CAL/MD) — METROLOGY ENGINE: budget per komponen (Type A/B, distribusi → divisor, ui = value/divisor, vi), hasil: Uc (RSS), veff (Welch-Satterthwaite), k95 (t-dist), U95 = k × Uc. Immutable setelah submit; formula_version_id utk traceability divisor. Kesalahan divisor = temuan auditor umum.', headercolor: #1565C0] {
+  id bigint [pk, increment]
+  wo_id uuid [not null]
+  cal_point_id uuid [note: 'Null = level WO; terisi = per titik (report FS-CAL-16)']
+  component_name varchar [not null]
+  type uncertainty_type [not null]
+  distribution distribution [not null]
+  value decimal [not null]
+  unit varchar [not null]
+  divisor decimal [not null, note: '1 | sqrt(3) | sqrt(6) | sqrt(2)']
+  ui decimal [not null, note: 'Standard uncertainty = value / divisor']
+  vi integer [not null, note: 'DoF: Type A = n-1, Type B = infinity']
+  uc decimal [not null, note: 'Combined = sqrt(sum(ui^2))']
+  veff integer [not null, note: 'Welch-Satterthwaite']
+  k95 decimal [not null, note: 't-dist 95% CL; ≈2 bila veff>30 (mis. 2.23 utk veff=10)']
+  u95 decimal [not null, note: 'Expanded = k95 × Uc']
+  formula_version_id uuid [not null]
+  indexes {
+    (wo_id)
+    (formula_version_id)
+  }
+}
+
+Table syn_attachment [note: 'TARGET (CAL/RA) — evidence: setup photo (≥2), label photo (1), foto per titik (maks 5), video pattern-flow (min 30s, MP4 H.264 maks 50MB), checklist scan. SHA-256 file_hash WAJIB (tamper evidence P09-PRO-003). Append-only per GMP. Bagian set 14-entity snapshot.', headercolor: #1565C0] {
+  id uuid [pk]
+  wo_id uuid [note: 'Null bila lampiran RA/master']
+  cal_point_id uuid [note: 'Foto per titik (maks 5)']
+  entity_type varchar [note: 'ASSET | WO | DEVIATION | QUALIFICATION (polymorphic)']
+  entity_id uuid [note: 'Target polymorphic (tanpa FK fisik)']
+  attachment_type varchar [not null, note: 'SETUP_PHOTO | LABEL_PHOTO | POINT_PHOTO | PATTERN_FLOW_VIDEO | SCANNED_CHECKLIST | MANUAL | VENDOR_CERT']
+  file_name varchar [not null]
+  file_path varchar [not null, note: 'Object storage (MinIO/S3) — video di network share']
+  mime_type varchar [not null, note: 'JPG/PNG maks 10MB; MP4 maks 50MB']
+  file_size_bytes bigint [not null]
+  caption varchar [not null]
+  file_hash varchar [not null, note: 'SHA-256 — wajib']
+  video_metadata json [note: 'Duration + overlay stamp: nama tech, WO, lokasi']
+  captured_at datetime [not null]
+  uploaded_by uuid [not null]
+}
+
+Table syn_wo_approval [note: 'TARGET (CAL/APPR) — manifest e-signature 4-tier per WO (Technician → Supervisor → Engineering Manager → QO Manager). Terikat permanen ke WO — tidak bisa dihapus/dipindah. Re-auth (ID+password, token 5 menit). AWN wajib e-sign QO sebelum finalisasi. Sama dipakai sebagai snapshot approval-chain-config (SNP).', headercolor: #6A1B9A] {
+  id bigint [pk, increment]
+  wo_id uuid [not null]
+  tier_name varchar [not null, note: 'Technician | Supervisor | Engineering Manager | QO Manager']
+  approver_user_id uuid [not null]
+  approver_name varchar [not null, note: 'Printed name']
+  approval_status approval_status [not null, default: 'pending']
+  meaning sign_meaning [not null, note: 'REVIEW | APPROVE | AUTHOR | REJECT']
+  e_signature_hash varchar [not null]
+  signed_at datetime [not null]
+  ip_address varchar [not null]
+  session_id varchar [not null]
+  revision_round integer [note: 'Loop revisi kembali ke technician w/ mandatory note']
+  comment varchar
+  indexes {
+    (wo_id, tier_name)
+  }
+}
+
+Table syn_asset_drift_history [note: 'TARGET (CAL/FS-DRF) — drift per UUT per WO: |koreksi kalibrasi ini - koreksi kalibrasi lalu|. Basis adjustment 4-tier interval rekal: drift ≤0.1×tol → keep; >0.1×tol → 50%; >tol konstan (AWN) → 50% + flag correction; REJECTED → tidak update next_cal, auto-trigger decommission + notifikasi supervisor.', headercolor: #1565C0] {
+  id bigint [pk, increment]
+  asset_id uuid [not null]
+  wo_id uuid [not null]
+  cal_date date [not null]
+  correction_max decimal [not null]
+  correction_min decimal [not null]
+  drift_value decimal [not null]
+  tolerance_at_cal decimal [not null]
+  drift_ratio decimal [not null, note: '= drift / tolerance']
+  verdict cal_verdict [not null]
+  recal_interval_applied integer [not null, note: 'Bulan — hasil 4-tier adjustment']
+  has_correction_factor boolean [not null, default: false]
+  indexes {
+    (asset_id, cal_date)
+  }
+}
+
+Table syn_external_calibration [note: 'TARGET (CAL/FS-CAL-15/22) — mode vendor: upload cert via vendor portal (sub-domain, auth terpisah) atau email-to-system; OCR + template matching auto-extract; auto-verify (due date vs WO, asset ID match, scope); Supervisor/QA verifikasi sebelum approval. Reminder H-3 bulan sebelum due.', headercolor: #1565C0] {
+  id uuid [pk]
+  wo_id uuid [not null, unique]
+  vendor_name varchar
+  certificate_file_path varchar [not null]
+  certificate_file_hash varchar [not null]
+  uploaded_at datetime [not null]
+  uploaded_via varchar [not null, note: 'VENDOR_PORTAL | EMAIL_OCR']
+  extracted_asset_id varchar
+  extracted_cal_date date
+  extracted_due_date date
+  extracted_results json
+  extracted_uncertainty json
+  verification_status varchar [not null, default: 'pending', note: 'pending | verified | mismatch']
+  verified_by uuid
+  verified_at datetime
+  vendor_reminder_sent_at datetime
+}
+
+Table syn_cal_execution_override [note: 'TARGET (CAL/FS-CAL-OVR-01) — override pemakaian calibrator/media EXPIRED atau env out-of-range: wajib reason + risk justification + mitigation + planned recal date; QO Manager two-component e-sign (AD password + email OTP); audit entry tag OVERRIDE_EXPIRED.', headercolor: #6A1B9A] {
+  id uuid [pk]
+  wo_id uuid [not null]
+  override_type varchar [not null, note: 'OVERRIDE_EXPIRED | ENV_OUT_OF_RANGE']
+  reason varchar [not null]
+  risk_justification varchar [not null]
+  mitigation varchar
+  expired_item_type varchar [note: 'CALIBRATOR | MEDIA']
+  expired_item_id uuid
+  expired_item_info json [note: 'ID, SN, cert, expiry']
+  planned_recal_date date
+  requested_by uuid [not null]
+  requested_at datetime [not null]
+  qo_approval_esign json
+  status approval_status [not null, default: 'pending']
+}
+
+Table syn_wo_pre_start_check [note: 'TARGET (CAL) — checklist pra-eksekusi: 5S, safety, kondisi fisik & lingkungan. Not Ok → boleh cancel WO dengan alasan (UC8).', headercolor: #1565C0] {
+  id uuid [pk]
+  wo_id uuid [not null]
+  check_item varchar [not null]
+  check_result varchar [not null, note: 'OK | NOT_OK']
+  remark varchar [note: 'Alasan cancel bila NOT_OK']
+  checked_by uuid [not null]
+  checked_at datetime [not null]
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  GROUP 6 — SITE DB · APPROVAL ENGINE (APPR 2.7) + E-SIGNATURE (ESIGN 2.8)
+//  + LABEL (LBL 2.24) — TARGET
+// ─────────────────────────────────────────────────────────────────────────────
+
+Table syn_workflow_template [note: 'TARGET (APPR) — definisi workflow per modul (System Admin): steps (SEQUENTIAL | PARALLEL), approver roles, SLA + escalation, restart policy (dari step 1 | dari step reject). definition_json versioned. (FSD: Spring State Machine → re-map .NET custom state machine.)', headercolor: #6A1B9A] {
+  id bigint [pk, increment]
+  module_code varchar [not null, note: 'WO | CAL | DOC | LBL | RA | RISK | REP | ...']
+  workflow_name varchar [not null]
+  version integer [not null, default: 1]
+  definition_json json [not null, note: 'steps[]: step_no, mode, approver_roles[], sla_hours, escalation, restart_policy']
+  condition_json json [note: 'Routing kondisional (mis. label_workflow_type per site)']
+  is_active boolean [not null, default: true]
+  created_by uuid
+  created_at datetime
+  indexes {
+    (module_code, version)
+  }
+}
+
+Table syn_approval_instance [note: 'TARGET (APPR) — instance runtime workflow utk 1 record subjek (entity_type+entity_id polymorphic): step saat ini, status, requester. Revisi → resubmit → restart per policy. Notifikasi pending & tiap perubahan status.', headercolor: #6A1B9A] {
+  id bigint [pk, increment]
+  workflow_id bigint [not null, note: 'Pin versi template saat instance dibuat']
+  entity_type varchar [not null, note: 'WO | LABEL | DOC | SOP | RA | RISK | REPORT | ...']
+  entity_id uuid [not null]
+  requester_user_id uuid [not null]
+  current_step integer [not null, default: 1]
+  status approval_status [not null, default: 'pending']
+  context_json json
+  restart_count integer [not null, default: 0]
+  started_at datetime [not null]
+  completed_at datetime
+  indexes {
+    (entity_type, entity_id)
+  }
+}
+
+Table syn_approval_step [note: 'TARGET (APPR) — 1 baris per slot approver per step: status per aksi + timestamp UTC + SLA due (overdue → escalation/delegation). Setiap approve/reject integrasi ESIGN + AUDIT.', headercolor: #6A1B9A] {
+  id bigint [pk, increment]
+  approval_instance_id bigint [not null]
+  step_no integer [not null]
+  step_name varchar
+  mode varchar [not null, note: 'SEQUENTIAL | PARALLEL']
+  approver_role varchar [not null]
+  approver_user_id uuid
+  status approval_status [not null, default: 'pending']
+  action_note varchar [note: 'Wajib saat request-revision / reject']
+  acted_at datetime
+  sla_due_at datetime
+  escalated_to_user_id uuid
+  delegated_to_user_id uuid
+  esign_manifest_id bigint
+  indexes {
+    (approval_instance_id, step_no)
+  }
+}
+
+Table syn_approval_delegation [note: 'TARGET (APPR/FS-APPR-11) — delegasi otoritas approval terbatas waktu (mis. cuti), wajib diketahui Quality; manifest tampil on_behalf_of_user_id.', headercolor: #6A1B9A] {
+  id bigint [pk, increment]
+  delegator_user_id uuid [not null]
+  delegate_user_id uuid [not null]
+  module_code varchar [note: 'Scope delegasi (null = semua)']
+  valid_from datetime [not null]
+  valid_until datetime [not null]
+  reason varchar
+  status varchar [not null, default: 'active', note: 'active | expired | revoked']
+}
+
+Table syn_signature_manifest [note: 'TARGET (ESIGN/FS-ES-02) — manifest signature 21 CFR Part 11 §11.50/11.200: terikat kriptografis ke record (hash before/after); signature_hash = SHA256(record_hash || user_id || timestamp || authority). INSERT-only. Record berubah → signature invalid → UI: invalidated, re-sign required (delta-hash detection). Rejection juga e-sign.', headercolor: #6A1B9A] {
+  id bigint [pk, increment]
+  record_type varchar [not null, note: 'WO | CALIBRATION_RECORD | REPORT | SOP | DEVIATION | ...']
+  record_id uuid [not null, note: 'Polymorphic target']
+  user_id uuid [not null]
+  full_name varchar [not null]
+  role_or_authority varchar [not null]
+  authority_level varchar [not null, note: 'AUTHOR | REVIEWER | APPROVER | QA | QO_MANAGER']
+  signing_reason varchar [not null, note: 'Default string + custom; user diberi tahu sedang menerapkan e-signature + alasannya']
+  meaning sign_meaning [not null]
+  signed_at datetime [not null]
+  record_hash_before varchar [not null]
+  record_hash_after varchar [not null]
+  signature_hash varchar [not null]
+  on_behalf_of_user_id uuid [note: 'Delegasi']
+  ip_address varchar
+  session_id varchar
+  action_type varchar [note: 'Termasuk REJECT — manifest rejection immutable (FS-ES-03)']
+  indexes {
+    (record_type, record_id)
+  }
+}
+
+Table syn_authority_level [note: 'TARGET (ESIGN/FS-ES-03) — enumerasi authority level configurable, makna bisa berbeda per workflow; dipakai parallel signing N slot.', headercolor: #6A1B9A] {
+  id bigint [pk, increment]
+  code varchar [not null, unique, note: 'AUTHOR | REVIEWER | APPROVER | QA | QO_MANAGER']
+  name varchar [not null]
+  meaning_per_workflow json
+  sort_order integer
+  is_active boolean [not null, default: true]
+}
+
+Table syn_reauth_token [note: 'TARGET (ESIGN/FS-ES-01) — token re-authentikasi jangka pendek (60 detik per ES-01; 5 menit per P43 — konfigurasi) SEBELUM signing GxP: username+password (via AD) + komponen OTP (TOTP/email). Signing pertama di session wajib SEMUA komponen; berikutnya cukup password.', headercolor: #6A1B9A] {
+  id bigint [pk, increment]
+  user_id uuid [not null]
+  token_hash varchar [not null, unique]
+  components_provided varchar [not null, note: 'PASSWORD | +OTP_EMAIL | +OTP_TOTP']
+  issued_at datetime [not null]
+  expires_at datetime [not null]
+  consumed_at datetime [note: 'One-time use']
+}
+
+Table syn_otp_code [note: 'TARGET (ESIGN/AS) — OTP 6-digit verifikasi identitas (10 menit, one-time) sebelum komponen signature pertama / fallback MFA high-privilege; rate-limited. Digabung dari konsep FS-ESIGN-IDVERIFY-01 + email-OTP fallback AS-05.', headercolor: #6A1B9A] {
+  id uuid [pk]
+  user_id uuid [not null]
+  code_hash varchar [not null]
+  channel varchar [not null, note: 'EMAIL | AUTHENTICATOR_APP']
+  purpose varchar [not null, default: 'signing', note: 'signing | mfa_fallback']
+  expires_at datetime [not null]
+  sent_at datetime [not null]
+  request_count integer [not null, default: 0, note: 'Rate limit']
+  consumed_at datetime
+}
+
+Table syn_signature_attempt_log [note: 'TARGET (ESIGN) — log attempt signature/re-auth GAGAL (password/OTP salah, token expired, hash mismatch) — akuntabilitas 21 CFR Part 11; feed AuditLog.', headercolor: #6A1B9A] {
+  id bigint [pk, increment]
+  user_id uuid
+  record_type varchar
+  record_id uuid
+  attempt_at datetime [not null]
+  failure_reason varchar [not null, note: 'BAD_PASSWORD | BAD_OTP | TOKEN_EXPIRED | RECORD_HASH_MISMATCH']
+  ip_address varchar
+  session_id varchar
+}
+
+Table syn_record_signoff_lock [note: 'TARGET (ESIGN) — lock record setelah sign-off level 2 (approval): konten signed tidak boleh berubah tanpa invalidasi → re-sign formal. Bekerja dengan delta-hash detection.', headercolor: #6A1B9A] {
+  id bigint [pk, increment]
+  record_type varchar [not null]
+  record_id uuid [not null]
+  signoff_level smallint [not null, note: '1 = review, 2 = approval (lock)']
+  locked_at datetime [not null]
+  unlocked_reason varchar [note: 'Hanya via formal change control → paksa re-sign']
+  indexes {
+    (record_type, record_id) [unique]
+  }
+}
+
+Table m_label_color_config [note: 'TARGET (LBL/FS-LBL-01/02) — kode warna + text label per site: PASS hijau; FAIL merah + teks Do not use the equipment (color-blind safe); AWN hijau + box offset. Status aktif GREEN / due-soon YELLOW / overdue RED.', headercolor: #EF6C00] {
+  id uuid [pk]
+  site_id uuid [not null, unique]
+  pass_color varchar [not null, default: 'GREEN']
+  fail_color varchar [not null, default: 'RED']
+  fail_text varchar [default: 'Do not use the equipment']
+  awn_color varchar [not null, default: 'GREEN']
+  awn_text_template varchar [default: 'OFFSET: [value] [unit]. Actual = Display + Offset']
+  status_color_scheme json [note: 'Active GREEN | due-soon YELLOW | overdue RED']
+  layout_config json
+}
+
+Table m_label_attributes [note: 'TARGET (LBL/FS-LBL-06) — pemilihan & posisi field label per site (drag-drop designer, preview real-time): field yang tampil beda antar site (mis. Calibration Method: Kalventis ya, KF tidak). Format: A4 temporary, 2x4 inch final.', headercolor: #EF6C00] {
+  id uuid [pk]
+  site_id uuid [not null]
+  field_name varchar [not null, note: 'asset_number | asset_name | sop_id | calibrator_sn | cal_date | due_date | technician | verdict | qo_approver']
+  visible boolean [not null, default: true]
+  grid_position json
+  label_type_scope label_type [not null, note: 'TEMPORARY (A4) | FINAL (2x4 inch)']
+  label_format varchar
+  indexes {
+    (site_id, field_name, label_type_scope) [unique]
+  }
+}
+
+Table syn_label [note: 'TARGET (LBL) — audit trail tiap cetak/re-cetak label: payload ZPL EXACT disimpan (auditor bisa re-print), retry 3x backoff 5/15/60s, attach acknowledgement via email (bukti label menempel fisik di alat). QR → WO detail. Preview 4-tier e-sign + tanggal verifikasi re-auth.', headercolor: #EF6C00] {
+  id uuid [pk]
+  wo_id uuid [not null]
+  asset_id uuid [not null]
+  label_type label_type [not null]
+  verdict cal_verdict [not null, note: 'Menentukan warna via m_label_color_config']
+  content json [not null]
+  notes varchar [note: 'Notes saat proses print (AWN offset dsb.)']
+  printer_id varchar [note: 'Zebra ZT411 network']
+  zpl_payload varchar [not null, note: 'String ZPL exact — re-printable utk auditor']
+  print_status varchar [not null, default: 'success', note: 'SUCCESS | FAILED (3x retry → notif technician)']
+  retry_count integer [not null, default: 0]
+  is_reprint boolean [not null, default: false]
+  printed_at datetime [not null]
+  printed_by uuid [not null]
+  attach_acknowledged_at datetime
+  attach_acknowledged_by uuid
+}
+
+Table syn_asset_offset_history [note: 'TARGET (LBL/FS-LBL-03) — offset history saat label AWN tercetak: trend offset per alat; drift > 0.1×tolerance → interval rekal dipendekkan; update referensi Monitoring SOP (mis. SOP-LOG-023 Cold Storage) agar operator mengompensasi pembacaan.', headercolor: #EF6C00] {
+  id uuid [pk]
+  asset_id uuid [not null]
+  wo_id uuid [not null]
+  offset_value decimal [not null]
+  offset_unit varchar [not null]
+  label_printed boolean [not null, default: true]
+  printed_at datetime
+  printed_by uuid
+  recal_interval_shortened boolean [not null]
+  recal_interval_months integer
+  monitoring_sop_no varchar [note: 'SOP monitoring yang di-update utk kompensasi']
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  GROUP 7 — SITE DB · DOCUMENT MANAGEMENT (DOC 2.11) + NUMBERING (DNG 2.12)
+//  — TARGET
+// ─────────────────────────────────────────────────────────────────────────────
+
+Table syn_document [note: 'TARGET (DOC) — repository sentral SEMUA dokumen kalibrasi: cert (auto + vendor), SOP, report, deviation report, CAPA report, lampiran (foto/video/manual). Auto-extract metadata saat upload; preview in-app + watermark; bulk ZIP per WO/asset; full-text via OCR text. Salah satu 14 entity snapshot (SOP).', headercolor: #1565C0] {
+  id uuid [pk]
+  document_number varchar [not null, unique, note: 'Hasil DNG']
+  document_type varchar [not null, note: 'CERTIFICATE_AUTO | CERTIFICATE_VENDOR | SOP | REPORT | DEVIATION_REPORT | CAPA_REPORT | ATTACHMENT_PHOTO | ATTACHMENT_VIDEO | ATTACHMENT_MANUAL']
+  title varchar [not null]
+  status doc_status [not null, default: 'draft']
+  site_id uuid [not null]
+  asset_id uuid
+  work_order_id uuid
+  calibration_date date
+  due_date date
+  signature_manifest json [note: 'Siapa menandatangani, kapan (UTC), authority apa — tampil di tiap halaman PDF']
+  certificate_uuid uuid [unique, note: 'QR /verify/{certificate_uuid} → metadata + manifest']
+  storage_key varchar [not null, note: 'MinIO/S3 object key']
+  storage_tier varchar [not null, default: 'hot', note: 'HOT | COLD (auto Glacier > 1 tahun)']
+  file_size_bytes bigint
+  mime_type varchar
+  ocr_text varchar [note: 'OCR → full-text search']
+  archived_at datetime
+  created_at datetime [not null]
+  created_by_user_id uuid [not null]
+  indexes {
+    (document_type, status)
+    (asset_id)
+    (work_order_id)
+  }
+}
+
+Table syn_document_version [note: 'TARGET (DOC/FS-DOC-07) — versi dokumen (major.minor): tiap revisi = versi baru, versi lama tetap accessible; effective date + workflow approval; file per versi immutable + checksum SHA-256.', headercolor: #1565C0] {
+  id bigint [pk, increment]
+  document_id uuid [not null]
+  major_version integer [not null]
+  minor_version integer [not null]
+  state varchar [not null, default: 'draft', note: 'draft | active | superseded']
+  effective_date date [not null]
+  superseded_at datetime
+  storage_key varchar [not null]
+  checksum_sha256 varchar [not null]
+  signature_manifest json
+  approval_status approval_status
+  created_at datetime [not null]
+  created_by_user_id uuid [not null]
+  indexes {
+    (document_id, major_version, minor_version) [unique]
+  }
+}
+
+Table syn_retention_policy [note: 'TARGET (DOC/FS-DOC-10/11) — kebijakan retensi per tipe dokumen: GxP min 10 tahun, non-GxP 5; alert H-90; archive trigger = WO Closed + retensi tercapai (cold, tetap accessible audit).', headercolor: #1565C0] {
+  id bigint [pk, increment]
+  document_type varchar [not null, unique]
+  is_gxp boolean [not null, default: true]
+  retention_years integer [not null, default: 10]
+  alert_days_before integer [not null, default: 90]
+  archive_after_years integer [default: 1]
+}
+
+Table syn_document_disposal [note: 'TARGET (DOC/FS-DOC-12) — disposal dokumen setelah retensi habis: QA approval + log lengkap (siapa, kapan, dokumen apa, alasan).', headercolor: #1565C0] {
+  id bigint [pk, increment]
+  document_id uuid [not null]
+  requested_by_user_id uuid [not null]
+  qa_approved_by_user_id uuid
+  qa_approved_at datetime
+  reason varchar [not null]
+  status varchar [not null, default: 'pending_approval', note: 'pending_approval | approved | disposed']
+  disposed_at datetime
+}
+
+Table syn_doc_sequence [note: 'TARGET (DNG/FS-DNG-01) — counter atomik per tipe dokumen × periode × site (lock UPDLOCK/HOLDLOCK SQL Server; FSD: SELECT FOR UPDATE). Reset periode = PeriodKey baru. WO number & certificate number = SEQUENCE TERPISAH (FS-DNG-WOCERT-01).', headercolor: #1565C0] {
+  id bigint [pk, increment]
+  doc_type varchar [not null, note: 'WO | CAL | RA | DEV | DOC | ...']
+  period_key varchar [not null, note: 'Mis. 2026 (reset tahunan) | 2026-09 (bulanan)']
+  site_id uuid [not null]
+  last_sequence bigint [not null, default: 0]
+  indexes {
+    (doc_type, period_key, site_id) [unique]
+  }
+}
+
+Table syn_doc_number_format [note: 'TARGET (DNG) — template format penomoran configurable per tipe dokumen: placeholder {sequence} {site_initial} {doc_type} {roman_month} {year}. Contoh RA: 0001/KF/RA/IX/2026 (reset bulanan+tahunan, tanpa diferensiasi antar site).', headercolor: #1565C0] {
+  id bigint [pk, increment]
+  doc_type varchar [not null, unique]
+  format_template varchar [not null]
+  reset_period varchar [not null, default: 'monthly', note: 'NONE | MONTHLY | YEARLY | SITE | MONTHLY_SITE | YEARLY_SITE']
+  sequence_padding integer [not null, default: 4]
+  is_active boolean [not null, default: true]
+}
+
+Table syn_doc_number_log [note: 'TARGET (DNG/FS-DNG-06/07) — log immutable setiap nomor yang digenerate: nomor, tipe, modul & user peminta, UTC. Audit + hitung pemakaian per periode.', headercolor: #1565C0] {
+  id bigint [pk, increment]
+  generated_number varchar [not null, unique]
+  doc_type varchar [not null]
+  requester_module varchar [not null, note: 'DOC | WO | CAL | DEV | RA']
+  requester_user_id uuid [not null]
+  site_id uuid [not null]
+  sequence_value bigint [not null]
+  generated_at datetime [not null]
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  GROUP 8 — SITE DB · DEVIATION (DEV 2.14) + CAPA (2.15) + RISK (2.16)
+//  + QUALIFICATION (QUAL 2.17) — TARGET
+// ─────────────────────────────────────────────────────────────────────────────
+
+Table syn_wo_deviation_link [note: 'TARGET (DEV/QMS) — link dua arah Syntera WO ↔ ticket deviation QMS + snapshot payload trigger + state sync. Tiga nama FSD (syn_wo_deviation_link / syn_deviation_link / syn_wo_deviation) = SATU tabel ini. Outbound async (lanjut proses tanpa nunggu), idempotent (idempotency_key = SHA256(wo+point+timestamp)), retry. OOS auto dari verdict engine; OOT → RISK module.', headercolor: #6A1B9A] {
+  id bigint [pk, increment]
+  syn_wo_deviation_uuid uuid [not null, unique]
+  syn_wo_id uuid [not null]
+  qms_deviation_id varchar [unique, note: 'Terisi setelah QMS balas ID']
+  trigger_reason deviation_trigger [not null]
+  deviation_type varchar [not null, default: 'OOS']
+  classification varchar [note: 'MINOR | MAJOR | CRITICAL — major/critical auto-trigger CAPA']
+  sync_status sync_status [not null, default: 'pending']
+  idempotency_key varchar [not null, unique, note: 'SHA256(wo_number + calibration_point_id + timestamp)']
+  wo_number varchar [not null]
+  asset_id varchar [not null]
+  instrument_id varchar [not null]
+  calibration_point_id varchar [not null]
+  result_value decimal
+  criteria_value decimal
+  u95 decimal
+  technician_id uuid [not null]
+  wo_snapshot_hash varchar
+  investigation_status varchar [note: 'Mirror dari QMS']
+  last_synced_at datetime
+  created_at datetime [not null]
+  created_by_user_id uuid [not null]
+  indexes {
+    (syn_wo_id)
+    (qms_deviation_id)
+  }
+}
+
+Table syn_deviation_attachment [note: 'TARGET (DEV/FS-DEV-ATTACH-01) — lampiran deviation: foto alat, screenshot kalibrasi, laporan teknis, draft deviation report. Maks 10 file × 25MB per deviation; path syn_deviation/{deviation_uuid}/{file_uuid}.', headercolor: #6A1B9A] {
+  id uuid [pk]
+  deviation_uuid uuid [not null]
+  file_name varchar [not null]
+  content_type varchar [not null]
+  file_size_bytes bigint [not null]
+  storage_path varchar [not null]
+  is_draft_report boolean [not null, default: false]
+  uploaded_by_user_id uuid [not null]
+  uploaded_at datetime [not null]
+}
+
+Table syn_deviation_investigation [note: 'TARGET (DEV) — mirror investigasi dari QMS (system of record deviation): metode (5-Why | fishbone), root cause, status. Sync via polling 5 menit / webhook.', headercolor: #6A1B9A] {
+  id bigint [pk, increment]
+  deviation_uuid uuid [not null, unique]
+  method varchar [not null, note: 'FIVE_WHY | FISHBONE | OTHER']
+  root_cause varchar
+  analysis_document json
+  investigation_status varchar
+  performed_by uuid
+  performed_at datetime
+}
+
+Table syn_wo_deviation_capa_link [note: 'TARGET (CAPA) — triangle link WO ↔ deviation ↔ CAPA (semua master data CAPA tetap di QMS; Syntera mirror link + status). CAPA belum CLOSED MEMBLOKIR WO Complete→Close. Status sync polling/webhook + HMAC webhook validation.', headercolor: #6A1B9A] {
+  id bigint [pk, increment]
+  syn_wo_id uuid [not null]
+  qms_deviation_id varchar [not null]
+  qms_capa_id varchar [not null, unique]
+  capa_status capa_status [not null, default: 'open']
+  trigger_received_via varchar [note: 'WEBHOOK | API']
+  last_synced_at datetime
+  created_at datetime [not null]
+  indexes {
+    (syn_wo_id)
+  }
+}
+
+Table syn_wo_close_override [note: 'TARGET (CAPA/FS-CAPA-06) — override darurat QO Manager atas blokir WO-closure (CAPA masih open): wajib written reason + e-sign manifest. Evidence compliance immutable.', headercolor: #6A1B9A] {
+  id bigint [pk, increment]
+  syn_wo_id uuid [not null]
+  qms_capa_id varchar [not null, note: 'CAPA yang memblokir']
+  override_reason varchar [not null]
+  qo_manager_user_id uuid [not null]
+  e_sign_manifest json [not null]
+  overridden_at datetime [not null]
+}
+
+Table syn_risk_assessment [note: 'TARGET (RISK/FS-RISK-01) — otomatis OPEN saat OOT terdeteksi pada alat yang sudah dipakai produksi (OOT = OOS pada alat terpakai sejak kalibrasi lulus terakhir). Payload: riwayat WO 12 bulan + batch terdampak + kalibrasi terakhir. RPN = S×O×D (server-side validation). Keputusan: ACCEPTABLE | BATCH_REVIEW (investigasi QMS) | RECALL (APPR 3-manager SEBELUM transaksi recall Oracle). ICH Q9.', headercolor: #6A1B9A] {
+  id bigint [pk, increment]
+  risk_assessment_uuid uuid [not null, unique]
+  instrument_id varchar [not null]
+  syn_wo_id uuid
+  wo_history_last_12_months json [not null]
+  affected_batch_list json
+  last_calibration_date date [not null]
+  oot_severity oot_severity [not null]
+  severity smallint [not null, note: '1-5']
+  occurrence smallint [not null, note: '1-5']
+  detection smallint [not null, note: '1-5']
+  rpn smallint [not null, note: 'S × O × D — dihitung server']
+  status varchar [not null, default: 'open', note: 'open | under_review | decided | closed']
+  decision risk_decision
+  report_pdf_path varchar
+  e_sign_manifest json [note: 'QA + QO Manager + Engineering Manager']
+  created_at datetime
+}
+
+Table syn_impacted_product_log [note: 'TARGET (RISK) — hasil query batch produksi Oracle EBS (via Site Adapter) untuk scope impact OOT: produk, batch, tanggal, kuantitas. Evidence immutable pendukung keputusan recall/batch-review.', headercolor: #6A1B9A] {
+  id bigint [pk, increment]
+  risk_assessment_id bigint [not null]
+  product_code varchar [not null]
+  batch_number varchar [not null]
+  production_date date [not null]
+  quantity decimal [not null]
+  instrument_id varchar [not null]
+  query_from_date date
+  query_to_date date
+}
+
+Table syn_qualification_plan [note: 'TARGET (QUAL/FS-QUAL-TRIG-01) — plan IQ/OQ/PQ otomatis saat asset baru diregistrasi (status New Equipment): target H+30, QO Manager ditugaskan & dinotifikasi. Bukan untuk asset Existing.', headercolor: #6A1B9A] {
+  id bigint [pk, increment]
+  asset_id uuid [not null]
+  target_completion_date date [not null]
+  assigned_qo_user_id uuid [not null]
+  status varchar [not null, default: 'open', note: 'open | in_progress | completed']
+  created_at datetime
+}
+
+Table syn_qualification [note: 'TARGET (QUAL) — record kualifikasi per IQ/OQ/PQ per asset. State asset: REGISTERED → IQ → OQ → PQ → Qualified (master diupdate hanya setelah SEMUA approved). Asset non-Qualified DIBLOKIR dari siklus kalibrasi rutin (FS-QUAL-05). Fail → deviation. Hash-chained (FS-QUAL-10).', headercolor: #6A1B9A] {
+  id bigint [pk, increment]
+  asset_id uuid [not null]
+  plan_id uuid
+  qualification_type qual_type [not null]
+  status qual_status [not null, default: 'in_progress']
+  execution_date date [not null]
+  executor_user_id uuid [not null]
+  approval_manifest json [not null, note: 'Engineering Manager + QA e-sign per IQ/OQ/PQ']
+  approved_at datetime
+}
+
+Table syn_qualification_template [note: 'TARGET (QUAL/FS-QUAL-03) — template checklist IQ/OQ/PQ per instrument type: item + expected result. Customizable, versioned.', headercolor: #6A1B9A] {
+  id bigint [pk, increment]
+  instrument_type varchar [not null]
+  qualification_type qual_type [not null]
+  sequence integer
+  item varchar [not null]
+  expected_result varchar [not null]
+  version integer [not null, default: 1]
+  is_active boolean [not null, default: true]
+  indexes {
+    (instrument_type, qualification_type, version)
+  }
+}
+
+Table syn_qualification_checklist_item [note: 'TARGET (QUAL) — item checklist tereksekusi: expected vs actual, pass/fail, comment. Salah satu dari 14 entity hash-chained (qualification).', headercolor: #6A1B9A] {
+  id bigint [pk, increment]
+  qualification_id bigint [not null]
+  template_item_id uuid
+  item varchar [not null]
+  expected_result varchar [not null]
+  actual_result varchar
+  pass_fail boolean
+  comment varchar
+}
+
+Table syn_qualification_evidence [note: 'TARGET (QUAL/FS-QUAL-06) — evidence per checklist item (photo/video/document) dengan preview in-app; hash-chained.', headercolor: #6A1B9A] {
+  id uuid [pk]
+  checklist_item_id bigint [not null]
+  file_type varchar [not null, note: 'PHOTO | VIDEO | DOCUMENT']
+  file_name varchar
+  content_type varchar
+  file_size_bytes bigint
+  storage_path varchar [not null]
+  uploaded_by_user_id uuid
+  uploaded_at datetime
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  GROUP 9 — SITE DB · TRAINING (TRAIN 2.31) + NOTIFICATION (NOTIF 2.10)
+//  — TARGET
+// ─────────────────────────────────────────────────────────────────────────────
+
+Table syn_competency_matrix [note: 'TARGET (TRAIN/WO) — matrix kompetensi technician per instrument type (UNIQUE technician+type). GATE assignment WO: status Qualified & expiry > due_date; scheduler harian scan H-90 alert. Salah satu 14 entity snapshot (dipakai workload balancer assignment).', headercolor: #EF6C00] {
+  id bigint [pk, increment]
+  technician_id uuid [not null]
+  instrument_type varchar [not null]
+  sop_id uuid
+  status competency_status [not null, default: 'in_training']
+  competency_level smallint
+  expiry_date date [not null]
+  trained_at date
+  certified_by uuid
+  pending_wo_count integer [not null, default: 0, note: 'Beban kerja utk auto-assignment']
+  updated_at datetime
+  indexes {
+    (technician_id, instrument_type) [unique]
+  }
+}
+
+Table syn_training_record [note: 'TARGET (TRAIN/FS-TRAIN-05) — record pelatihan/assessment (internal | vendor): trainer, hasil PASS/FAIL, expiry kualifikasi, evidence attachment. Activity training semua hash-chained (FS-TRAIN-09).', headercolor: #EF6C00] {
+  id bigint [pk, increment]
+  technician_id uuid [not null]
+  instrument_type varchar
+  training_name varchar [not null]
+  training_type varchar [not null, note: 'INTERNAL | VENDOR']
+  training_date date [not null]
+  trainer varchar [not null]
+  assessment_result varchar [not null, note: 'PASS | FAIL']
+  qualification_expiry_date date [not null]
+  evidence_attachment_path varchar
+  created_at datetime
+}
+
+Table syn_notification_template [note: 'TARGET (NOTIF) — template pesan per kategori × channel × bahasa (ID/EN bilingual wajib utk vendor reminder). Kategori: WO_ASSIGNMENT, DEVIATION_CREATED, APPROVAL_REQUEST/RESULT, CALIBRATION_REMINDER_H3M, ASSET_REGISTRATION, TRAINING_EXPIRY_H90D, SYSTEM_ALERT, IN_REPAIR_BLOCKED, VENDOR_CALIBRATOR_EXPIRY_H90D.', headercolor: #EF6C00] {
+  id bigint [pk, increment]
+  category varchar [not null, note: 'Lihat daftar di note tabel']
+  channel notif_channel [not null]
+  language varchar [not null, default: 'ID']
+  subject_template varchar
+  body_template varchar [not null, note: 'Dengan placeholder']
+  version integer [not null, default: 1]
+  is_active boolean [not null, default: true]
+  indexes {
+    (category, channel, language) [unique]
+  }
+}
+
+Table syn_notification_log [note: 'TARGET (NOTIF/FS-NOTIF-05) — log tiap notifikasi: penerima, channel, status (retry 3x backoff 5/15/60 menit), deep-link bertoken (JWT TTL 7 hari, SSO), korelasi entity target. Pengiriman vendor-reminder juga masuk audit trail.', headercolor: #EF6C00] {
+  id bigint [pk, increment]
+  recipient_user_id uuid
+  recipient_email varchar
+  category varchar [not null]
+  channel notif_channel [not null]
+  status notif_status [not null, default: 'sent']
+  subject varchar
+  message_content varchar [not null]
+  related_entity_type varchar [note: 'WO | APPROVAL | DEVIATION | VENDOR_PORTAL | ...']
+  related_entity_id uuid
+  action_link_token varchar [note: 'Signed JWT, TTL 7 hari — deep-link SSO']
+  retry_count integer [not null, default: 0]
+  next_retry_at datetime
+  last_error varchar
+  sent_at datetime [not null]
+  read_at datetime
+}
+
+Table syn_notification_preference [note: 'TARGET (NOTIF/FS-NOTIF-07) — preference center per user: opt-in/out per kategori per channel (in-app/email).', headercolor: #EF6C00] {
+  id bigint [pk, increment]
+  user_id uuid [not null]
+  category varchar [not null]
+  enable_in_app boolean [not null, default: true]
+  enable_email boolean [not null, default: true]
+  indexes {
+    (user_id, category) [unique]
+  }
+}
+
+Table syn_notification_routing [note: 'TARGET (NOTIF/SITE) — routing per site: distribution list email, rule escalation, penerima default per kategori. Resolusi penerima: role-based / user-based / site-based.', headercolor: #EF6C00] {
+  id bigint [pk, increment]
+  site_id uuid [not null]
+  category varchar [not null]
+  distribution_list varchar [note: 'Email DL']
+  escalation_rule json
+  default_recipient_user_id uuid
+  default_recipient_email varchar
+  indexes {
+    (site_id, category) [unique]
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  GROUP 10 — SITE DB · REPORTING (REP 2.22) + CUSTOM FIELDS (CF 2.25)
+//  — TARGET
+// ─────────────────────────────────────────────────────────────────────────────
+
+Table syn_report_template [note: 'TARGET (REP) — definisi report: cert kalibrasi, WO summary (Excel bulanan), deviation summary, CAPA summary, audit trail report, Yearly PM Schedule PDF. Parameterized (range, site, asset, technician, status).', headercolor: #EF6C00] {
+  id bigint [pk, increment]
+  report_code varchar [not null, unique, note: 'WO_MONTHLY_EXCEL | YEARLY_PM_SCHEDULE_PDF | CAL_CERTIFICATE_PDF | AUDIT_TRAIL_PDF | ...']
+  report_name varchar [not null]
+  output_format varchar [not null, note: 'PDF | EXCEL | CSV']
+  template_storage_key varchar [not null]
+  parameter_schema json
+  requires_approval boolean [not null, default: true]
+  version integer [not null, default: 1]
+  is_active boolean [not null, default: true]
+}
+
+Table syn_scheduled_report [note: 'TARGET (REP/FS-REP-11) — jadwal report berulang (daily/weekly/monthly) + distribusi stakeholder via NOTIF; report approved auto-archive ke DOC.', headercolor: #EF6C00] {
+  id bigint [pk, increment]
+  report_template_id bigint [not null]
+  frequency varchar [not null, note: 'DAILY | WEEKLY | MONTHLY']
+  parameters json
+  recipients varchar [not null, note: 'Distribution list']
+  site_id uuid
+  is_active boolean [not null, default: true]
+  last_run_at datetime
+  next_run_at datetime
+  created_by_user_id uuid [not null]
+}
+
+Table syn_report_execution [note: 'TARGET (REP) — instance report per generate: status workflow (submit → review → 3-manager PARALLEL approval e-sign → distribute → archive), loop revisi bila reject; output di-archive ke DOC repository.', headercolor: #EF6C00] {
+  id uuid [pk]
+  report_template_id bigint [not null]
+  scheduled_report_id uuid
+  parameters json [not null]
+  status varchar [not null, default: 'generated', note: 'GENERATED | SUBMITTED | REVIEWED | APPROVED | REJECTED | DISTRIBUTED | ARCHIVED']
+  output_storage_key varchar
+  reviewer_comments varchar [note: 'Reject → kembali ke generator dengan komentar']
+  generated_by_user_id uuid [not null]
+  generated_at datetime [not null]
+}
+
+Table syn_approval_chain [note: 'TARGET (REP/APPR) — manifest e-sign per langkah approval report: hash record sebelum & sesudah tanda tangan, aksi SUBMIT/REVIEW/APPROVE/REJECT, step paralel share sequence. Approver di-resolve via syn_approval_matrix.', headercolor: #6A1B9A] {
+  id bigint [pk, increment]
+  record_type varchar [not null, default: 'REPORT', note: 'REPORT | CALIBRATION_RECORD | WO | ...']
+  record_id uuid [not null]
+  user_id uuid [not null]
+  role varchar [not null]
+  action varchar [not null, note: 'SUBMIT | REVIEW | APPROVE | REJECT']
+  action_at datetime [not null]
+  record_hash_before varchar [not null]
+  record_hash_after varchar [not null]
+  comments varchar
+  step_sequence integer [not null]
+  indexes {
+    (record_type, record_id)
+  }
+}
+
+Table syn_report_access_log [note: 'TARGET (REP) — log akses report (generate/view/export/download/distribute/archive) utk traceability GxP; alternatif realisasi: event type di AuditLogs.', headercolor: #EF6C00] {
+  id bigint [pk, increment]
+  report_execution_id uuid
+  accessed_by_user_id uuid [not null]
+  action_type varchar [not null, note: 'GENERATE | VIEW | EXPORT | DOWNLOAD | DISTRIBUTE | ARCHIVE']
+  export_format varchar [note: 'PDF | EXCEL | CSV']
+  accessed_at datetime [not null]
+}
+
+Table syn_custom_field_definition [note: 'TARGET (CF) — definisi custom field per entity (ASSET | WO | SOP | CALIBRATOR | DEVIATION): tipe data + validasi + label bilingual; versioned + QO approval; LOCK setelah record Approved/Released (server-side, override hanya via change control + e-sign QO).', headercolor: #EF6C00] {
+  id bigint [pk, increment]
+  entity_name varchar [not null, note: 'ASSET | WO | SOP | CALIBRATOR | DEVIATION']
+  field_key varchar [not null, note: 'Nama API stabil']
+  label_id varchar [not null]
+  label_en varchar [not null]
+  data_type varchar [not null, note: 'TEXT | NUMBER | DATE | DATETIME | BOOLEAN | DROPDOWN | MULTISELECT | LOOKUP | CHECKBOX | FILE_UPLOAD']
+  is_mandatory boolean [not null, default: false]
+  is_unique boolean [not null, default: false]
+  is_searchable boolean [not null, default: false]
+  regex_pattern varchar
+  min_value decimal
+  max_value decimal
+  default_value varchar
+  lookup_target_entity varchar
+  display_in_form boolean [not null, default: true]
+  display_in_list boolean [not null, default: true]
+  display_in_report boolean [not null, default: true]
+  version integer [not null, default: 1]
+  status varchar [not null, default: 'draft', note: 'draft | pending_qo_approval | active | retired']
+  approved_by_user_id uuid
+  approved_at datetime
+  indexes {
+    (entity_name, field_key, version) [unique]
+  }
+}
+
+Table syn_custom_field_option [note: 'TARGET (CF) — daftar nilai dropdown/multi-select per definisi.', headercolor: #EF6C00] {
+  id bigint [pk, increment]
+  custom_field_definition_id bigint [not null]
+  value varchar [not null]
+  label_id varchar
+  label_en varchar
+  display_order integer [not null, default: 0]
+  is_active boolean [not null, default: true]
+  indexes {
+    (custom_field_definition_id, value) [unique]
+  }
+}
+
+Table syn_custom_field_value [note: 'TARGET (CF) — nilai custom field polymorphic per record entity; typed columns per data type; lock-after-approval enforced di layer service (bukan kolom).', headercolor: #EF6C00] {
+  id bigint [pk, increment]
+  custom_field_definition_id bigint [not null]
+  entity_type varchar [not null]
+  entity_id uuid [not null]
+  value_text varchar
+  value_number decimal
+  value_date date
+  value_datetime datetime
+  value_boolean boolean
+  value_json json [note: 'Multi-select']
+  value_ref_id uuid [note: 'LOOKUP ke master']
+  value_file_document_id uuid [note: 'FILE_UPLOAD → syn_document']
+  indexes {
+    (custom_field_definition_id, entity_type, entity_id) [unique]
+  }
+}
+
+Table syn_custom_field_permission [note: 'TARGET (CF) — kontrol akses per role per custom field (view/edit).', headercolor: #EF6C00] {
+  id bigint [pk, increment]
+  custom_field_definition_id bigint [not null]
+  role_id uuid [not null]
+  can_view boolean [not null, default: true]
+  can_edit boolean [not null, default: false]
+  indexes {
+    (custom_field_definition_id, role_id) [unique]
+  }
+}
+
+Table syn_approval_matrix [note: 'TARGET (SITE/FS-SITE-07) — siapa approver tiap role (Engineering Manager | QO Manager | User Dept Manager) per site; dipakai resolusi approver di APPR & REP. Query FSD: SELECT approver_user_id WHERE site_id = :site AND role = :role.', headercolor: #EF6C00] {
+  id bigint [pk, increment]
+  site_id uuid [not null]
+  role varchar [not null, note: 'ENGINEERING_MANAGER | QO_MANAGER | USER_DEPT_MANAGER']
+  approver_user_id uuid [not null]
+  indexes {
+    (site_id, role) [unique]
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  GROUP 11 — SITE DB · AUDIT EXTENSION (AUDIT 2.9) + SNP VERIFICATION (2.23)
+//  — TARGET
+// ─────────────────────────────────────────────────────────────────────────────
+
+Table syn_audit_mode_config [note: 'TARGET (AUDIT/FS-AT-01) — mode audit per modul × aksi: SILENT (non-GxP navigasi) | RESTRICTED (default GxP: wajib pilih QA-approved reason) | UNRESTRICTED (free text). Reason kosong/placeholder = aksi DIBLOKIR.', headercolor: #6A1B9A] {
+  id bigint [pk, increment]
+  module_name varchar [not null]
+  action_name varchar [not null, note: 'CREATE | MODIFY | DELETE | APPROVE | CANCEL | OVERRIDE | REJECT']
+  audit_mode audit_mode [not null, default: 'restricted']
+  indexes {
+    (module_name, action_name) [unique]
+  }
+}
+
+Table syn_audit_reason_list [note: 'TARGET (AUDIT/FS-AT-02) — daftar Default Strings QA-approved per kategori (WO Cancel Reason, Calibration Override Reason, dsb.) — versioned dengan approval QO Manager; tiap add/remove tercatat di audit trail.', headercolor: #6A1B9A] {
+  id bigint [pk, increment]
+  category varchar [not null, note: 'Mis. WO Cancel Reason | Calibration Override Reason | Master Data Edit Reason | Signature Rejection Reason']
+  version integer [not null]
+  status varchar [not null, default: 'draft', note: 'draft | pending_approval | approved | retired']
+  approved_by_user_id uuid
+  approved_at datetime
+  indexes {
+    (category, version) [unique]
+  }
+}
+
+Table syn_audit_reason_item [note: 'TARGET (AUDIT) — item reason dalam list versi (removal = deaktivasi di versi berikutnya).', headercolor: #6A1B9A] {
+  id bigint [pk, increment]
+  reason_list_id bigint [not null]
+  reason_text varchar [not null]
+  display_order integer [not null, default: 0]
+  is_active boolean [not null, default: true]
+  indexes {
+    (reason_list_id, reason_text) [unique]
+  }
+}
+
+Table syn_audit_verification_run [note: 'TARGET (AUDIT/FS-AT-04) — hasil verifikasi hash chain oleh auditor (seluruh log atau range): OK | INCONSISTENT + daftar entry rusak. Verifikasi bulanan direkomendasikan (FDA guidance).', headercolor: #6A1B9A] {
+  id bigint [pk, increment]
+  site_id uuid
+  range_from_seq bigint
+  range_to_seq bigint
+  run_by_user_id uuid [not null]
+  run_at datetime [not null]
+  result_status varchar [not null, note: 'OK | INCONSISTENT']
+  broken_entries json
+}
+
+Table syn_snapshot_verification [note: 'TARGET (SNP/FS-SNP-03) — verifikasi integritas snapshot family per WO: expected vs actual hash + deteksi last_modified via DB metadata; report PDF ditandatangani digital signature Syntera (audit-defensible).', headercolor: #6A1B9A] {
+  id bigint [pk, increment]
+  verification_run_id uuid [not null]
+  wo_id uuid [not null]
+  snapshot_table varchar [not null, note: 'syn_wo_snapshot | syn_wo_calibrator | syn_wo_media | syn_wo_cal_point | ...']
+  snapshot_id uuid [not null]
+  expected_hash varchar [not null]
+  actual_hash varchar [not null]
+  is_consistent boolean [not null]
+  last_modified_at datetime [note: 'Deteksi via DB metadata']
+  modified_by varchar
+  report_pdf_path varchar
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  GROUP 12 — SITE DB · INTEGRATION ORACLE EBS (ORA 2.19) + QMS (QMS 2.20)
+//  — TARGET · Site Adapter per site (6 instance EBS: ORDS REST + ISG SOAP)
+// ─────────────────────────────────────────────────────────────────────────────
+
+Table syn_oracle_config [note: 'TARGET (ORA/FS-ORA-01) — koneksi + aturan sync per site ke instance Oracle EBS/EAM milik site (ORDS REST untuk query forecast, ISG SOAP untuk CreateWO/CancelWO/PR). Kredensial terenkripsi (Vault transit engine); retry policy + instance backup utk failover (FS-ORA-DR-01).', headercolor: #00838F] {
+  id bigint [pk, increment]
+  site_id uuid [not null, unique]
+  instance_url varchar [not null]
+  encrypted_credentials varchar [not null]
+  sync_rules json [not null]
+  retry_policy json [not null, note: '3 attempt exponential backoff']
+  backup_instance_url varchar
+  is_active boolean [not null, default: true]
+  last_health_check_at datetime
+}
+
+Table syn_oracle_sync_log [note: 'TARGET (ORA/FS-ORA-01/02) — log SEMUA operasi sync Oracle (doubles sebagai queue replay persisten): op, source→target, record, status, payload utk replay pasca outage. Sumber dashboard kesehatan integrasi per site: connection status, success rate, retry queue length, recent errors.', headercolor: #00838F] {
+  id bigint [pk, increment]
+  site_id uuid [not null]
+  op_type varchar [not null, note: 'PM_SCHEDULE_QUERY | WO_CREATE | WO_STATUS_UPDATE | ASSET_SYNC | ASSET_DECOMMISSION | CERT_UPLOAD | PR_CREATE | WO_CANCEL']
+  source varchar [not null, note: 'SYNTERA | ORACLE_EBS']
+  target varchar [not null]
+  record_id varchar [not null]
+  status integration_status [not null]
+  payload json [note: 'Utk replay (recovery extended outage)']
+  retry_count integer [not null, default: 0]
+  next_retry_at datetime
+  error_message varchar
+  op_timestamp datetime [not null, note: 'UTC']
+  indexes {
+    (site_id, status)
+    (record_id)
+  }
+}
+
+Table syn_oracle_conflict_log [note: 'TARGET (ORA/FS-ORA-02) — konflik dual-write (WO diubah serentak di Syntera & Oracle): KEDUA versi dipertahankan utk review; resolusi last-write-wins via perbandingan timestamp UTC; feed dashboard konflik + AUDIT.', headercolor: #00838F] {
+  id bigint [pk, increment]
+  site_id uuid [not null]
+  record_id varchar [not null, note: 'Umumnya WO id']
+  syntera_version json
+  syntera_updated_at datetime
+  oracle_version json
+  oracle_updated_at datetime
+  winner varchar [note: 'SYNTERA | ORACLE']
+  resolved_at datetime
+}
+
+Table syn_oracle_dlq [note: 'TARGET (ORA/FS-ORA-DR-01) — dead-letter queue Site Adapter: transaksi gagal SEMUA retry in-line → DLQ dengan backoff 1m/5m/30m/2h/12h/24h; primary down >24 jam → failover ke instance backup per site.', headercolor: #00838F] {
+  id bigint [pk, increment]
+  site_id uuid [not null]
+  op_type varchar [not null]
+  payload json [not null, note: 'Transaksi utk replay']
+  retry_backoff_schedule varchar [not null, default: '1m,5m,30m,2h,12h,24h']
+  attempt_count integer [not null, default: 0]
+  next_attempt_at datetime
+  failover_instance_url varchar
+  status varchar [not null, default: 'pending', note: 'PENDING | RETRYING | FAILOVER | EXHAUSTED']
+  created_at datetime [not null]
+}
+
+Table syn_qms_config [note: 'TARGET (QMS/FS-QMS-01/08) — koneksi per site ke Kalbe Group QMS (OAuth2 client_credentials): routing rules deviation/CAPA, HMAC secret utk validasi webhook, polling 5 menit sebagai fallback site tanpa webhook.', headercolor: #00838F] {
+  id bigint [pk, increment]
+  site_id uuid [not null, unique]
+  qms_instance_url varchar [not null]
+  encrypted_credentials varchar [not null]
+  routing_rules json [not null]
+  webhook_hmac_secret varchar [note: 'Validasi webhook signed']
+  polling_interval_minutes integer [not null, default: 5]
+  is_active boolean [not null, default: true]
+}
+
+Table syn_qms_sync_log [note: 'TARGET (QMS/FS-QMS-01/07/09) — log operasi sync QMS (trigger deviation outbound, status sync deviation/CAPA inbound) + sumber dashboard kesehatan (connection status, success rate, recent error).', headercolor: #00838F] {
+  id bigint [pk, increment]
+  site_id uuid [not null]
+  op_type varchar [not null, note: 'DEVIATION_TRIGGER | DEVIATION_STATUS_SYNC | CAPA_STATUS_SYNC']
+  record_id varchar [not null]
+  status integration_status [not null]
+  retry_count integer [not null, default: 0]
+  error_message varchar
+  op_timestamp datetime [not null, note: 'UTC']
+  indexes {
+    (site_id, status)
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  GROUP 13 — PLATFORM DB (Syntera Central) · CROSS-SITE (CS 2.13) — TARGET
+//  3 skenario: Borrow · Bring & Self-Cal · Full Outsource.
+//  Istilah lintas site = "Task" (bukan Work Request/WR).
+// ─────────────────────────────────────────────────────────────────────────────
+
+Table syn_cross_site_calibrator [note: 'TARGET (CS/FS-CS-01/04/05) — katalog calibrator ter-agregasi 6 site (refresh 5 menit via event per-site): tipe, range, brand, owner site, shareable, status availability (auto-update dari event logistics). Browse + filter utk Borrow.', headercolor: #00838F] {
+  id bigint [pk, increment]
+  ebs_calibrator_global_id varchar [not null, unique, note: 'Identitas di instance EBS sumber']
+  calibrator_type varchar [not null]
+  range_min decimal
+  range_max decimal
+  range_unit varchar
+  brand varchar
+  serial_number varchar
+  availability_status calibrator_status [not null, default: 'available']
+  owner_site_id uuid [not null]
+  shareable_flag boolean [not null]
+  last_refreshed_at datetime [not null]
+}
+
+Table syn_cross_site_wo_link [note: 'TARGET (CS/FS-CS-01..12) — link dual-WO lintas DB/site (WO-A di Oracle A + WO-B di Oracle B, global ID tanpa FK fisik). Pembuatan dual-WO transaksional via 2 Site Adapter + kompensasi (WO-B gagal → WO-A cancel). Hasil kalibrasi WAJIB kembali ke Site A utk approval 3-manager di SEMUA skenario. Tanpa charging antar site.', headercolor: #00838F] {
+  cross_site_wo_id uuid [pk]
+  scenario_type scenario_type [not null]
+  site_a_wo_global_id varchar [not null, unique, note: 'Site A = pemilik asset/permintaan']
+  site_b_wo_global_id varchar [not null, unique, note: 'Site B = pelaksana/peminjam']
+  site_a_role varchar [not null, note: 'BORROWER | LENDER | OUTSOURCER | HOST — sesuai skenario']
+  site_b_role varchar [not null]
+  logistics_tracking_id uuid [not null]
+  certificate_issuer_site_id uuid [note: 'Skenario 1/2 = Site A; skenario 3 = Site B']
+  status varchar [not null, default: 'created', note: 'CREATED | IN_PROGRESS | COMPLETED | CANCELLED']
+  created_by_user_id uuid
+  created_at datetime
+  indexes {
+    (scenario_type, status)
+  }
+}
+
+Table syn_cross_site_logistics [note: 'TARGET (CS/FS-CS-01/10/15) — header tracking pengiriman fisik (calibrator/UUT) antar site; transisi status memicu auto-update availability_status katalog cross-site.', headercolor: #00838F] {
+  id uuid [pk]
+  cross_site_wo_id uuid [not null, unique]
+  item_type varchar [not null, note: 'CALIBRATOR | UUT']
+  current_status logistics_status [not null, default: 'in_transit']
+  created_at datetime
+}
+
+Table syn_cross_site_logistics_checkpoint [note: 'TARGET (CS/FS-CS-10) — 1 baris per checkpoint pengiriman: timestamp + lokasi. Append-only (history immutable).', headercolor: #00838F] {
+  id bigint [pk, increment]
+  logistics_tracking_id uuid [not null]
+  status logistics_status [not null]
+  checkpoint_timestamp datetime [not null]
+  location varchar [not null]
+  recorded_by_user_id uuid
+}
+
+Table syn_cross_site_calibrator_booking [note: 'TARGET (CS/FS-CS-16/17) — reservasi calibrator shareable utk periode tertentu; deteksi konflik 2-site meminta calibrator yang sama bersamaan (exclusion overlap period) → rejected.', headercolor: #00838F] {
+  id bigint [pk, increment]
+  calibrator_id bigint [not null]
+  requesting_site_id uuid [not null]
+  requested_by_user_id uuid
+  period_start datetime [not null]
+  period_end datetime [not null]
+  status varchar [not null, default: 'reserved', note: 'RESERVED | CANCELLED — booking flip status katalog']
+  created_at datetime
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  GROUP 14 — PLATFORM DB · AUTH EXTENSION (AS 2.1 / AUTH 2.2 / FS-SITE-09)
+//  — TARGET
+// ─────────────────────────────────────────────────────────────────────────────
+
+Table syn_user_site_access [note: 'TARGET (AUTH/FS-SITE-09) — grant akses multi-site per user + default site (dipilih saat login). Pengganti PostgreSQL RLS di arsitektur DB-per-site: platform DB memetakan satu identitas ke beberapa site DB (UNION site yang diizinkan).', headercolor: #EF6C00] {
+  id bigint [pk, increment]
+  user_id uuid [not null, note: 'User di site DB asal (logical)']
+  site_id uuid [not null]
+  is_default boolean [not null, default: false]
+  granted_at datetime [not null]
+  granted_by_user_id uuid
+  reason varchar [note: 'Justifikasi grant (pola compliance)']
+  indexes {
+    (user_id, site_id) [unique]
+  }
+}
+
+Table syn_impersonation_session [note: 'TARGET (AS/FS-AS-06, FS-AUTH-15) — System Administrator beraksi sebagai user lain (troubleshooting): wajib alasan + approval QO Manager; audit context terpisah; token membawa claim impersonated_by.', headercolor: #EF6C00] {
+  id uuid [pk]
+  impersonator_user_id uuid [not null]
+  impersonated_user_id uuid [not null]
+  qo_approval_by_user_id uuid
+  reason varchar [not null]
+  started_at datetime [not null]
+  ended_at datetime
+  temporary_token_id varchar [note: 'Token membawa claim impersonated_by']
+}
+
+Table syn_role_designated_user [note: 'TARGET (AUTH/FS-AUTH-USEREXC-01) — whitelist user dalam role (input Master Item/Asset hanya oleh user yang didesignate).', headercolor: #EF6C00] {
+  id bigint [pk, increment]
+  role_id uuid [not null, note: 'Role di site DB (logical)']
+  user_id uuid [not null]
+  granted_by_user_id uuid
+  granted_at datetime [not null]
+  indexes {
+    (role_id, user_id) [unique]
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  RELATIONSHIPS
+//  Catatan: Ref yang menautkan grup DB berbeda (platform <-> site) bersifat
+//  LOGICAL (application-enforced) — ditandai komentar // xdb.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// PLATFORM IAM (implemented)
+Ref: site_ldap_domains.site_id > sites.id
+Ref: site_ldap_configs.site_id - sites.id // 1-1 per site
+Ref: site_themes.site_id - sites.id // 1-1 per site
+Ref: password_history.platform_user_id > platform_users.id
+Ref: role_template_permissions.role_template_id > role_templates.id
+Ref: role_template_approvals.role_template_id > role_templates.id
+
+// Refresh token: dua scope (platform & site) — relasi LOGICAL dua arah // xdb
+Ref: refresh_tokens.user_id ?> platform_users.id // scope=platform (platform DB)
+Ref: refresh_tokens.user_id ?> users.id // scope=site (site DB) — xdb
+Ref: refresh_tokens.site_id ?> sites.id // xdb
+Ref: refresh_tokens.replaced_by_id ?> refresh_tokens.id // chain rotasi
+
+// SITE IAM (implemented)
+Ref: user_roles.user_id > users.id
+Ref: user_roles.role_id > roles.id
+Ref: user_roles.assigned_by > users.id
+Ref: role_permissions.role_id > roles.id
+Ref: role_permissions.permission_id > permissions.id
+Ref: user_permissions.user_id > users.id
+Ref: user_permissions.permission_id > permissions.id
+Ref: user_permissions.approved_by > users.id
+Ref: user_sync_history.triggered_by > users.id
+Ref: user_sync_history.site_id > sites.id // xdb
+Ref: roles.origin_template_id ?> role_templates.id // xdb
+
+// Login attempt (shared)
+Ref: login_attempt_log.user_id ?> users.id // xdb
+Ref: login_attempt_log.site_id ?> sites.id // xdb
+
+// MASTER DATA
+Ref: m_formula.site_id ?> sites.id // xdb (SITE_SPECIFIC)
+Ref: m_formula_version.formula_id > m_formula.id
+Ref: m_formula_validation.formula_version_id > m_formula_version.id
+Ref: m_form_template.sop_id > syn_sop.id
+Ref: m_form_template.formula_id > m_formula.id
+Ref: m_uncertainty_template.sop_id > syn_sop.id
+Ref: m_uncertainty_template_component.template_id > m_uncertainty_template.id
+Ref: syn_location.site_id > sites.id // xdb
+Ref: syn_location.parent_location_id ?> syn_location.id
+Ref: syn_department.site_id > sites.id // xdb
+Ref: syn_calibrator.owner_site_id > sites.id // xdb
+Ref: syn_calibrator.certificate_id ?> syn_certificate.id
+Ref: syn_media.certificate_id ?> syn_certificate.id
+Ref: syn_certificate.generated_by ?> users.id
+
+// ASSET + WO
+Ref: syn_asset.site_id > sites.id // xdb
+Ref: syn_asset.location_id > syn_location.id
+Ref: syn_asset.department_id ?> syn_department.id
+Ref: syn_asset.manufacturer_id ?> syn_manufacturer.id
+Ref: syn_asset.sop_id ?> syn_sop.id
+Ref: syn_asset.assigned_calibrator_id ?> syn_calibrator.id
+Ref: syn_forecast_cache.site_id > sites.id // xdb
+Ref: syn_wo_ref.site_id > sites.id // xdb
+Ref: syn_wo_ref.asset_id > syn_asset.id
+Ref: syn_wo_ref.sop_id ?> syn_sop.id
+Ref: syn_wo_ref.technician_id ?> users.id
+Ref: syn_wo_snapshot.wo_id - syn_wo_ref.id // 1-1 immutable
+Ref: syn_wo_snapshot.asset_id > syn_asset.id
+Ref: syn_wo_snapshot.sop_id > syn_sop.id
+Ref: syn_wo_snapshot.technician_id > users.id
+Ref: syn_wo_snapshot.calibrator_id > syn_calibrator.id
+Ref: syn_wo_snapshot.media_id > syn_media.id
+Ref: syn_wo_calibrator.wo_id > syn_wo_ref.id
+Ref: syn_wo_calibrator.calibrator_id > syn_calibrator.id
+Ref: syn_wo_media.wo_id > syn_wo_ref.id
+Ref: syn_wo_media.media_id > syn_media.id
+Ref: syn_wo_cal_point.wo_id > syn_wo_ref.id
+Ref: syn_wo_assignment.wo_id > syn_wo_ref.id
+Ref: syn_wo_assignment.technician_id > users.id
+Ref: syn_wo_assignment.assigned_by > users.id
+Ref: syn_wo_cancellation.wo_id - syn_wo_ref.id // 1-1
+Ref: syn_wo_berita_acara.wo_id > syn_wo_ref.id
+Ref: syn_wo_berita_acara.asset_id > syn_asset.id
+Ref: syn_asset_movement.asset_id > syn_asset.id
+Ref: syn_asset_movement.from_location_id > syn_location.id
+Ref: syn_asset_movement.to_location_id > syn_location.id
+Ref: syn_asset_movement.from_department_id ?> syn_department.id
+Ref: syn_asset_movement.to_department_id ?> syn_department.id
+Ref: syn_asset_movement.requester_user_id > users.id
+Ref: syn_asset_decommission.asset_id - syn_asset.id // 1-1
+Ref: syn_asset_reactivation.asset_id > syn_asset.id
+Ref: syn_asset_reactivation.wo_id > syn_wo_ref.id
+
+// CAL EXECUTION
+Ref: syn_wo_result.wo_id > syn_wo_ref.id
+Ref: syn_wo_result.cal_point_id > syn_wo_cal_point.id // ke snapshot, bukan master
+Ref: syn_wo_result.captured_by_user_id ?> users.id
+Ref: syn_wo_point_result.wo_id > syn_wo_ref.id
+Ref: syn_wo_point_result.cal_point_id > syn_wo_cal_point.id
+Ref: syn_wo_env.wo_id - syn_wo_ref.id // 1-1
+Ref: syn_wo_env.measured_by > users.id
+Ref: syn_wo_uncertainty.wo_id > syn_wo_ref.id
+Ref: syn_wo_uncertainty.cal_point_id ?> syn_wo_cal_point.id
+Ref: syn_wo_uncertainty.formula_version_id > m_formula_version.id
+Ref: syn_attachment.wo_id ?> syn_wo_ref.id
+Ref: syn_attachment.cal_point_id ?> syn_wo_cal_point.id
+Ref: syn_attachment.uploaded_by > users.id
+Ref: syn_wo_approval.wo_id > syn_wo_ref.id
+Ref: syn_wo_approval.approver_user_id > users.id
+Ref: syn_certificate.wo_id ?- syn_wo_ref.id // 0..1 — cert generate per WO
+Ref: syn_asset_drift_history.asset_id > syn_asset.id
+Ref: syn_asset_drift_history.wo_id > syn_wo_ref.id
+Ref: syn_external_calibration.wo_id - syn_wo_ref.id // 1-1
+Ref: syn_cal_execution_override.wo_id > syn_wo_ref.id
+Ref: syn_cal_execution_override.requested_by > users.id
+Ref: syn_wo_pre_start_check.wo_id > syn_wo_ref.id
+Ref: syn_wo_pre_start_check.checked_by > users.id
+
+// LABEL
+Ref: m_label_color_config.site_id - sites.id // 1-1 per site — xdb
+Ref: m_label_attributes.site_id > sites.id // xdb
+Ref: syn_label.wo_id > syn_wo_ref.id
+Ref: syn_label.asset_id > syn_asset.id
+Ref: syn_label.printed_by > users.id
+Ref: syn_asset_offset_history.asset_id > syn_asset.id
+Ref: syn_asset_offset_history.wo_id > syn_wo_ref.id
+
+// APPR + ESIGN
+Ref: syn_approval_instance.workflow_id > syn_workflow_template.id
+Ref: syn_approval_instance.requester_user_id > users.id
+Ref: syn_approval_step.approval_instance_id > syn_approval_instance.id
+Ref: syn_approval_step.approver_user_id ?> users.id
+Ref: syn_approval_step.escalated_to_user_id ?> users.id
+Ref: syn_approval_step.delegated_to_user_id ?> users.id
+Ref: syn_approval_step.esign_manifest_id ?> syn_signature_manifest.id
+Ref: syn_approval_delegation.delegator_user_id > users.id
+Ref: syn_approval_delegation.delegate_user_id > users.id
+Ref: syn_signature_manifest.user_id > users.id
+Ref: syn_signature_manifest.on_behalf_of_user_id ?> users.id
+Ref: syn_reauth_token.user_id > users.id
+Ref: syn_otp_code.user_id > users.id
+Ref: syn_signature_attempt_log.user_id ?> users.id
+
+// DOC + DNG
+Ref: syn_document.site_id > sites.id // xdb
+Ref: syn_document.asset_id ?> syn_asset.id
+Ref: syn_document.work_order_id ?> syn_wo_ref.id
+Ref: syn_document.created_by_user_id > users.id
+Ref: syn_document_version.document_id > syn_document.id
+Ref: syn_document_version.created_by_user_id > users.id
+Ref: syn_document_disposal.document_id > syn_document.id
+Ref: syn_document_disposal.requested_by_user_id > users.id
+Ref: syn_document_disposal.qa_approved_by_user_id ?> users.id
+Ref: syn_doc_number_log.requester_user_id > users.id
+Ref: syn_doc_number_log.site_id > sites.id // xdb
+
+// DEVIATION + CAPA + RISK + QUAL
+Ref: syn_wo_deviation_link.syn_wo_id > syn_wo_ref.id
+Ref: syn_wo_deviation_link.technician_id > users.id
+Ref: syn_wo_deviation_link.created_by_user_id > users.id
+Ref: syn_deviation_attachment.deviation_uuid > syn_wo_deviation_link.syn_wo_deviation_uuid
+Ref: syn_deviation_attachment.uploaded_by_user_id > users.id
+Ref: syn_deviation_investigation.deviation_uuid - syn_wo_deviation_link.syn_wo_deviation_uuid // 1-1
+Ref: syn_deviation_investigation.performed_by ?> users.id
+Ref: syn_wo_deviation_capa_link.syn_wo_id > syn_wo_ref.id
+Ref: syn_wo_deviation_capa_link.qms_deviation_id > syn_wo_deviation_link.qms_deviation_id
+Ref: syn_wo_close_override.syn_wo_id > syn_wo_ref.id
+Ref: syn_wo_close_override.qo_manager_user_id > users.id
+Ref: syn_risk_assessment.syn_wo_id ?> syn_wo_ref.id
+Ref: syn_impacted_product_log.risk_assessment_id > syn_risk_assessment.id
+Ref: syn_qualification_plan.asset_id > syn_asset.id
+Ref: syn_qualification_plan.assigned_qo_user_id > users.id
+Ref: syn_qualification.asset_id > syn_asset.id
+Ref: syn_qualification.plan_id ?> syn_qualification_plan.id
+Ref: syn_qualification.executor_user_id > users.id
+Ref: syn_qualification_checklist_item.qualification_id > syn_qualification.id
+Ref: syn_qualification_checklist_item.template_item_id ?> syn_qualification_template.id
+Ref: syn_qualification_evidence.checklist_item_id > syn_qualification_checklist_item.id
+
+// TRAIN + NOTIF
+Ref: syn_competency_matrix.technician_id > users.id
+Ref: syn_competency_matrix.sop_id ?> syn_sop.id
+Ref: syn_competency_matrix.certified_by ?> users.id
+Ref: syn_training_record.technician_id > users.id
+Ref: syn_notification_log.recipient_user_id ?> users.id
+Ref: syn_notification_preference.user_id > users.id
+Ref: syn_notification_routing.site_id > sites.id // xdb
+Ref: syn_notification_routing.default_recipient_user_id ?> users.id
+
+// REP + CF + AUDIT ext
+Ref: syn_scheduled_report.report_template_id > syn_report_template.id
+Ref: syn_scheduled_report.site_id ?> sites.id // xdb
+Ref: syn_scheduled_report.created_by_user_id > users.id
+Ref: syn_report_execution.report_template_id > syn_report_template.id
+Ref: syn_report_execution.scheduled_report_id ?> syn_scheduled_report.id
+Ref: syn_report_execution.generated_by_user_id > users.id
+Ref: syn_approval_chain.user_id > users.id
+Ref: syn_report_access_log.report_execution_id ?> syn_report_execution.id
+Ref: syn_report_access_log.accessed_by_user_id > users.id
+Ref: syn_custom_field_definition.approved_by_user_id ?> users.id
+Ref: syn_custom_field_option.custom_field_definition_id > syn_custom_field_definition.id
+Ref: syn_custom_field_value.custom_field_definition_id > syn_custom_field_definition.id
+Ref: syn_custom_field_value.value_file_document_id ?> syn_document.id
+Ref: syn_custom_field_permission.custom_field_definition_id > syn_custom_field_definition.id
+Ref: syn_custom_field_permission.role_id > roles.id
+Ref: syn_approval_matrix.site_id > sites.id // xdb
+Ref: syn_approval_matrix.approver_user_id > users.id
+Ref: syn_audit_reason_list.approved_by_user_id ?> users.id
+Ref: syn_audit_reason_item.reason_list_id > syn_audit_reason_list.id
+Ref: syn_audit_verification_run.run_by_user_id > users.id
+Ref: syn_audit_verification_run.site_id ?> sites.id // xdb
+
+// INTEGRATION (ORA + QMS) — site DB, referensi ke sites (platform) logical
+Ref: syn_oracle_config.site_id - sites.id // 1-1 per site — xdb
+Ref: syn_oracle_sync_log.site_id > sites.id // xdb
+Ref: syn_oracle_conflict_log.site_id > sites.id // xdb
+Ref: syn_oracle_dlq.site_id > sites.id // xdb
+Ref: syn_qms_config.site_id - sites.id // 1-1 per site — xdb
+Ref: syn_qms_sync_log.site_id > sites.id // xdb
+
+// CROSS-SITE (platform DB — ref FISIK antar tabel platform)
+Ref: syn_cross_site_calibrator.owner_site_id > sites.id
+Ref: syn_cross_site_wo_link.logistics_tracking_id - syn_cross_site_logistics.id // 1-1
+Ref: syn_cross_site_wo_link.certificate_issuer_site_id ?> sites.id
+Ref: syn_cross_site_logistics.cross_site_wo_id - syn_cross_site_wo_link.cross_site_wo_id
+Ref: syn_cross_site_logistics_checkpoint.logistics_tracking_id > syn_cross_site_logistics.id
+Ref: syn_cross_site_calibrator_booking.calibrator_id > syn_cross_site_calibrator.id
+Ref: syn_cross_site_calibrator_booking.requesting_site_id > sites.id
+
+// AUTH EXT (platform DB)
+Ref: syn_user_site_access.user_id ?> users.id // xdb — user hidup di site DB
+Ref: syn_user_site_access.site_id > sites.id
+Ref: syn_user_site_access.granted_by_user_id ?> users.id // xdb
+Ref: syn_impersonation_session.impersonator_user_id > users.id
+Ref: syn_impersonation_session.impersonated_user_id > users.id
+Ref: syn_impersonation_session.qo_approval_by_user_id ?> users.id
+Ref: syn_role_designated_user.role_id > roles.id // xdb
+Ref: syn_role_designated_user.user_id > users.id // xdb
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  SAMPLE DATA — 6 site Kalbe Farma Group (seed platform DB)
+// ─────────────────────────────────────────────────────────────────────────────
+
+Records sites(id, code, display_name, initials, environment) {
+  '11111111-1111-1111-1111-111111111101', 'kalbe',     'PT Kalbe Farma Tbk',             'KF',   'prod'
+  '11111111-1111-1111-1111-111111111102', 'kalventis', 'PT Kalventis Surya Pratama',     'KVT',  'prod'
+  '11111111-1111-1111-1111-111111111103', 'dankos',    'PT Dankos Farma',                'DK',   'prod'
+  '11111111-1111-1111-1111-111111111104', 'hexpharm',  'PT Hexpharm Jaya',               'HJ',   'prod'
+  '11111111-1111-1111-1111-111111111105', 'fima',      'PT Kalbe Fima',                  'FMA',  'prod'
+  '11111111-1111-1111-1111-111111111106', 'gof',       'PT Global One Fortuna (GOF)',    'GOF',  'prod'
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  TABLE GROUPS (layout dbdiagram.io)
+// ─────────────────────────────────────────────────────────────────────────────
+
+TableGroup platform_db_iam_implemented {
+  sites
+  site_ldap_domains
+  site_ldap_configs
+  site_themes
+  platform_users
+  password_history
+  role_templates
+  role_template_permissions
+  role_template_approvals
+  platform_settings
+}
+
+TableGroup site_db_iam_implemented {
+  users
+  roles
+  permissions
+  user_roles
+  role_permissions
+  user_permissions
+  user_sync_history
+}
+
+TableGroup shared_shape_both_dbs {
+  audit_logs
+  refresh_tokens
+  login_attempt_log
+}
+
+TableGroup master_data_md {
+  syn_sop
+  m_form_template
+  m_formula
+  m_formula_version
+  m_formula_validation
+  m_uncertainty_template
+  m_uncertainty_template_component
+  m_tolerance
+  m_conversion_table
+  syn_calibrator
+  syn_certificate
+  syn_media
+  syn_location
+  syn_department
+  syn_manufacturer
+}
+
+TableGroup asset_ra_wo_life {
+  syn_asset
+  syn_forecast_cache
+  syn_wo_ref
+  syn_wo_snapshot
+  syn_wo_calibrator
+  syn_wo_media
+  syn_wo_cal_point
+  syn_wo_assignment
+  syn_wo_cancellation
+  syn_wo_berita_acara
+  syn_asset_movement
+  syn_asset_decommission
+  syn_asset_reactivation
+}
+
+TableGroup calibration_execution_cal {
+  syn_wo_result
+  syn_wo_point_result
+  syn_wo_env
+  syn_wo_uncertainty
+  syn_attachment
+  syn_wo_approval
+  syn_asset_drift_history
+  syn_external_calibration
+  syn_cal_execution_override
+  syn_wo_pre_start_check
+}
+
+TableGroup approval_esign_appr {
+  syn_workflow_template
+  syn_approval_instance
+  syn_approval_step
+  syn_approval_delegation
+  syn_signature_manifest
+  syn_authority_level
+  syn_reauth_token
+  syn_otp_code
+  syn_signature_attempt_log
+  syn_record_signoff_lock
+}
+
+TableGroup document_dng {
+  syn_document
+  syn_document_version
+  syn_retention_policy
+  syn_document_disposal
+  syn_doc_sequence
+  syn_doc_number_format
+  syn_doc_number_log
+}
+
+TableGroup quality_dev_capa_risk_qual {
+  syn_wo_deviation_link
+  syn_deviation_attachment
+  syn_deviation_investigation
+  syn_wo_deviation_capa_link
+  syn_wo_close_override
+  syn_risk_assessment
+  syn_impacted_product_log
+  syn_qualification_plan
+  syn_qualification
+  syn_qualification_template
+  syn_qualification_checklist_item
+  syn_qualification_evidence
+}
+
+TableGroup training_notification {
+  syn_competency_matrix
+  syn_training_record
+  syn_notification_template
+  syn_notification_log
+  syn_notification_preference
+  syn_notification_routing
+}
+
+TableGroup label_reporting_cf {
+  m_label_color_config
+  m_label_attributes
+  syn_label
+  syn_asset_offset_history
+  syn_report_template
+  syn_scheduled_report
+  syn_report_execution
+  syn_approval_chain
+  syn_report_access_log
+  syn_custom_field_definition
+  syn_custom_field_option
+  syn_custom_field_value
+  syn_custom_field_permission
+  syn_approval_matrix
+}
+
+TableGroup audit_extension {
+  syn_audit_mode_config
+  syn_audit_reason_list
+  syn_audit_reason_item
+  syn_audit_verification_run
+  syn_snapshot_verification
+}
+
+TableGroup integration_ora_qms {
+  syn_oracle_config
+  syn_oracle_sync_log
+  syn_oracle_conflict_log
+  syn_oracle_dlq
+  syn_qms_config
+  syn_qms_sync_log
+}
+
+TableGroup cross_site_platform_db {
+  syn_cross_site_calibrator
+  syn_cross_site_wo_link
+  syn_cross_site_logistics
+  syn_cross_site_logistics_checkpoint
+  syn_cross_site_calibrator_booking
+}
+
+TableGroup auth_extension_platform_db {
+  syn_user_site_access
+  syn_impersonation_session
+  syn_role_designated_user
+}
+
+// ============================================================================
+//  CATATAN PENYEMPURNAAN & KEPUTUSAN DESAIN (dari analisis UR + FSD):
+//
+//  1. DUA NAMA FSD DIJADIKAN SATU:
+//     - syn_wo_deviation_link = syn_deviation_link = syn_wo_deviation → SATU tabel.
+//     - OracleSyncQueue (RA-13) ≈ syn_oracle_sync_log + syn_oracle_dlq (ORA).
+//     - OraclePmScheduleStaging ≈ syn_forecast_cache (WO-01).
+//     - OTP e-sign (FS-ESIGN-IDVERIFY-01) + email-OTP fallback MFA (AS-05)
+//       → digabung syn_otp_code (kolom purpose).
+//
+//  2. KONSEP INTRO-LEVEL FSD (tanpa FS-row eksplisit) DIREALISASIKAN LAIN:
+//     - Risk register / FMEA / mitigation plan → via syn_risk_assessment + QMS CAPA.
+//     - Training schedule & effectiveness check → kolom cycle + record training.
+//     - Qualification schedule (annual/biennial) → di QualificationPlan target date.
+//     - Dashboard widget → konfigurasi frontend (nilai KPI dari view ter-refresh).
+//     - Formula category tree → kolom category di m_formula.
+//     - Oracle field mapping → JSON sync_rules di syn_oracle_config.
+//     - QMS document link → via syn_document_version + syn_qms_sync_log.
+//     - Document checkout (check-in/out) → state di syn_document_version.
+//     - Site feature flag → konfigurasi platform_settings.
+//     - Client certificate device check → konfigurasi infrastruktur (reverse proxy).
+//
+//  3. KETIDAKSESUAIAN FSD vs KODE AKTUAL (dipertahankan arsitektur kode):
+//     - FSD: Spring Boot 3 + PostgreSQL single-DB RLS + Redis + RabbitMQ.
+//       Kode: .NET 10 + EF Core 10 + SQL Server database-per-site (1+6 DB).
+//     - FSD: session timeout 15 menit. Kode: idle 30 menit / max 8 jam (konfig).
+//     - FSD: 6 role operasional. Kode: role template platform + clone per site.
+//     - RLS PostgreSQL → diganti isolasi fisik DB per site + syn_user_site_access.
+//
+//  4. KEPATUHAN YANG SUDAH TERPENUHI KODE (hijau) & DILANJUTKAN TARGET:
+//     hash chain audit, rotasi refresh + reuse detection family, two-person rule,
+//     password policy + history, MFA TOTP, soft-delete forensik, alasan
+//     permission grant, e-sign 2-komponen, snapshot immutable 14-entity,
+//     PDF/A-2b, retensi 10 tahun, 21 CFR Part 11 / Annex 11 / GAMP 5 / ICH Q9.
+// ============================================================================
