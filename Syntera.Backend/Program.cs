@@ -139,6 +139,12 @@ try
     // IDataProtectionProvider, which is itself a singleton.
     builder.Services.AddSingleton<ITotpService, TotpService>();
 
+    // COMPLIANCE (Sprint 2.7 — idle-timeout fix): stamps refresh-token
+    // LastUsedAt from authenticated API activity so the §11.300(d) idle window
+    // measures real user inactivity, not "time since last rotation". Scoped:
+    // owns a per-request PlatformDbContext + the scoped SiteDbContextFactory.
+    builder.Services.AddScoped<ISessionActivityService, SessionActivityService>();
+
     // ─── M5: background audit log retention sweeper ────────────────
     // Daily pass that deletes audit log rows older than Audit:RetentionYears.
     // Only runs if Audit:EnforceRetention=true — opt-in to keep the table
@@ -175,6 +181,13 @@ try
     app.UseRateLimiter();
     app.UseAuthentication();
     app.UseAuthorization();
+    // COMPLIANCE (Sprint 2.7): after authorization, record that the user is
+    // actively using the system (throttled LastUsedAt stamp on their active
+    // refresh-token rows). Without this, a session active for longer than
+    // Session:IdleMinutes without a rotation (dev: 60-min access tokens vs
+    // 30-min idle) was killed by SESSION_IDLE_TIMEOUT on the first refresh
+    // — the "refresh → logout" symptom.
+    app.UseMiddleware<SessionActivityMiddleware>();
     app.MapControllers();
     app.MapHealthChecks("/health");
 
