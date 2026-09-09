@@ -4,6 +4,7 @@ import { LayoutDashboard, Settings, Building2, Shield, Users, ScrollText, KeyRou
 
 import { RequireAuth, RequirePlatformAdmin, RequirePlatformOrSystemAdmin, RequireSiteAdmin } from "./routes/guards";
 import { useAuthStore } from "./store/authStore";
+import { logout as apiLogout } from "./api/auth";
 import { useThemeStore } from "./store/themeStore";
 import { AdminLayout, type MenuItem } from "./components/layout";
 
@@ -112,7 +113,6 @@ function buildMenu(isPlatformAdmin: boolean, isSiteAdmin: boolean, isSystemAdmin
 
 export default function App() {
   const profile = useAuthStore((s) => s.profile);
-  const logout = useAuthStore((s) => s.logout);
 
   const isPlatform = profile?.roles.includes("platform-admin") ?? false;
   const isSiteAdmin = profile?.roles.includes("site-business-admin") ?? false;
@@ -141,8 +141,18 @@ export default function App() {
                       }
                     : undefined
                 }
-                onLogout={() => {
-                  logout();
+                onLogout={async () => {
+                  // LOGOUT-RELOGIN FIX (2026-09-09): revoke the SERVER-side
+                  // session FIRST — POST /api/auth/logout revokes the
+                  // refresh-token family and deletes the httpOnly cookie —
+                  // THEN hard-navigate. The previous handler only cleared the
+                  // in-memory store: the cookie stayed valid, main.tsx's
+                  // initAuth() silently re-authenticated from it on the next
+                  // boot, and the user was logged right back in
+                  // ("logout → instant re-login"). apiLogout() clears the
+                  // store in its finally; the .catch guarantees navigation
+                  // still happens if the POST fails (e.g. network error).
+                  await apiLogout().catch(() => {});
                   window.location.href = "/login";
                 }}
               />

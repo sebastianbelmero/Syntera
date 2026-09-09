@@ -227,26 +227,87 @@ public sealed class RefreshFlowService : IRefreshFlowService
         var platformToken = await _platformDb.RefreshTokens.FirstOrDefaultAsync(t => t.TokenHash == hash, ct);
         if (platformToken is not null)
         {
-            platformToken.RevokedAt = DateTime.UtcNow;
-            platformToken.RevokedBy = revokedBy;
-            await _platformDb.SaveChangesAsync(ct);
+            await RevokeFamilyAndSaveAsync(_platformDb, platformToken, revokedBy, ct);
             return;
         }
 
-        // Try site DB — revoke site refresh token
+        // Site-scope token. Fast path: the caller's own site from the (still
+        // valid) access token's claims...
         var siteId = _currentUser.SiteId;
         if (siteId is not null)
         {
             var siteDb = await _siteDbFactory.ResolveForSiteAsync(siteId.Value, ct);
-            var siteToken = await siteDb.RefreshTokens
-                .FirstOrDefaultAsync(t => t.TokenHash == hash && t.RevokedAt == null, ct);
+            // LOGOUT-RELOGIN FIX: no RevokedAt==null filter — a token that was
+            // already rotated must still be traceable to its live successor
+            // via FamilyId.
+            var siteToken = await siteDb.RefreshTokens.FirstOrDefaultAsync(t => t.TokenHash == hash, ct);
             if (siteToken is not null)
             {
-                siteToken.RevokedAt = DateTime.UtcNow;
-                siteToken.RevokedBy = revokedBy;
-                await siteDb.SaveChangesAsync(ct);
+                await RevokeFamilyAndSaveAsync(siteDb, siteToken, revokedBy, ct);
+                return;
             }
         }
+
+        // ...then the same multi-site scan RefreshAsync uses. This covers the
+        // anonymous-logout case (expired/absent access token — no claims, so
+        // no siteId; the httpOnly cookie is the only credential) and a claims
+        // site that simply didn't contain the token.
+        var allSites = await _platformDb.Sites.AsNoTracking()
+            .Where(s => s.IsEnabled)
+            .ToListAsync(ct);
+        foreach (var site in allSites)
+        {
+            if (site.Id == siteId) continue; // already tried above
+            SiteDbContext scanDb;
+            try
+            {
+                // Same pattern as RefreshAsync: fresh UNCACHED context per
+                // site — ResolveForSiteAsync caches the FIRST site's context
+                // per request and ignores the siteId on later calls.
+                scanDb = await _siteDbFactory.CreateForSiteAsync(site.Id, ct);
+            }
+            catch
+            {
+                // Site DB unreachable — skip, try next site. Don't let one
+                // broken site DB block logout.
+                continue;
+            }
+            try
+            {
+                var siteToken = await scanDb.RefreshTokens
+                    .FirstOrDefaultAsync(t => t.TokenHash == hash, ct);
+                if (siteToken is null) continue;
+                await RevokeFamilyAndSaveAsync(scanDb, siteToken, revokedBy, ct);
+                return;
+            }
+            finally
+            {
+                await scanDb.DisposeAsync();
+            }
+        }
+    }
+
+    /// <summary>
+    /// LOGOUT-RELOGIN FIX (2026-09-09): logout revokes the token's entire
+    /// FAMILY, not just the presented row. Refresh tokens rotate on every
+    /// silent refresh (page reload, 401 interceptor); if a rotation is in
+    /// flight while the user logs out — or its Set-Cookie lands after the
+    /// logout response — the presented row is already consumed but its
+    /// successor is live. Revoking only the presented row left the successor
+    /// valid: the browser's late-arriving Set-Cookie re-authenticated the
+    /// user on the next app boot ("logout → instant re-login"). Family
+    /// revocation kills the successor too, and any later use of a family
+    /// member still trips REFRESH_REUSE_DETECTED.
+    /// </summary>
+    private async Task RevokeFamilyAndSaveAsync(
+        Microsoft.EntityFrameworkCore.DbContext db,
+        RefreshToken token,
+        Guid? revokedBy,
+        CancellationToken ct)
+    {
+        await _refreshTokens.RevokeFamilyAsync(
+            db.Set<RefreshToken>(), token.FamilyId, revokedBy ?? token.UserId, ct);
+        await db.SaveChangesAsync(ct);
     }
 
     /// <summary>

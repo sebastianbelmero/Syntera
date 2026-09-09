@@ -393,6 +393,37 @@ public sealed class AuthRefreshRotationTests : IDisposable
         Assert.Equal("REFRESH_REUSE_DETECTED", ex.Code);
     }
 
+    [Fact]
+    public async Task Logout_WithStaleToken_RevokesWholeFamily_RotatedTokenRejected()
+    {
+        // LOGOUT-RELOGIN regression (2026-09-09): silent refresh rotates the
+        // cookie on every page load / 401 recovery. If logout races an
+        // in-flight rotation (or the rotation's Set-Cookie lands after the
+        // logout response), the browser presents the STALE token while its
+        // ROTATED successor sits live in the cookie jar. Revoking only the
+        // presented row left the successor valid — the next app-boot silent
+        // refresh logged the user right back in ("logout → instant
+        // re-login"). Logout must kill the entire family.
+        _fx.SeedPlatformAdmin();
+        var login = await _fx.Auth.LoginAsync(
+            new LoginRequest(AuthFixture.PlatformAdminEmail, AuthFixture.PlatformAdminPassword),
+            ip: "10.0.0.7", userAgent: "test-agent");
+
+        // App-boot silent refresh: the cookie rotates login → refreshed.
+        var refreshed = await _fx.Auth.RefreshAsync(login.RefreshToken, ip: "10.0.0.7", userAgent: "test-agent");
+        Assert.False(string.IsNullOrEmpty(refreshed.RefreshToken));
+
+        // User clicks logout; the request (or a stale in-flight one) presents
+        // the OLD token. The ROTATED one in the browser's jar must die too.
+        var adminId = (await _fx.PlatformDb.PlatformUsers.AsNoTracking().SingleAsync()).Id;
+        await _fx.Auth.LogoutAsync(login.RefreshToken, revokedBy: adminId);
+
+        // Pre-fix: this refresh SUCCEEDED (successor still live) and the user
+        // was "logged in" again immediately after logging out.
+        var ex = await ThrowsAuthAsync(() => _fx.Auth.RefreshAsync(refreshed.RefreshToken!, ip: "10.0.0.7", userAgent: "test-agent"));
+        Assert.Equal("REFRESH_REUSE_DETECTED", ex.Code);
+    }
+
     // ── Login failure paths ──────────────────────────────────────────────
 
     [Fact]

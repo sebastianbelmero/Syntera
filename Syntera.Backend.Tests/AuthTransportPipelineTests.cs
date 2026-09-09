@@ -88,12 +88,21 @@ public sealed class AuthTransportPipelineTests
             ["Auth:CookieOnlyRefreshToken"] = "true", // strict mode (prod default)
             ["Jwt:RefreshTokenDaysPlatform"] = "1",
             ["Jwt:RefreshTokenDaysSite"] = "7",
+            // LOGOUT-RELOGIN FIX (2026-09-09): required by AddSynteraSecurity
+            // (≥ 32 chars) so the JWT bearer middleware is actually active in
+            // the pipeline — [Authorize] endpoints really 401 without a
+            // Bearer, exactly like in Program.cs. WebApplication auto-inserts
+            // UseAuthentication/UseAuthorization when the services exist.
+            ["Jwt:SigningKey"] = "pipeline-test-signing-key-0123456789abcdef",
         });
 
         // REAL MVC stack: SuppressModelStateInvalidFilter = false (the
         // auto-validation filter is ACTIVE) + ApiResponse envelope factory
         // + camelCase JSON — the same registration Program.cs uses.
         builder.Services.AddSynteraMvc();
+        // REAL security stack (JWT bearer + DefaultPolicy
+        // RequireAuthenticatedUser) — see Jwt:SigningKey above.
+        builder.Services.AddSynteraSecurity(builder.Configuration);
         // The test assembly is the "entry" assembly and does not generate
         // ApplicationPart attributes for Syntera.Backend (non-Web SDK), so
         // the backend controllers must be added explicitly.
@@ -197,6 +206,31 @@ public sealed class AuthTransportPipelineTests
         Assert.Equal("EMPTY_TOKEN", body.GetProperty("errorCode").GetString());
     }
 
+    // ── POST /api/auth/logout — anonymous (expired/absent access token) ──
+
+    [Fact]
+    public async Task Logout_NoBearer_WithCookie_ReachesAction_RevokesCookieToken()
+    {
+        // LOGOUT-RELOGIN regression (2026-09-09): in cookie-only mode the
+        // httpOnly cookie is the credential — logout must work when the
+        // 15-minute access token is expired/absent. Pre-fix: [Authorize] +
+        // DefaultPolicy(RequireAuthenticatedUser) → 401 before the action
+        // ran → the cookie was never revoked → the app-boot silent refresh
+        // logged the user right back in.
+        using var host = CreateHost();
+
+        var req = JsonPost("/api/auth/logout", "{}");
+        req.Headers.Add("Cookie", $"{CookieName}={IncomingToken}");
+        var resp = await host.Client.SendAsync(req);
+
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+        // The action ran and handed the COOKIE token to the service.
+        Assert.Equal(IncomingToken, host.Fake.LastLogoutToken);
+        // The cookie is deleted on the way out (expired Set-Cookie).
+        var setCookie = string.Join("; ", resp.Headers.GetValues("Set-Cookie"));
+        Assert.Contains(CookieName, setCookie);
+    }
+
     // ── Test double (same shape as the one in AuthControllerCookieTests,
     //    but public-facing so the pipeline DI can use it) ────────────────────
 
@@ -204,6 +238,7 @@ public sealed class AuthTransportPipelineTests
     {
         internal string? LastRefreshToken;
         internal Guid? LastSiteId;
+        internal string? LastLogoutToken;
 
         private static UserProfileDto PlatformProfile() => new(
             Guid.NewGuid(), "admin@syntera.com", "Admin", null,
@@ -238,7 +273,10 @@ public sealed class AuthTransportPipelineTests
         }
 
         public Task LogoutAsync(string refreshToken, Guid? revokedBy, CancellationToken ct = default)
-            => Task.CompletedTask;
+        {
+            LastLogoutToken = refreshToken;
+            return Task.CompletedTask;
+        }
 
         public Task ChangePasswordAsync(string currentPassword, string newPassword, string? ip, string? userAgent, CancellationToken ct = default, string? passwordChangeChallengeToken = null)
             => Task.CompletedTask;

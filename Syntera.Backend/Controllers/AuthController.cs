@@ -213,9 +213,23 @@ public sealed class AuthController : ApiControllerBase
         }
     }
 
-    /// <summary>Logout by revoking the refresh token.</summary>
+    /// <summary>
+    /// Logout by revoking the refresh token's entire family.
+    ///
+    /// <para>LOGOUT-RELOGIN FIX (2026-09-09): this endpoint is
+    /// <c>[AllowAnonymous]</c>. In cookie-only mode the httpOnly refresh
+    /// cookie IS the credential — possessing the token is proof enough to
+    /// revoke the session it belongs to (a garbage/unknown token is a
+    /// verified no-op). The previous <c>[Authorize]</c> made logout return
+    /// 401 once the 15-minute access token expired: the revoke never ran,
+    /// the cookie stayed valid, and the app-boot silent refresh logged the
+    /// user right back in ("logout → instant re-login"). revokedBy still
+    /// prefers the caller's claims when a valid Bearer token is attached
+    /// and falls back to the token row's own user id inside
+    /// RefreshFlowService.</para>
+    /// </summary>
     [HttpPost("logout")]
-    [Authorize]
+    [AllowAnonymous]
     public async Task<IActionResult> Logout([FromBody] LogoutRequest? req, CancellationToken ct)
     {
         var refreshToken = ReadRefreshToken(req?.RefreshToken);
