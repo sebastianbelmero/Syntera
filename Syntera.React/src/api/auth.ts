@@ -42,6 +42,7 @@ import type {
   ChangePasswordRequest,
   RefreshResponse,
   UserProfile,
+  DevAuthMode,
 } from "../types";
 import { useAuthStore } from "../store/authStore";
 
@@ -159,6 +160,23 @@ export async function refresh(): Promise<RefreshResponse> {
 
 export async function getProfile(): Promise<UserProfile> {
   return await get<UserProfile>("/auth/profile");
+}
+
+/**
+ * DEV-ONLY: ask the backend whether the DevAuth login override is active
+ * (GET /auth/dev-auth — Development environment only). When active, the
+ * login page shows a warning banner: every login's password is verified
+ * against `ldapEmail` (e.g. sebastian.sitorus@kalventis.com) instead of
+ * the entered email, so the developer can log in as any pre-provisioned
+ * user with one known password.
+ *
+ * The endpoint 404s when the override is off (or in any non-Development
+ * environment), which surfaces here as an ApiError — callers treat any
+ * failure as "off" and hide the banner. Toggle: DevAuth:Enabled=false in
+ * the backend's appsettings.Development.json (hot-reloads, no restart).
+ */
+export async function getDevAuthMode(): Promise<DevAuthMode> {
+  return await get<DevAuthMode>("/auth/dev-auth");
 }
 
 /**

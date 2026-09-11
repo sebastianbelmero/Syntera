@@ -81,6 +81,18 @@ export interface DisableMfaRequest {
 }
 
 /**
+ * DEV-ONLY response from GET /api/auth/dev-auth — reports the state of the
+ * backend DevAuth login override (active ONLY in the Development env).
+ * When active, whatever email is typed at the login screen, the LDAP
+ * password check binds as `ldapEmail` instead — letting the developer log
+ * in as any pre-provisioned user with one known password. The endpoint
+ * returns 404 when the override is off, so any fetch error = "off".
+ */
+export interface DevAuthMode {
+  ldapEmail: string;
+}
+
+/**
  * Body for POST /api/auth/change-password.
  *
  * Two paths:

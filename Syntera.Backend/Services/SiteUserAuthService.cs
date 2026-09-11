@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 using Syntera.Backend.Data;
 using Syntera.Backend.Models.Dtos.Auth;
 using Syntera.Backend.Models.Entities;
@@ -33,6 +35,16 @@ public sealed class SiteUserAuthService : ISiteUserAuthService
     private readonly ILogger<SiteUserAuthService> _log;
     private readonly IRefreshTokenService _refreshTokens;
 
+    /// <summary>
+    /// DEV AUTH OVERRIDE (Development-only): when active, the LDAP bind uses
+    /// the fixed dev account from DevAuth:LdapEmail instead of the entered
+    /// email, so a developer can log in as any pre-provisioned user while
+    /// knowing only one real password. Resolved per-request (scoped service)
+    /// so toggling DevAuth:Enabled in appsettings hot-reloads without a
+    /// restart. Always <see cref="DevAuthOverride.None"/> outside Development.
+    /// </summary>
+    private readonly DevAuthOverride _devAuth;
+
     public SiteUserAuthService(
         PlatformDbContext platformDb,
         ISiteDbContextFactory siteDbFactory,
@@ -42,7 +54,9 @@ public sealed class SiteUserAuthService : ISiteUserAuthService
         IPermissionService permissions,
         IMemoryCache cache,
         ILogger<SiteUserAuthService> log,
-        IRefreshTokenService refreshTokens)
+        IRefreshTokenService refreshTokens,
+        IHostEnvironment? env = null,
+        IConfiguration? config = null)
     {
         _platformDb = platformDb;
         _siteDbFactory = siteDbFactory;
@@ -53,6 +67,7 @@ public sealed class SiteUserAuthService : ISiteUserAuthService
         _cache = cache;
         _log = log;
         _refreshTokens = refreshTokens;
+        _devAuth = DevAuthOverride.Resolve(env, config);
     }
 
     public async Task<LoginResponse> LoginAsync(
@@ -95,7 +110,22 @@ public sealed class SiteUserAuthService : ISiteUserAuthService
             UpnDomain: ldapConfig.UpnDomain);
 
         // ── Authenticate via LDAP (direct bind: user's own email + password) ──
-        var result = await _ldap.AuthenticateAsync(endpoint, email, password, ct);
+        // DEV AUTH OVERRIDE (Development-only, see DevAuthOverride): redirect
+        // ONLY the LDAP bind identity to the fixed dev account. The entered
+        // email still drives everything else — site resolution already ran,
+        // and user lookup, tokens and audit below all stay bound to the
+        // ENTERED email. Failures still count toward the login throttle so
+        // dev usage keeps the brute-force trail visible in the audit log.
+        var ldapBindEmail = email;
+        if (_devAuth.IsEnabled)
+        {
+            ldapBindEmail = _devAuth.LdapEmail;
+            _log.LogWarning(
+                "DEV AUTH OVERRIDE: login as '{LoginEmail}' will verify its password against dev LDAP account '{DevLdapEmail}' — Development-only backdoor, disable via DevAuth:Enabled=false in appsettings.Development.json",
+                email, ldapBindEmail);
+        }
+
+        var result = await _ldap.AuthenticateAsync(endpoint, ldapBindEmail, password, ct);
         if (!result.IsSuccess)
         {
             LoginThrottle.BumpFail(_cache, perIpKey, perEmailKey);
@@ -146,22 +176,30 @@ public sealed class SiteUserAuthService : ISiteUserAuthService
         // overwrite the DB value with null/empty — that would erase the manual
         // value the Business Admin set during pre-provisioning. Only update
         // when LDAP gives us real data AND it differs.
+        //
+        // DEV AUTH OVERRIDE: the LDAP attributes belong to the DEV account,
+        // not the entered email — syncing them would rename every user to
+        // the dev account's display name. Sync is skipped entirely while the
+        // override is active.
         var changed = false;
-        if (!string.IsNullOrEmpty(result.DisplayName) && result.DisplayName != user.DisplayName)
+        if (!_devAuth.IsEnabled)
         {
-            user.DisplayName = result.DisplayName;
-            changed = true;
-        }
-        if (result.Title is not null && result.Title != user.Title)
-        {
-            user.Title = result.Title;
-            changed = true;
+            if (!string.IsNullOrEmpty(result.DisplayName) && result.DisplayName != user.DisplayName)
+            {
+                user.DisplayName = result.DisplayName;
+                changed = true;
+            }
+            if (result.Title is not null && result.Title != user.Title)
+            {
+                user.Title = result.Title;
+                changed = true;
+            }
+            if (changed)
+                _log.LogInformation("LDAP sync: user {Email} DisplayName/Title updated from AD", email);
         }
         user.FailedLoginCount = 0;
         user.LockedUntil = null;
         user.LastLoginAt = DateTime.UtcNow;
-        if (changed)
-            _log.LogInformation("LDAP sync: user {Email} DisplayName/Title updated from AD", email);
         await siteDb.SaveChangesAsync(ct);
 
         // ── Resolve effective permissions ─────────────────────────────

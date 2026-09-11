@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, Eye, EyeOff, Loader2, Lock, Mail, ShieldCheck, KeyRound } from "lucide-react";
+import { ArrowLeft, Eye, EyeOff, Loader2, Lock, Mail, ShieldCheck, KeyRound, TriangleAlert } from "lucide-react";
 import { useAuthStore } from "../../store/authStore";
 import {
   changePassword as changePasswordApi,
+  getDevAuthMode,
   login as loginApi,
   loginMfa as loginMfaApi,
 } from "../../api/auth";
@@ -54,6 +56,21 @@ export default function LoginPage() {
   const location = useLocation();
   const isAuthed = useAuthStore((s) => s.isAuthenticated());
   const mfaInputRef = useRef<HTMLInputElement | null>(null);
+
+  // DEV AUTH OVERRIDE banner: in the Vite dev build, ask the backend whether
+  // the DevAuth login backdoor is active (Development env only — the
+  // endpoint 404s otherwise, which lands in `isError` and hides the banner).
+  // When active, whatever email is typed below, the LDAP password check
+  // binds as the dev account instead — letting the developer inspect every
+  // role-specific page while knowing only one real password.
+  const devAuthQuery = useQuery({
+    queryKey: ["auth", "dev-auth-mode"],
+    queryFn: getDevAuthMode,
+    enabled: import.meta.env.DEV,
+    retry: false,
+    staleTime: 5 * 60_000,
+  });
+  const devAuth = devAuthQuery.data;
 
   // Focus the MFA input when that step is shown.
   useEffect(() => {
@@ -321,6 +338,40 @@ export default function LoginPage() {
               </>
             )}
           </div>
+
+          {/* DEV AUTH OVERRIDE banner — dev build + backend DevAuth active.
+              Amber, deliberately loud: this backdoor must never be forgotten. */}
+          {devAuth && step === "credentials" && (
+            <div
+              className="mb-6 rounded-lg px-4 py-3 text-xs leading-relaxed"
+              style={{
+                border: "1px solid rgba(217, 119, 6, 0.55)",
+                backgroundColor: "rgba(245, 158, 11, 0.10)",
+              }}
+              role="status"
+            >
+              <div
+                className="flex items-center gap-1.5 font-semibold"
+                style={{ color: "#d97706" }}
+              >
+                <TriangleAlert size={14} />
+                Dev login override active
+              </div>
+              <p className="mt-1.5" style={{ color: "var(--color-text)" }}>
+                Whatever email you type, its password is verified against{" "}
+                <span className="font-mono font-semibold">
+                  {devAuth.ldapEmail}
+                </span>{" "}
+                in LDAP — so you can sign in as any provisioned site user
+                with that account&apos;s password and inspect their pages.
+              </p>
+              <p className="mt-1.5" style={{ color: "var(--color-muted)" }}>
+                Development only. Turn off: <span className="font-mono">DevAuth:Enabled=false</span>{" "}
+                in the backend&apos;s appsettings.Development.json (applies without
+                restart).
+              </p>
+            </div>
+          )}
 
           {/* ─── Step: credentials ─── */}
           {step === "credentials" && (

@@ -408,6 +408,36 @@ public sealed class AuthController : ApiControllerBase
         }
     }
 
+    // ── DEV AUTH: dev-only login backdoor state ──────────────────────────
+
+    /// <summary>
+    /// DEV AUTH OVERRIDE (Development-only): reports whether the
+    /// DevAuth:LdapEmail login backdoor is active, so the frontend login
+    /// page can show a "dev mode" banner reminding the developer which
+    /// account verifies every password. Returns 404 when the override is
+    /// off (or outside the Development environment) — the frontend treats
+    /// any non-200 as "off" and renders nothing.
+    ///
+    /// <para>Anonymous on purpose: the login screen needs this BEFORE any
+    /// authentication exists. It only reveals the dev workspace's own
+    /// configuration — in Production the gate in <see cref="DevAuthOverride"/>
+    /// keeps this at 404, and Program.cs refuses to start at all when
+    /// DevAuth:Enabled=true is set in the Production environment.</para>
+    /// </summary>
+    [HttpGet("dev-auth")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(ApiResponse<DevAuthModeDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+    public IActionResult DevAuthMode()
+    {
+        var dev = DevAuthOverride.Resolve(_env, _config);
+        if (!dev.IsEnabled)
+            return NotFound(ApiResponse<object>.Fail("DEV_AUTH_NOT_ACTIVE",
+                "Dev auth override is not active (Development-only feature)."));
+
+        return Ok(ApiResponse<DevAuthModeDto>.Ok(new DevAuthModeDto(dev.LdapEmail)));
+    }
+
     // ── Cookie helpers (H7) ─────────────────────────────────────────────
 
     /// <summary>
@@ -535,6 +565,13 @@ public sealed class AuthController : ApiControllerBase
 /// ever read → logout on every refresh. See RefreshRequest in AuthDtos.cs.
 /// </summary>
 public record RefreshSiteRequest(string? RefreshToken, Guid SiteId);
+
+/// <summary>
+/// DEV-ONLY payload for GET /api/auth/dev-auth — exposes the DevAuth login
+/// override state so the login page can warn the developer. See
+/// DevAuthOverride (Services/DevAuth.cs) for the full security contract.
+/// </summary>
+public sealed record DevAuthModeDto(string LdapEmail);
 
 // NOTE: ChangePasswordRequest has moved to Models/Dtos/Auth/AuthDtos.cs
 // (Sprint 2.3) so it can carry the optional PasswordChangeChallengeToken

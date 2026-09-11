@@ -51,6 +51,14 @@ try
         var dbPassword = builder.Configuration.GetConnectionString("Platform");
         if (dbPassword != null && dbPassword.Contains("__SET_VIA_ENV"))
             throw new InvalidOperationException("ConnectionStrings:Platform must not contain placeholder in Production. Set via SYNTERA_ConnectionStrings__Platform env var.");
+
+        // DEV BACKDOOR (DevAuth): the Development-only login override must
+        // NEVER be enabled in Production — it authenticates ANY provisioned
+        // user with ONE fixed password. Fail-fast instead of silently
+        // ignoring: a prod config carrying this flag is a deployment error
+        // (or an intrusion), not a tuning knob.
+        if (builder.Configuration.GetValue<bool>("DevAuth:Enabled"))
+            throw new InvalidOperationException("DevAuth:Enabled must never be true in Production — it is a Development-only auth backdoor. Remove it from configuration.");
     }
 
     // ─── DI: Framework ─────────────────────────────────────────────
@@ -197,6 +205,17 @@ try
         var platformDb = scope.ServiceProvider.GetRequiredService<PlatformDbContext>();
         var siteDbFactory = scope.ServiceProvider.GetRequiredService<ISiteDbContextFactory>();
         var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+        // DEV BACKDOOR (DevAuth): loud startup warning so nobody forgets the
+        // override is on — every site-user login's password is checked
+        // against the fixed dev account instead of the entered email.
+        // Hot-reloads off via appsettings (DevAuth:Enabled=false) without a
+        // restart, so the flag is re-read on every login request too.
+        var devAuth = DevAuthOverride.Resolve(app.Environment, app.Configuration);
+        if (devAuth.IsEnabled)
+            logger.LogWarning(
+                "DEV AUTH OVERRIDE ACTIVE — every site-user login's password is verified against '{DevLdapEmail}' instead of the entered email. Development-only; turn off via DevAuth:Enabled=false in appsettings.Development.json.",
+                devAuth.LdapEmail);
 
         if (app.Environment.IsDevelopment())
         {
