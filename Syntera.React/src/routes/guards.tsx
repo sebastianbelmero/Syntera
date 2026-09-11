@@ -147,6 +147,47 @@ export function RequireRole({
   return <>{children}</>;
 }
 
+/**
+ * Permission-based guard — the frontend mirror of the backend's
+ * [HasPermission] attribute. Authorization semantics:
+ *
+ *   • Platform Admin bypasses site-level permission checks (their JWT
+ *     carries the platform-admin claim, exactly like the backend filter).
+ *   • Everyone else must hold the exact permission key in their EFFECTIVE
+ *     permission set (role ∪ direct grants − deny), which is what the
+ *     profile exposes.
+ *
+ * Using effective permissions instead of a hard-coded role list keeps the
+ * sidebar, the routes, and the backend authorization decision in lockstep —
+ * a user can never reach a page here that the API would 403 (and vice
+ * versa: direct grants granted mid-session still open the page after the
+ * profile is refreshed).
+ */
+export function RequirePermission({
+  permission,
+  children,
+}: {
+  permission: string;
+  children: ReactNode;
+}) {
+  const profile = useAuthStore((s) => s.profile);
+  const isAuthed = useAuthStore((s) => s.isAuthenticated());
+  const initializing = useAuthStore((s) => s.initializing);
+  const location = useLocation();
+
+  if (initializing) return <AuthInitializing />;
+  if (!isAuthed || !profile) {
+    return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
+  }
+
+  const isPlatformAdmin = profile.roles.includes("platform-admin");
+  const allowed = isPlatformAdmin || profile.permissions.includes(permission);
+  if (!allowed) {
+    return <ForbiddenPage />;
+  }
+  return <>{children}</>;
+}
+
 function ForbiddenPage() {
   return (
     <div className="flex h-screen flex-col items-center justify-center gap-4 px-6 text-center">

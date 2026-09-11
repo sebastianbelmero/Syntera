@@ -8,6 +8,7 @@ import {
   ChevronUp,
   ScrollText,
   Globe,
+  Download,
 } from "lucide-react";
 import { auditApi } from "../../api/audit";
 import { ApiError } from "../../api/client";
@@ -26,21 +27,84 @@ function prettyJson(json: string): string {
   }
 }
 
+/**
+ * Export the currently displayed (i.e. filtered) audit rows as a CSV file.
+ * Client-side generation from the in-memory page — the API has no bulk
+ * export endpoint, and take is capped at 100 rows per query anyway.
+ * Fields are RFC 4180-escaped (quotes doubled, wrapped in quotes).
+ */
+function exportCsv(logs: AuditLogDto[]): void {
+  if (logs.length === 0) {
+    toast.error("Nothing to export — the current filter matches no rows.");
+    return;
+  }
+  const header = [
+    "id",
+    "timestamp",
+    "action",
+    "actor_email",
+    "actor_ip",
+    "outcome",
+    "target_type",
+    "target_id",
+    "signature_meaning",
+    "error_message",
+  ];
+  const esc = (s: string) => `"${s.replace(/"/g, '""')}"`;
+  const rows = logs.map((l) =>
+    [
+      String(l.id),
+      l.timestamp,
+      l.action,
+      l.actorEmail ?? "",
+      l.actorIp ?? "",
+      l.outcome,
+      l.targetType ?? "",
+      l.targetId ?? "",
+      l.signatureMeaning ?? "",
+      l.errorMessage ?? "",
+    ]
+      .map(esc)
+      .join(","),
+  );
+  // UTF-8 BOM keeps Excel from misreading the encoding.
+  const csv = "\ufeff" + [header.map(esc).join(","), ...rows].join("\r\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `syntera-audit-logs-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export default function AuditLogsPage() {
   const [filterAction, setFilterAction] = useState("");
   const [filterOutcome, setFilterOutcome] = useState("");
   const [filterSignature, setFilterSignature] = useState("");
+  // Actor filter is client-side on actorEmail: the backend AuditQuery
+  // contract accepts actorUserId (Guid) but not email, and resolving
+  // email → id here would need the users endpoint (not all viewers of
+  // this page — e.g. supervisors — hold user.read).
+  const [filterActor, setFilterActor] = useState("");
+  // Date range is a server-side filter (from/to in AuditQuery).
+  const [filterFrom, setFilterFrom] = useState("");
+  const [filterTo, setFilterTo] = useState("");
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const { data: logs, isLoading: loading } = useQuery<AuditLogDto[]>({
-    queryKey: ["audit-logs", filterAction, filterOutcome],
+    queryKey: ["audit-logs", filterAction, filterOutcome, filterFrom, filterTo],
     queryFn: async () => {
       try {
         setError(null);
         return await auditApi.query({
           action: filterAction || undefined,
           outcome: filterOutcome || undefined,
+          // Inclusive day range: from 00:00:00Z of the start date to
+          // 23:59:59Z of the end date.
+          from: filterFrom ? new Date(`${filterFrom}T00:00:00`).toISOString() : undefined,
+          to: filterTo ? new Date(`${filterTo}T23:59:59`).toISOString() : undefined,
           take: 100,
         });
       } catch (err) {
@@ -52,30 +116,65 @@ export default function AuditLogsPage() {
     },
   });
 
-  // Signature-meaning filter is client-side: the backend AuditQuery contract
-  // does not (yet) expose a SignatureMeaning parameter, so we filter the
-  // already-fetched page. Case-insensitive substring match.
+  // Signature-meaning + actor filters are client-side: the backend
+  // AuditQuery contract does not (yet) expose those parameters, so we
+  // filter the already-fetched page. Case-insensitive substring match.
   const displayLogs = useMemo(() => {
     const all = logs ?? [];
+    let out = all;
+    const actor = filterActor.trim().toLowerCase();
+    if (actor) {
+      out = out.filter((l) => (l.actorEmail ?? "").toLowerCase().includes(actor));
+    }
     const needle = filterSignature.trim().toLowerCase();
-    if (!needle) return all;
-    return all.filter((l) => (l.signatureMeaning ?? "").toLowerCase().includes(needle));
-  }, [logs, filterSignature]);
+    if (needle) {
+      out = out.filter((l) => (l.signatureMeaning ?? "").toLowerCase().includes(needle));
+    }
+    return out;
+  }, [logs, filterActor, filterSignature]);
 
   const toggleRow = (id: number) =>
     setExpandedId((cur) => (cur === id ? null : id));
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold">Audit Logs</h1>
-        <p className="text-sm" style={{ color: "var(--color-muted)" }}>
-          Immutable, hash-chained audit trail. Platform admins see platform-level events;
-          site admins see their own site only.
-        </p>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold">Audit Logs</h1>
+          <p className="text-sm" style={{ color: "var(--color-muted)" }}>
+            Immutable, hash-chained audit trail. Platform admins see platform-level events;
+            site admins see their own site only.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => exportCsv(displayLogs)}
+          disabled={loading || displayLogs.length === 0}
+          className="flex items-center gap-1.5 px-3 py-2.5 min-h-[44px] rounded-lg text-sm font-medium disabled:opacity-50"
+          style={{ border: "1px solid var(--color-border)", backgroundColor: "var(--color-surface)" }}
+          title="Export the currently filtered rows as CSV"
+        >
+          <Download size={16} /> Export CSV
+        </button>
       </div>
 
       <div className="flex flex-col sm:flex-row gap-3">
+        <input
+          type="date"
+          className="input"
+          value={filterFrom}
+          onChange={(e) => setFilterFrom(e.target.value)}
+          aria-label="From date"
+          title="From date (server-side filter)"
+        />
+        <input
+          type="date"
+          className="input"
+          value={filterTo}
+          onChange={(e) => setFilterTo(e.target.value)}
+          aria-label="To date"
+          title="To date (server-side filter)"
+        />
         <input
           className="input"
           placeholder="Filter by action (e.g., auth.login)"
@@ -91,6 +190,12 @@ export default function AuditLogsPage() {
           <option value="success">Success</option>
           <option value="failure">Failure</option>
         </select>
+        <input
+          className="input"
+          placeholder="Filter by actor (email)"
+          value={filterActor}
+          onChange={(e) => setFilterActor(e.target.value)}
+        />
         <input
           className="input"
           placeholder="Filter by signature meaning"

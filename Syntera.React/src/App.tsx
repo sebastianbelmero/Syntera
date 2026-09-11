@@ -1,12 +1,13 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 import { useEffect } from "react";
-import { LayoutDashboard, Settings, Building2, Shield, Users, ScrollText, KeyRound, ClipboardCheck } from "lucide-react";
+import { LayoutDashboard, Settings, Building2, Users, ScrollText, KeyRound, ClipboardCheck } from "lucide-react";
 
-import { RequireAuth, RequirePlatformAdmin, RequirePlatformOrSystemAdmin, RequireSiteAdmin } from "./routes/guards";
+import { RequireAuth, RequirePlatformAdmin, RequirePlatformOrSystemAdmin, RequirePermission } from "./routes/guards";
 import { useAuthStore } from "./store/authStore";
 import { logout as apiLogout } from "./api/auth";
 import { useThemeStore } from "./store/themeStore";
 import { AdminLayout, type MenuItem } from "./components/layout";
+import type { UserProfile } from "./types";
 
 import LoginPage from "./pages/auth/LoginPage";
 import DashboardPage from "./pages/dashboard/DashboardPage";
@@ -14,8 +15,10 @@ import SitesPage from "./pages/platform/SitesPage";
 import RoleTemplatesPage from "./pages/platform/RoleTemplatesPage";
 import ApprovalQueuePage from "./pages/platform/ApprovalQueuePage";
 import UsersPage from "./pages/site/UsersPage";
+import UserDetailPage from "./pages/site/UserDetailPage";
 import AuditLogsPage from "./pages/audit/AuditLogsPage";
 import SettingsPage from "./pages/settings/SettingsPage";
+import NotFoundPage from "./pages/NotFoundPage";
 
 /** Calculate readable foreground color (dark/light) based on background luminance. */
 function pickFg(hex: string): string {
@@ -87,24 +90,44 @@ function ThemeApplier() {
   return null;
 }
 
-function buildMenu(isPlatformAdmin: boolean, isSiteAdmin: boolean, isSystemAdmin: boolean): MenuItem[] {
+/**
+ * Sidebar menu — PERMISSION-driven, mirroring backend authorization
+ * (guards.tsx → RequirePermission):
+ *
+ *   • Platform Admin bypasses permission checks (backend HasPermission
+ *     semantics), so they see every admin page.
+ *   • System Admin sees Sites only — their user-management job (assigning
+ *     Business Admins) lives there. NOTE: they deliberately do NOT get the
+ *     Users menu: SystemAdminPermissions has no user.read, so the site
+ *     users endpoint would 403 for them.
+ *   • Everyone else sees pages gated by their EFFECTIVE permission keys
+ *     (role ∪ direct grants − deny). The menu can therefore never
+ *     advertise a page the backend would reject — fixing the old gap where
+ *     eng-manager could open /site/users via URL but had no menu entry,
+ *     and viewers had audit.read yet no Audit menu item.
+ */
+function buildMenu(profile: UserProfile | null): MenuItem[] {
   const items: MenuItem[] = [{ label: "Dashboard", path: "/dashboard", icon: <LayoutDashboard size={18} /> }];
+  if (!profile) return items;
 
-  if (isPlatformAdmin) {
+  const isPlatform = profile.roles.includes("platform-admin");
+  const isSystemAdmin = profile.roles.includes("system-admin");
+  const has = (perm: string) => isPlatform || profile.permissions.includes(perm);
+
+  if (isPlatform) {
     items.push({ label: "Sites", path: "/platform/sites", icon: <Building2 size={18} /> });
     items.push({ label: "Role Templates", path: "/platform/role-templates", icon: <KeyRound size={18} /> });
     items.push({ label: "Approval Queue", path: "/platform/approvals", icon: <ClipboardCheck size={18} /> });
-    items.push({ label: "Audit Logs", path: "/audit/logs", icon: <ScrollText size={18} /> });
-  }
-
-  // System Admin sees Sites (to manage Business Admins for their site)
-  if (isSystemAdmin && !isPlatformAdmin) {
+  } else if (isSystemAdmin) {
+    // System Admin manages Business Admins through the Sites page.
     items.push({ label: "Sites", path: "/platform/sites", icon: <Building2 size={18} /> });
   }
 
-  if (isSiteAdmin || isSystemAdmin) {
+  if (has("user.read")) {
     items.push({ label: "Users", path: "/site/users", icon: <Users size={18} /> });
-    items.push({ label: "Site Audit", path: "/site/audit", icon: <Shield size={18} /> });
+  }
+  if (has("audit.read")) {
+    items.push({ label: "Audit Logs", path: "/audit/logs", icon: <ScrollText size={18} /> });
   }
 
   items.push({ label: "Settings", path: "/settings", icon: <Settings size={18} /> });
@@ -113,11 +136,7 @@ function buildMenu(isPlatformAdmin: boolean, isSiteAdmin: boolean, isSystemAdmin
 
 export default function App() {
   const profile = useAuthStore((s) => s.profile);
-
-  const isPlatform = profile?.roles.includes("platform-admin") ?? false;
-  const isSiteAdmin = profile?.roles.includes("site-business-admin") ?? false;
-  const isSystemAdmin = profile?.roles.includes("system-admin") ?? false;
-  const menu = buildMenu(isPlatform, isSiteAdmin, isSystemAdmin);
+  const menu = buildMenu(profile);
 
   return (
     <>
@@ -187,24 +206,45 @@ export default function App() {
             }
           />
 
-          {/* Site Admin routes */}
+          {/* Site user management — gated by user.read (Platform Admin
+              bypasses; Biz Admin / Eng Manager hold it). */}
           <Route
             path="/site/users"
             element={
-              <RequireSiteAdmin>
+              <RequirePermission permission="user.read">
                 <UsersPage />
-              </RequireSiteAdmin>
+              </RequirePermission>
+            }
+          />
+          <Route
+            path="/site/users/:id"
+            element={
+              <RequirePermission permission="user.read">
+                <UserDetailPage />
+              </RequirePermission>
             }
           />
 
-          {/* Audit Logs (both platform and site admins) */}
-          <Route path="/audit/logs" element={<AuditLogsPage />} />
-          <Route path="/site/audit" element={<AuditLogsPage />} />
+          {/* Audit trail — gated by audit.read (viewers/supervisors/QO
+              managers hold it; technicians do not). Platform Admin
+              bypasses. Previously this route had NO guard at all — any
+              authenticated user could open it and eat a raw 403. */}
+          <Route
+            path="/audit/logs"
+            element={
+              <RequirePermission permission="audit.read">
+                <AuditLogsPage />
+              </RequirePermission>
+            }
+          />
+          {/* Legacy alias — site admins' old bookmark still works. */}
+          <Route path="/site/audit" element={<Navigate to="/audit/logs" replace />} />
 
           <Route path="/settings" element={<SettingsPage />} />
         </Route>
 
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        {/* Explicit 404 instead of a silent redirect to /dashboard. */}
+        <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </>
   );

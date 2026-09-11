@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Plus, Power, Key, Shield, Clock } from "lucide-react";
+import { ChevronRight, Plus, Power, Key, Shield, Clock } from "lucide-react";
 import { usersApi } from "../../api/site";
 import { roleTemplatesApi } from "../../api/platform";
 import { ApiError } from "../../api/client";
@@ -15,6 +16,8 @@ export default function UsersPage() {
   const [editing, setEditing] = useState<UserDto | null>(null);
   const currentUserId = useAuthStore((s) => s.profile?.userId);
   const isPlatformAdmin = useAuthStore((s) => s.profile?.roles.includes("platform-admin") ?? false);
+  const navigate = useNavigate();
+  const location = useLocation();
 
   const { data: users = [], isLoading: loading } = useQuery<UserDto[]>({
     queryKey: USERS_KEY,
@@ -33,6 +36,16 @@ export default function UsersPage() {
     enabled: isPlatformAdmin, // Only fetch for platform admin (endpoint is PlatformAdminOnly)
     retry: false,
   });
+
+  // Arriving from UserDetailPage's "Edit Profile" button — derive the
+  // drawer target from the navigation state (React-Compiler friendly: no
+  // setState inside an effect). Closing the drawer strips the state so a
+  // refresh after closing doesn't re-open it.
+  const editUserId = (location.state as { editUserId?: string } | null)?.editUserId;
+  const pendingEdit = !loading && editUserId
+    ? users.find((u) => u.id === editUserId) ?? null
+    : null;
+  const editingUser = editing ?? pendingEdit;
 
   return (
     <div className="space-y-4">
@@ -62,8 +75,21 @@ export default function UsersPage() {
       ) : (
         <div className="space-y-2">
           {users.map((u) => (
-            <div key={u.id} className="rounded-lg p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
-              style={{ backgroundColor: "var(--color-surface)", border: "1px solid var(--color-border)" }}>
+            <div
+              key={u.id}
+              className="rounded-lg p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 cursor-pointer transition-colors hover:border-[var(--color-primary)]"
+              style={{ backgroundColor: "var(--color-surface)", border: "1px solid var(--color-border)" }}
+              role="button"
+              tabIndex={0}
+              onClick={() => navigate(`/site/users/${u.id}`)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  navigate(`/site/users/${u.id}`);
+                }
+              }}
+              aria-label={`Open detail for ${u.displayName}`}
+            >
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-semibold shrink-0"
                   style={{ backgroundColor: "var(--color-primary)" }}>
@@ -98,13 +124,17 @@ export default function UsersPage() {
                   )}
                 </div>
                 {u.id !== currentUserId && (
-                  <button type="button" onClick={() => setEditing(u)}
+                  <button type="button"
+                    onClick={(e) => { e.stopPropagation(); setEditing(u); }}
+                    onKeyDown={(e) => e.stopPropagation()}
                     className="p-2 rounded-md min-h-[40px] min-w-[40px] flex items-center justify-center transition hover:opacity-80"
                     style={{ border: "1px solid var(--color-border)" }}
-                    aria-label={`Edit ${u.displayName}`}>
+                    aria-label={`Edit ${u.displayName}`}
+                    title="Quick edit (profile fields)">
                     <Key size={16} />
                   </button>
                 )}
+                <ChevronRight size={16} className="shrink-0" style={{ color: "var(--color-muted)" }} aria-hidden />
               </div>
             </div>
           ))}
@@ -114,10 +144,15 @@ export default function UsersPage() {
       {creating && (
         <UserDrawer onClose={() => setCreating(false)} />
       )}
-      {editing && (
-        <UserDrawer user={editing} roles={roles} catalog={catalog}
+      {editingUser && (
+        <UserDrawer user={editingUser} roles={roles} catalog={catalog}
           isPlatformAdmin={isPlatformAdmin}
-          onClose={() => setEditing(null)} />
+          onClose={() => {
+            setEditing(null);
+            // Strip the navigation state that requested the drawer (if
+            // any) so a refresh after closing doesn't re-open it.
+            if (editUserId) navigate(location.pathname, { replace: true });
+          }} />
       )}
     </div>
   );

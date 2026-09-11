@@ -202,7 +202,9 @@ export async function initAuth(): Promise<void> {
       expiresAt: data.expiresAt,
       // COOKIE-ONLY: ignored by the store (login() nulls it) — the rotated
       // token is already in the cookie jar via the Set-Cookie header.
-      refreshToken: null,
+      // Empty string (not null) matches LoginResponse.refreshToken: string
+      // and mirrors what the backend sends in strict cookie-only mode.
+      refreshToken: "",
       profile: data.profile,
       theme: data.theme,
     });

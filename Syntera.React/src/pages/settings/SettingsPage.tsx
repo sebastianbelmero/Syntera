@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { KeyRound, Moon, Shield, Sun, User, Loader2, Copy, Check, ExternalLink, Eye, EyeOff } from "lucide-react";
+import { KeyRound, Moon, Shield, Sun, User, Loader2, Copy, Check, ExternalLink, Eye, EyeOff, History, CheckCircle2, XCircle } from "lucide-react";
 import { useAuthStore } from "../../store/authStore";
 import { useThemeStore } from "../../store/themeStore";
 import {
@@ -9,8 +10,9 @@ import {
   disableMfa as disableMfaApi,
   setupMfa as setupMfaApi,
 } from "../../api/auth";
+import { auditApi } from "../../api/audit";
 import { ApiError } from "../../api/client";
-import type { MfaSetupResponse } from "../../types";
+import type { MfaSetupResponse, AuditLogDto } from "../../types";
 import {
   PASSWORD_POLICY_HINT,
   validatePasswordPair,
@@ -132,6 +134,13 @@ export default function SettingsPage() {
           refresh token (24 hours). All authentication events are recorded in the audit log.
         </p>
       </section>
+
+      {/* ─── My Activity — own audit events (audit.read holders) ───
+          Keeps Settings useful for SITE users: MFA and Change Password are
+          platform-only (site users authenticate via LDAP), so without this
+          section their Settings page was nearly empty. Technicians don't
+          hold audit.read, so the section hides itself for them. */}
+      <MyActivitySection />
 
       {/* ─── Sprint 3.2: Multi-Factor Authentication ─── */}
       <MfaSection />
@@ -742,6 +751,94 @@ function ChangePasswordSection() {
           )}
         </button>
       </form>
+    </section>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// My Activity Section (Sprint FE-A5)
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Shows the last 10 audit events performed BY the signed-in account.
+ *
+ * Authorization nuance: /api/audit/logs requires `audit.read`, so this
+ * section renders only for users who hold it (Platform Admin bypasses,
+ * mirroring the backend's HasPermission filter). The backend scopes the
+ * query automatically — a site user only ever sees their own site's
+ * events, filtered server-side to actorUserId = self.
+ */
+function MyActivitySection() {
+  const profile = useAuthStore((s) => s.profile);
+  const isPlatform = profile?.roles.includes("platform-admin") ?? false;
+  const canRead = !!profile && (isPlatform || profile.permissions.includes("audit.read"));
+
+  const { data: logs = [], isLoading } = useQuery<AuditLogDto[]>({
+    queryKey: ["my-activity", profile?.userId],
+    queryFn: () => auditApi.query({ actorUserId: profile!.userId, take: 10 }),
+    enabled: canRead,
+    retry: false,
+  });
+
+  if (!canRead) return null;
+
+  return (
+    <section
+      className="rounded-xl p-6"
+      style={{
+        backgroundColor: "var(--color-surface)",
+        border: "1px solid var(--color-border)",
+      }}
+    >
+      <h3 className="mb-1 flex items-center gap-2 text-lg font-semibold">
+        <History size={18} /> My Activity
+      </h3>
+      <p className="text-xs mb-4" style={{ color: "var(--color-muted)" }}>
+        Your last 10 recorded actions from the immutable, hash-chained audit trail
+        (21 CFR Part 11). Site users see their own site's events only.
+      </p>
+      {isLoading ? (
+        <div className="text-sm" style={{ color: "var(--color-muted)" }}>
+          Loading…
+        </div>
+      ) : logs.length === 0 ? (
+        <div className="text-sm" style={{ color: "var(--color-muted)" }}>
+          No recorded activity yet.
+        </div>
+      ) : (
+        <ul className="m-0 list-none space-y-1 p-0">
+          {logs.map((l) => (
+            <li
+              key={l.id}
+              className="flex items-center gap-3 rounded-md p-2 text-sm"
+              style={{ backgroundColor: "var(--color-background)" }}
+            >
+              {l.outcome === "success" ? (
+                <CheckCircle2
+                  size={14}
+                  className="shrink-0"
+                  aria-hidden
+                  style={{ color: "var(--color-success)" }}
+                />
+              ) : (
+                <XCircle
+                  size={14}
+                  className="shrink-0"
+                  aria-hidden
+                  style={{ color: "var(--color-danger)" }}
+                />
+              )}
+              <span className="font-mono text-xs">{l.action}</span>
+              <span
+                className="ml-auto whitespace-nowrap text-xs"
+                style={{ color: "var(--color-muted)" }}
+              >
+                {new Date(l.timestamp).toLocaleString()}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }
